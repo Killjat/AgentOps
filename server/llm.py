@@ -138,3 +138,13 @@ def _detect_provider() -> LLMProvider:
         if os.getenv(LLM_CONFIGS[p]["key_env"]):
             return p
     raise ValueError("未配置任何 LLM API Key，请设置环境变量")
+
+
+async def chat(messages: list, max_tokens: int = 600,
+               provider: Optional[LLMProvider] = None) -> str:
+    """通用多轮对话"""
+    provider = provider or _detect_provider()
+    try:
+        return await _call_api(provider, messages, max_tokens=max_tokens)
+    except Exception as e:
+        return f"AI 响应失败: {e}"

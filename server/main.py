@@ -27,7 +27,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from models import (
-    AgentInfo, AgentStatus, RemoteHost, TaskRequest, TaskResult, TaskStatus
+    AgentInfo, AgentStatus, RemoteHost, TaskRequest, TaskResult, TaskStatus,
+    ChatRequest
 )
 from deployer import deploy, undeploy
 import llm as LLM
@@ -354,6 +355,95 @@ async def get_task(task_id: str):
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail="任务不存在")
     return tasks[task_id]
+
+
+@app.post("/tasks/{task_id}/chat")
+async def chat_with_task(task_id: str, req: ChatRequest,
+                         authorization: str = Header(default="")):
+    """基于任务结果继续与 AI 对话，可选择执行新命令"""
+    _check_perm(authorization, "task")
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    task = tasks[task_id]
+    info = agents.get(task.agent_id)
+    if not info:
+        raise HTTPException(status_code=404, detail="Agent 不存在")
+
+    # 构建上下文
+    context = f"""你是一个 Linux 运维专家，正在协助用户处理服务器问题。
+
+原始任务：{task.task}
+执行的命令：{task.command or '无'}
+执行状态：{'成功' if task.status == TaskStatus.SUCCESS else '失败'}
+命令输出：
+{(task.output or task.error or '无输出')[:1500]}
+
+之前的分析：{task.analysis or '无'}
+"""
+    if not task.conversation:
+        task.conversation = []
+
+    if req.execute:
+        # 「问并执行」模式：让 AI 直接生成命令
+        exec_system = context + "\n用户想执行操作，请只返回一条可直接执行的 shell 命令，不要任何解释，不要 markdown 格式。"
+        cmd_messages = [{"role": "system", "content": exec_system}]
+        for msg in task.conversation:
+            if msg["role"] != "system":
+                cmd_messages.append({"role": msg["role"], "content": msg["content"]})
+        cmd_messages.append({"role": "user", "content": req.message})
+
+        command = await LLM.chat(cmd_messages, max_tokens=200)
+        command = command.strip().strip('`').strip()
+        # 去掉可能的 bash/sh 前缀
+        if command.startswith("bash\n") or command.startswith("sh\n"):
+            command = command.split("\n", 1)[1].strip()
+
+        # 执行命令
+        exec_result = await _agent_exec(info, command, 60)
+        success = exec_result.get("success", False)
+        output = exec_result.get("output") or exec_result.get("error", "")
+
+        # 让 AI 分析执行结果
+        analysis_messages = [{"role": "system", "content": context}]
+        for msg in task.conversation:
+            if msg["role"] != "system":
+                analysis_messages.append({"role": msg["role"], "content": msg["content"]})
+        analysis_messages += [
+            {"role": "user", "content": req.message},
+            {"role": "assistant", "content": f"执行命令：`{command}`"},
+            {"role": "user", "content": f"命令执行{'成功' if success else '失败'}，输出：\n{output[:1000]}\n\n请分析结果。"}
+        ]
+        reply = await LLM.chat(analysis_messages, max_tokens=500)
+
+        task.conversation.append({"role": "user", "content": req.message})
+        task.conversation.append({"role": "assistant", "content": f"执行命令：`{command}`\n\n{reply}"})
+
+        return {
+            "reply": reply,
+            "command": command,
+            "exec_result": exec_result,
+            "conversation": task.conversation
+        }
+    else:
+        # 普通对话模式：AI 分析回答，不执行
+        messages = [{"role": "system", "content": context}]
+        for msg in task.conversation:
+            if msg["role"] != "system":
+                messages.append({"role": msg["role"], "content": msg["content"]})
+        messages.append({"role": "user", "content": req.message})
+
+        reply = await LLM.chat(messages, max_tokens=600)
+
+        task.conversation.append({"role": "user", "content": req.message})
+        task.conversation.append({"role": "assistant", "content": reply})
+
+        return {
+            "reply": reply,
+            "command": None,
+            "exec_result": None,
+            "conversation": task.conversation
+        }
 
 
 # ── 内部逻辑 ─────────────────────────────────────────────────

@@ -73,9 +73,16 @@ class TaskResult(BaseModel):
     agent_id: str
     status: TaskStatus
     task: str
-    command: Optional[str] = None      # 生成的命令
-    output: Optional[str] = None       # 执行输出
-    analysis: Optional[str] = None     # AI 分析
+    command: Optional[str] = None
+    output: Optional[str] = None
+    analysis: Optional[str] = None
     error: Optional[str] = None
     created_at: str
     completed_at: Optional[str] = None
+    conversation: List[dict] = []      # 后续对话记录
+
+
+class ChatRequest(BaseModel):
+    task_id: str                       # 基于哪个任务继续对话
+    message: str                       # 用户消息
+    execute: bool = False              # 是否执行 AI 生成的命令

@@ -483,6 +483,44 @@
             <label style="font-size:12px;color:#64748b">错误信息</label>
             <div class="output-box" style="color:#f87171">{{ currentTask.error }}</div>
           </div>
+
+          <!-- 继续对话 -->
+          <div v-if="['success','failed'].includes(currentTask.status)" style="margin-top:16px;border-top:1px solid #2d3148;padding-top:16px">
+            <div class="card-title">继续与 AI 对话</div>
+
+            <!-- 历史对话 -->
+            <div v-if="currentTask.conversation?.length" style="margin-bottom:12px;max-height:300px;overflow-y:auto">
+              <div v-for="(msg,i) in currentTask.conversation.filter(m=>m.role!=='system')" :key="i"
+                   style="margin-bottom:10px">
+                <div v-if="msg.role==='user'" style="display:flex;justify-content:flex-end">
+                  <div style="background:#2d3148;border-radius:10px 10px 2px 10px;padding:8px 12px;max-width:80%;font-size:13px">
+                    {{ msg.content }}
+                  </div>
+                </div>
+                <div v-else style="display:flex;gap:8px;align-items:flex-start">
+                  <div style="width:24px;height:24px;border-radius:50%;background:#7c6af7;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">AI</div>
+                  <div class="analysis-box" style="margin:0;flex:1;font-size:13px" v-html="renderMd(msg.content)"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 输入框 -->
+            <div style="display:flex;gap:8px;align-items:flex-end">
+              <textarea v-model="chatInput" placeholder="继续提问，例如：如何修复这个问题？帮我查看相关日志..."
+                style="flex:1;min-height:60px;max-height:120px;resize:vertical"
+                @keydown.ctrl.enter="sendChat(false)"></textarea>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <button class="btn btn-ghost btn-sm" @click="sendChat(false)" :disabled="chatLoading||!chatInput">
+                  {{ chatLoading ? '...' : '💬 提问' }}
+                </button>
+                <button class="btn btn-primary btn-sm" @click="sendChat(true)" :disabled="chatLoading||!chatInput"
+                        title="AI 回答后自动执行建议的命令">
+                  {{ chatLoading ? '...' : '⚡ 问并执行' }}
+                </button>
+              </div>
+            </div>
+            <div style="font-size:11px;color:#475569;margin-top:4px">Ctrl+Enter 发送 · 「问并执行」会自动执行 AI 建议的命令</div>
+          </div>
         </div>
       </div>
 
@@ -1105,9 +1143,55 @@ createApp({
 
     function viewTask(t) { detailTask.value = t }
 
+    // ── Chat ──
+    const chatInput = ref('')
+    const chatLoading = ref(false)
+
+    async function sendChat(execute) {
+      if (!chatInput.value.trim() || !currentTask.value) return
+      chatLoading.value = true
+      const msg = chatInput.value.trim()
+      chatInput.value = ''
+
+      // 乐观更新：先显示用户消息
+      if (!currentTask.value.conversation) currentTask.value.conversation = []
+      currentTask.value.conversation.push({ role: 'user', content: msg })
+
+      try {
+        const r = await fetch(`${API}/tasks/${currentTask.value.task_id}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json',
+                     'Authorization': `Bearer ${token.value}` },
+          body: JSON.stringify({ task_id: currentTask.value.task_id,
+                                 message: msg, execute })
+        })
+        if (r.ok) {
+          const d = await r.json()
+          currentTask.value.conversation = d.conversation
+          // 如果执行了命令，刷新任务数据
+          if (d.exec_result) {
+            // 在对话里已经包含了执行结果，不需要额外处理
+          }
+        }
+      } catch(e) {
+        currentTask.value.conversation.push({ role: 'assistant', content: `请求失败: ${e.message}` })
+      }
+      chatLoading.value = false
+    }
+
     function agentName(id) {
       const a = agents.value.find(x => x.agent_id === id)
       return a ? (a.name || id) : id
+    }
+
+    function renderMd(text) {
+      if (!text) return ''
+      return text
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/`([^`]+)`/g, '<code style="background:#0f1117;padding:1px 5px;border-radius:3px;font-family:monospace;color:#a3e635">$1</code>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/^#{1,3}\s+(.+)$/gm, '<strong>$1</strong>')
+        .replace(/\n/g, '<br>')
     }
 
     onMounted(() => { loadHosts(); loadAgents(); })
@@ -1124,7 +1208,8 @@ createApp({
       startMonitor, refreshMonitor,
       agents, loadAgents, pingAgent, removeAgent,
       tasks, currentTask, detailTask, submitting, historyFilter, taskForm,
-      filteredTasks, loadTasks, submitTask, viewTask, agentName
+      filteredTasks, loadTasks, submitTask, viewTask, agentName,
+      chatInput, chatLoading, sendChat, renderMd,
     }
   }
 }).mount('#app')
