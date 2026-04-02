@@ -732,7 +732,9 @@ async def create_app_deploy(request: AppDeployRequest, background_tasks: Backgro
 async def upload_config_file(deploy_id: str,
                               file: UploadFile = File(...),
                               remote_path: str = "",
+                              as_env: bool = False,
                               authorization: str = Header(default="")):
+    """上传配置文件，as_env=true 时自动保存为 .env"""
     _check_perm(authorization, "login")
     if deploy_id not in app_deploys:
         raise HTTPException(status_code=404, detail="部署任务不存在")
@@ -742,15 +744,18 @@ async def upload_config_file(deploy_id: str,
     info = _get_agent(d.agent_id)
 
     content = await file.read()
-    # 目标路径：remote_path 为空则放到 deploy_dir 下同名文件
-    target = remote_path or f"{d.deploy_dir}/{file.filename}"
+    # as_env=true 强制保存为 .env，否则按 remote_path 或原文件名
+    if as_env:
+        target = f"{d.deploy_dir}/.env"
+    else:
+        target = remote_path or f"{d.deploy_dir}/{file.filename}"
 
     try:
         conn = await asyncssh.connect(**_ssh_kwargs(info))
         try:
+            dir_path = "/".join(target.split("/")[:-1])
+            await conn.run(f"mkdir -p {dir_path}", check=False)
             async with conn.start_sftp_client() as sftp:
-                # 确保目录存在
-                await conn.run(f"mkdir -p {'/'.join(target.split('/')[:-1])}", check=False)
                 async with sftp.open(target, 'wb') as f_remote:
                     await f_remote.write(content)
         finally:
@@ -890,7 +895,21 @@ async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
                 await run(f"mkdir -p {request.deploy_dir}")
                 await run(f"git clone -b {request.branch} {request.repo_url} {request.deploy_dir}")
 
-            # 3. 安装依赖
+            # 3. 检查是否有 deploy.sh，有则直接执行
+            deploy_sh = await conn.run(
+                f"test -f {request.deploy_dir}/deploy.sh && echo exists || echo no",
+                check=False
+            )
+            if "exists" in (deploy_sh.stdout or ""):
+                log("▶ 检测到 deploy.sh，直接执行...")
+                await run(f"cd {request.deploy_dir} && chmod +x deploy.sh && bash deploy.sh")
+                log("✅ deploy.sh 执行完成")
+                d.status = AppDeployStatus.SUCCESS
+                d.completed_at = datetime.now().isoformat()
+                conn.close()
+                return
+
+            # 4. 安装依赖
             if request.install_cmd:
                 log(f"▶ 安装依赖: {request.install_cmd}")
                 await run(f"cd {request.deploy_dir} && {request.install_cmd}")

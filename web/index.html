@@ -654,20 +654,27 @@
             </div>
           </div>
 
-          <!-- 配置文件上传 -->
+        <!-- 配置文件上传 -->
           <div style="margin-top:8px;margin-bottom:12px">
-            <div class="card-title">上传配置文件（可选，部署后自动上传到服务器）</div>
+            <div class="card-title">上传配置文件（可选）</div>
             <div v-for="(cf, i) in appForm.configFiles" :key="i"
-                 style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+                 style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
               <input type="file" @change="e => cf.file = e.target.files[0]"
-                     style="flex:1;padding:4px" />
-              <input v-model="cf.remote_path" placeholder="远端路径，如 /opt/app/.env"
-                     style="flex:1" />
+                     style="flex:1;min-width:160px;padding:4px" />
+              <input v-model="cf.remote_path" placeholder="远端路径（留空则自动）"
+                     style="flex:1;min-width:160px" :disabled="cf.as_env" />
+              <label style="display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;font-size:12px;color:#94a3b8">
+                <input type="checkbox" v-model="cf.as_env" style="width:auto" />
+                保存为 .env
+              </label>
               <button class="btn btn-danger btn-sm" @click="appForm.configFiles.splice(i,1)">✕</button>
             </div>
-            <button class="btn btn-ghost btn-sm" @click="appForm.configFiles.push({file:null,remote_path:''})">
+            <button class="btn btn-ghost btn-sm" @click="appForm.configFiles.push({file:null,remote_path:'',as_env:false})">
               + 添加配置文件
             </button>
+            <div style="font-size:11px;color:#475569;margin-top:4px">
+              💡 勾选「保存为 .env」可上传任意格式的配置文件（如 envlocal、config.txt），系统自动重命名为 .env
+            </div>
           </div>
 
           <div class="flex-end">
@@ -885,11 +892,15 @@
       <!-- 输入框 -->
       <div style="margin-top:12px;border-top:1px solid #2d3148;padding-top:12px">
         <!-- 上传文件 -->
-        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
           <input type="file" ref="deployFileInput" @change="onDeployFileChange"
-                 style="flex:1;font-size:12px;padding:4px" />
-          <input v-model="deployUploadPath" placeholder="远端路径，如 /opt/app/.env"
-                 style="flex:1;font-size:12px" />
+                 style="flex:1;min-width:140px;font-size:12px;padding:4px" />
+          <input v-model="deployUploadPath" placeholder="远端路径（留空自动）"
+                 style="flex:1;min-width:140px;font-size:12px" :disabled="deployAsEnv" />
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;color:#94a3b8;white-space:nowrap">
+            <input type="checkbox" v-model="deployAsEnv" style="width:auto" />
+            保存为 .env
+          </label>
           <button class="btn btn-ghost btn-sm" @click="uploadDeployFile" :disabled="!deployFile">
             📤 上传
           </button>
@@ -1247,6 +1258,7 @@ createApp({
           const fd = new FormData()
           fd.append('file', cf.file)
           if (cf.remote_path) fd.append('remote_path', cf.remote_path)
+          if (cf.as_env) fd.append('as_env', 'true')
           await fetch(`${API}/deploy/app/${deploy.deploy_id}/upload`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token.value}` },
@@ -1294,6 +1306,7 @@ createApp({
     const deployChatLoading = ref(false)
     const deployFile = ref(null)
     const deployUploadPath = ref('')
+    const deployAsEnv = ref(false)
 
     function onDeployFileChange(e) { deployFile.value = e.target.files[0] }
 
@@ -1302,6 +1315,7 @@ createApp({
       const fd = new FormData()
       fd.append('file', deployFile.value)
       if (deployUploadPath.value) fd.append('remote_path', deployUploadPath.value)
+      if (deployAsEnv.value) fd.append('as_env', 'true')
       const r = await fetch(`${API}/deploy/app/${deployLogData.value.deploy_id}/upload`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token.value}` },
@@ -1312,6 +1326,7 @@ createApp({
         alert(`✅ 文件已上传到 ${d.path}`)
         deployFile.value = null
         deployUploadPath.value = ''
+        deployAsEnv.value = false
       } else {
         alert(`❌ 上传失败: ${d.detail}`)
       }
@@ -1562,7 +1577,7 @@ createApp({
       appDeployList, appDeployError, appDeploySuccess, appDeploying,
       deployLogData, appForm, loadAppDeploys, startAppDeploy,
       viewDeployLog, refreshDeployLog,
-      deployChatInput, deployChatLoading, deployFile, deployUploadPath,
+      deployChatInput, deployChatLoading, deployFile, deployUploadPath, deployAsEnv,
       onDeployFileChange, uploadDeployFile, sendDeployChat,
     }
   }

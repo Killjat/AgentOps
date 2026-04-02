@@ -217,6 +217,7 @@ dmypy.json
 agentops/hosts.yaml
 hosts.yaml
 users.json
+deploy_remote.sh
 
 # 不要忽略示例配置文件
 !.env.example
