@@ -20,7 +20,7 @@ if _env_file.exists():
             os.environ[_k.strip()] = _v.strip()  # 强制覆盖
 
 import asyncssh
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Header
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -61,7 +61,12 @@ def _save_users(users: dict):
 def _hash_pw(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
-# token -> {username, role, perms}
+def _guest_id(ip: str) -> str:
+    """根据 IP 生成唯一游客 ID"""
+    return "guest-" + hashlib.md5(ip.encode()).hexdigest()[:8]
+
+# token -> {username, role}
+# role: admin | user | guest
 _sessions: dict = {}
 
 class LoginRequest(BaseModel):
@@ -74,7 +79,16 @@ class RegisterRequest(BaseModel):
 
 class GrantRequest(BaseModel):
     username: str
-    perms: List[str]   # ["task", "host"]
+    perms: List[str]
+
+@app.post("/auth/guest")
+async def guest_login(request: Request):
+    """游客登录，按 IP 生成唯一 ID"""
+    ip = request.client.host
+    guest_id = _guest_id(ip)
+    token = secrets.token_hex(32)
+    _sessions[token] = {"username": guest_id, "role": "guest"}
+    return {"token": token, "username": guest_id, "role": "guest", "perms": []}
 
 @app.post("/auth/register")
 async def register(req: RegisterRequest):
@@ -88,25 +102,23 @@ async def register(req: RegisterRequest):
         raise HTTPException(status_code=400, detail="不能使用该用户名")
     users[req.username] = {"password": _hash_pw(req.password), "perms": []}
     _save_users(users)
-    return {"ok": True, "message": "注册成功，等待管理员授权"}
+    return {"ok": True, "message": "注册成功"}
 
 @app.post("/auth/login")
 async def login(req: LoginRequest):
     admin_user = os.getenv("ADMIN_USERNAME", "admin")
     admin_pass = os.getenv("ADMIN_PASSWORD", "admin123")
-    # admin 登录
     if req.username == admin_user and req.password == admin_pass:
         token = secrets.token_hex(32)
-        _sessions[token] = {"username": req.username, "role": "admin", "perms": ["task", "host"]}
+        _sessions[token] = {"username": req.username, "role": "admin"}
         return {"token": token, "username": req.username, "role": "admin", "perms": ["task", "host"]}
     # 普通用户登录
     users = _load_users()
     u = users.get(req.username)
     if u and u["password"] == _hash_pw(req.password):
         token = secrets.token_hex(32)
-        perms = u.get("perms", [])
-        _sessions[token] = {"username": req.username, "role": "user", "perms": perms}
-        return {"token": token, "username": req.username, "role": "user", "perms": perms}
+        _sessions[token] = {"username": req.username, "role": "user"}
+        return {"token": token, "username": req.username, "role": "user", "perms": ["task", "host"]}
     raise HTTPException(status_code=401, detail="用户名或密码错误")
 
 @app.post("/auth/logout")
@@ -117,29 +129,22 @@ async def logout(authorization: str = Header(default="")):
 
 @app.get("/auth/users")
 async def list_users(authorization: str = Header(default="")):
-    """admin 查看所有用户"""
     _check_perm(authorization, "admin")
     users = _load_users()
-    return [{"username": k, "perms": v.get("perms", [])} for k, v in users.items()]
-
-@app.post("/auth/grant")
-async def grant_perm(req: GrantRequest, authorization: str = Header(default="")):
-    """admin 授权"""
-    _check_perm(authorization, "admin")
-    users = _load_users()
-    if req.username not in users:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    users[req.username]["perms"] = req.perms
-    _save_users(users)
-    # 更新已登录的 session
-    for s in _sessions.values():
-        if s["username"] == req.username:
-            s["perms"] = req.perms
-    return {"ok": True}
+    return [{"username": k} for k in users.keys()]
 
 def _get_session(authorization: str) -> Optional[dict]:
     token = authorization.replace("Bearer ", "")
     return _sessions.get(token)
+
+def _get_caller(authorization: str) -> str:
+    """获取当前用户名（未登录返回空字符串）"""
+    s = _get_session(authorization)
+    return s["username"] if s else ""
+
+def _is_admin(authorization: str) -> bool:
+    s = _get_session(authorization)
+    return s is not None and s.get("role") == "admin"
 
 def _check_perm(authorization: str, perm: str):
     s = _get_session(authorization)
@@ -147,8 +152,16 @@ def _check_perm(authorization: str, perm: str):
         raise HTTPException(status_code=401, detail="请先登录")
     if perm == "admin" and s["role"] != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")
-    if perm not in ("admin",) and perm not in s.get("perms", []) and s["role"] != "admin":
-        raise HTTPException(status_code=403, detail=f"无权限: {perm}")
+
+def _check_owner(authorization: str, owner: str, resource: str = "资源"):
+    """检查是否是 owner 或 admin"""
+    s = _get_session(authorization)
+    if not s:
+        raise HTTPException(status_code=401, detail="请先登录")
+    if s["role"] == "admin":
+        return  # admin 全部放行
+    if s["username"] != owner:
+        raise HTTPException(status_code=403, detail=f"无权操作他人的{resource}")
 
 
 # ── Hosts 配置管理 ────────────────────────────────────────────
@@ -177,43 +190,55 @@ def _write_hosts(hosts: dict):
 
 
 @app.get("/hosts")
-async def list_hosts():
-    """获取所有配置的目标机器"""
+async def list_hosts(authorization: str = Header(default="")):
+    """获取目标机器列表：admin 看全部，其他用户只看自己的"""
     hosts = _read_hosts()
-    return [{"name": k, **v} for k, v in hosts.items()]
+    caller = _get_caller(authorization)
+    if _is_admin(authorization):
+        return [{"name": k, **v} for k, v in hosts.items()]
+    # 非 admin 只返回自己添加的（owner 字段匹配）
+    return [{"name": k, **v} for k, v in hosts.items()
+            if v.get("owner") == caller]
 
 
 @app.post("/hosts")
 async def add_host(entry: HostEntry, authorization: str = Header(default="")):
-    """新增目标机器"""
-    _check_perm(authorization, "host")
+    _check_perm(authorization, "login")
+    caller = _get_caller(authorization)
     hosts = _read_hosts()
     if entry.name in hosts:
         raise HTTPException(status_code=400, detail=f"主机 '{entry.name}' 已存在")
-    hosts[entry.name] = entry.model_dump(exclude={"name"}, exclude_none=True)
+    data = entry.model_dump(exclude={"name"}, exclude_none=True)
+    data["owner"] = caller          # 记录 owner
+    hosts[entry.name] = data
     _write_hosts(hosts)
     return {"message": "添加成功", "name": entry.name}
 
 
 @app.put("/hosts/{name}")
 async def update_host(name: str, entry: HostEntry, authorization: str = Header(default="")):
-    """更新目标机器配置"""
-    _check_perm(authorization, "host")
+    _check_perm(authorization, "login")
     hosts = _read_hosts()
     if name not in hosts:
         raise HTTPException(status_code=404, detail="主机不存在")
-    hosts[name] = entry.model_dump(exclude={"name"}, exclude_none=True)
+    # 只有 owner 或 admin 可以修改
+    if not _is_admin(authorization) and hosts[name].get("owner") != _get_caller(authorization):
+        raise HTTPException(status_code=403, detail="无权修改他人的机器")
+    data = entry.model_dump(exclude={"name"}, exclude_none=True)
+    data["owner"] = hosts[name].get("owner", _get_caller(authorization))
+    hosts[name] = data
     _write_hosts(hosts)
     return {"message": "更新成功"}
 
 
 @app.delete("/hosts/{name}")
 async def delete_host(name: str, authorization: str = Header(default="")):
-    """删除目标机器"""
-    _check_perm(authorization, "host")
+    _check_perm(authorization, "login")
     hosts = _read_hosts()
     if name not in hosts:
         raise HTTPException(status_code=404, detail="主机不存在")
+    if not _is_admin(authorization) and hosts[name].get("owner") != _get_caller(authorization):
+        raise HTTPException(status_code=403, detail="无权删除他人的机器")
     del hosts[name]
     _write_hosts(hosts)
     return {"message": "删除成功"}
@@ -243,21 +268,20 @@ async def test_host(entry: HostEntry):
 @app.post("/agents/deploy", response_model=AgentInfo)
 async def deploy_agent(host: RemoteHost, background_tasks: BackgroundTasks,
                        authorization: str = Header(default="")):
-    """SSH 登录目标机器，自动检测 OS，上传并启动 Agent（需要 host 权限）"""
-    _check_perm(authorization, "host")
+    """部署 Agent，需要登录（任何登录用户都可以）"""
+    _check_perm(authorization, "login")
+    caller = _get_caller(authorization)
     try:
-        # 同名 Agent 已存在则先移除
         if host.name:
-            existing = next((a for a in agents.values() if a.name == host.name), None)
+            existing = next((a for a in agents.values() if a.name == host.name and a.owner == caller), None)
             if existing:
                 del agents[existing.agent_id]
 
         info = await deploy(host)
         info.password = host.password
         info.ssh_key = host.ssh_key
+        info.owner = caller          # 绑定 owner
         agents[info.agent_id] = info
-
-        # 部署完立即采集一次指标（后台，不阻塞响应）
         asyncio.create_task(_collect_metrics_now(info.agent_id))
         return info
     except Exception as e:
@@ -265,8 +289,9 @@ async def deploy_agent(host: RemoteHost, background_tasks: BackgroundTasks,
 
 
 @app.delete("/agents/{agent_id}")
-async def remove_agent(agent_id: str):
-    """停止并清理目标机器上的 Agent"""
+async def remove_agent(agent_id: str, authorization: str = Header(default="")):
+    info = _get_agent(agent_id)
+    _check_owner(authorization, info.owner, "Agent")
     info = _get_agent(agent_id)
     host = RemoteHost(
         host=info.host, port=info.port,
@@ -278,8 +303,13 @@ async def remove_agent(agent_id: str):
 
 
 @app.get("/agents", response_model=List[AgentInfo])
-async def list_agents():
-    return list(agents.values())
+async def list_agents(authorization: str = Header(default="")):
+    """admin 看全部，其他用户只看自己的"""
+    all_agents = list(agents.values())
+    if _is_admin(authorization):
+        return all_agents
+    caller = _get_caller(authorization)
+    return [a for a in all_agents if a.owner == caller]
 
 
 @app.get("/agents/{agent_id}", response_model=AgentInfo)
@@ -323,16 +353,17 @@ async def ping_agent(agent_id: str):
 @app.post("/tasks", response_model=TaskResult)
 async def submit_task(request: TaskRequest, background_tasks: BackgroundTasks,
                       authorization: str = Header(default="")):
-    """下发自然语言任务到指定 Agent（需要 task 权限）"""
-    _check_perm(authorization, "task")
+    """下发任务，需要登录，且只能对自己的 Agent 下发"""
+    _check_perm(authorization, "login")
+    caller = _get_caller(authorization)
     info = _get_agent(request.agent_id)
-    if info.status == AgentStatus.OFFLINE:
-        raise HTTPException(status_code=503, detail="Agent 离线")
+    _check_owner(authorization, info.owner, "Agent")
 
     task_id = uuid.uuid4().hex[:12]
     task = TaskResult(
         task_id=task_id,
         agent_id=request.agent_id,
+        owner=caller,
         status=TaskStatus.PENDING,
         task=request.task,
         created_at=datetime.now().isoformat(),
@@ -343,8 +374,12 @@ async def submit_task(request: TaskRequest, background_tasks: BackgroundTasks,
 
 
 @app.get("/tasks", response_model=List[TaskResult])
-async def list_tasks(agent_id: Optional[str] = None):
+async def list_tasks(agent_id: Optional[str] = None,
+                     authorization: str = Header(default="")):
     result = list(tasks.values())
+    if not _is_admin(authorization):
+        caller = _get_caller(authorization)
+        result = [t for t in result if t.owner == caller]
     if agent_id:
         result = [t for t in result if t.agent_id == agent_id]
     return sorted(result, key=lambda t: t.created_at, reverse=True)
@@ -360,10 +395,11 @@ async def get_task(task_id: str):
 @app.post("/tasks/{task_id}/chat")
 async def chat_with_task(task_id: str, req: ChatRequest,
                          authorization: str = Header(default="")):
-    """基于任务结果继续与 AI 对话，可选择执行新命令"""
-    _check_perm(authorization, "task")
+    _check_perm(authorization, "login")
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail="任务不存在")
+    task = tasks[task_id]
+    _check_owner(authorization, task.owner, "任务")
 
     task = tasks[task_id]
     info = agents.get(task.agent_id)
@@ -711,6 +747,17 @@ if __name__ == "__main__":
     import uvicorn
     # 挂载 Web 静态文件
     if WEB_DIR.exists():
+        from fastapi.responses import HTMLResponse
+        from fastapi import Response
+
+        @app.get("/", include_in_schema=False)
+        async def serve_index():
+            content = (WEB_DIR / "index.html").read_text()
+            return HTMLResponse(content=content, headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate",
+                "Pragma": "no-cache"
+            })
+
         app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
     host = os.getenv("SERVER_HOST", "0.0.0.0")
     port = int(os.getenv("SERVER_PORT", "8000"))

@@ -195,8 +195,9 @@
       <!-- 用户状态 -->
       <div style="padding:12px 16px;border-top:1px solid #2d3148;font-size:12px">
         <div v-if="isAdmin" style="color:#4ade80;margin-bottom:6px">🔑 {{ adminUser }} (管理员)</div>
-        <div v-else-if="token && token!=='__guest__'" style="color:#60a5fa;margin-bottom:6px">👤 {{ adminUser }}</div>
-        <div v-else style="color:#64748b;margin-bottom:6px">👁 游客模式</div>
+        <div v-else-if="role==='guest'" style="color:#94a3b8;margin-bottom:6px">👁 {{ adminUser }}</div>
+        <div v-else-if="token" style="color:#60a5fa;margin-bottom:6px">👤 {{ adminUser }}</div>
+        <div v-else style="color:#64748b;margin-bottom:6px">👁 未登录</div>
         <button v-if="isAdmin" class="btn btn-ghost btn-sm" style="width:100%" @click="doLogout">退出登录</button>
         <button v-else class="btn btn-ghost btn-sm" style="width:100%" @click="token=null;loginForm.username='';loginForm.password=''">去登录</button>
       </div>
@@ -784,7 +785,7 @@ createApp({
     const loginSuccess = ref('')
     const loginLoading = ref(false)
 
-    function hasPerm(p) { return role.value === 'admin' || perms.value.includes(p) }
+    function hasPerm(p) { return role.value === 'admin' || !!token.value }
 
     async function doLogin() {
       loginError.value = ''
@@ -856,8 +857,22 @@ createApp({
     }
 
     function skipLogin() {
-      token.value = '__guest__'  // 访客标记
-      isAdmin.value = false
+      // 调用游客登录接口，按 IP 生成唯一 ID
+      fetch(`${API}/auth/guest`, { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+          token.value = d.token
+          isAdmin.value = false
+          role.value = d.role
+          perms.value = d.perms || []
+          adminUser.value = d.username
+        })
+        .catch(() => {
+          token.value = '__guest__'
+          isAdmin.value = false
+          role.value = 'guest'
+          adminUser.value = '游客'
+        })
     }
 
     // ── Hosts ──
@@ -869,7 +884,9 @@ createApp({
     const hostForm = ref({ name:'', host:'', port:22, username:'root', password:'', ssh_key:'', deploy_dir:'/opt/agentops' })
 
     async function loadHosts() {
-      const r = await fetch(`${API}/hosts`)
+      const r = await fetch(`${API}/hosts`, {
+        headers: { 'Authorization': `Bearer ${token.value}` }
+      })
       hosts.value = await r.json()
     }
 
@@ -1080,12 +1097,16 @@ createApp({
     const agents = ref([])
 
     async function loadAgents() {
-      const r = await fetch(`${API}/agents`)
+      const r = await fetch(`${API}/agents`, {
+        headers: { 'Authorization': `Bearer ${token.value}` }
+      })
       agents.value = await r.json()
     }
 
     async function pingAgent(id) {
-      const r = await fetch(`${API}/agents/${id}/ping`, { method:'POST' })
+      const r = await fetch(`${API}/agents/${id}/ping`, {
+        method:'POST', headers: { 'Authorization': `Bearer ${token.value}` }
+      })
       const d = await r.json()
       alert(d.online ? `✅ ${id} 在线` : `❌ ${id} 离线`)
       loadAgents()
@@ -1093,7 +1114,9 @@ createApp({
 
     async function removeAgent(id) {
       if (!confirm(`确认移除 Agent ${id}？`)) return
-      await fetch(`${API}/agents/${id}`, { method:'DELETE' })
+      await fetch(`${API}/agents/${id}`, {
+        method:'DELETE', headers: { 'Authorization': `Bearer ${token.value}` }
+      })
       loadAgents()
     }
 
@@ -1110,7 +1133,9 @@ createApp({
     )
 
     async function loadTasks() {
-      const r = await fetch(`${API}/tasks`)
+      const r = await fetch(`${API}/tasks`, {
+        headers: { 'Authorization': `Bearer ${token.value}` }
+      })
       tasks.value = await r.json()
     }
 
@@ -1130,7 +1155,9 @@ createApp({
 
       // 轮询等待结果
       const poll = setInterval(async () => {
-        const r2 = await fetch(`${API}/tasks/${task.task_id}`)
+        const r2 = await fetch(`${API}/tasks/${task.task_id}`, {
+          headers: { 'Authorization': `Bearer ${token.value}` }
+        })
         const t = await r2.json()
         currentTask.value = t
         if (!['pending','running'].includes(t.status)) {

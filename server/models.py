@@ -33,18 +33,19 @@ class LLMProvider(str, Enum):
 
 
 class RemoteHost(BaseModel):
-    name: str = ""               # 来自 hosts.yaml 的名称
+    name: str = ""
     host: str
     port: int = 22
     username: str
     password: Optional[str] = None
-    ssh_key: Optional[str] = None  # 私钥路径（可选）
+    ssh_key: Optional[str] = None
     deploy_dir: str = "/opt/agentops"
 
 
 class AgentInfo(BaseModel):
     agent_id: str
     name: str = ""
+    owner: str = ""              # 创建者用户名或游客 ID
     host: str
     port: int
     username: str
@@ -57,7 +58,7 @@ class AgentInfo(BaseModel):
     agent_port: int = 9000
     created_at: str
     last_seen: Optional[str] = None
-    metrics: Optional[dict] = None   # 最新上报的系统指标
+    metrics: Optional[dict] = None
 
 
 class TaskRequest(BaseModel):
@@ -71,6 +72,7 @@ class TaskRequest(BaseModel):
 class TaskResult(BaseModel):
     task_id: str
     agent_id: str
+    owner: str = ""              # 提交任务的用户
     status: TaskStatus
     task: str
     command: Optional[str] = None
