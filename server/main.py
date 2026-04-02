@@ -20,7 +20,7 @@ if _env_file.exists():
             os.environ[_k.strip()] = _v.strip()  # 强制覆盖
 
 import asyncssh
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -28,7 +28,7 @@ from pydantic import BaseModel
 
 from models import (
     AgentInfo, AgentStatus, RemoteHost, TaskRequest, TaskResult, TaskStatus,
-    ChatRequest
+    ChatRequest, AppDeployRequest, AppDeployResult, AppDeployStatus
 )
 from deployer import deploy, undeploy
 import llm as LLM
@@ -44,6 +44,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 # 内存存储（可替换为数据库）
 agents: Dict[str, AgentInfo] = {}
 tasks: Dict[str, TaskResult] = {}
+app_deploys: Dict[str, AppDeployResult] = {}
 
 # ── 用户与权限系统 ────────────────────────────────────────────
 import secrets, hashlib
@@ -701,6 +702,279 @@ async def _collect_metrics_now(agent_id: str):
         print(f"[metrics] {info.name or agent_id} 采集失败: {e}")
 
 
+# ── 应用部署 ─────────────────────────────────────────────────
+
+@app.post("/deploy/app", response_model=AppDeployResult)
+async def create_app_deploy(request: AppDeployRequest, background_tasks: BackgroundTasks,
+                             authorization: str = Header(default="")):
+    """创建应用部署任务"""
+    _check_perm(authorization, "login")
+    caller = _get_caller(authorization)
+    info = _get_agent(request.agent_id)
+    _check_owner(authorization, info.owner, "Agent")
+
+    deploy_id = uuid.uuid4().hex[:12]
+    result = AppDeployResult(
+        deploy_id=deploy_id,
+        agent_id=request.agent_id,
+        owner=caller,
+        repo_url=request.repo_url,
+        deploy_dir=request.deploy_dir,
+        status=AppDeployStatus.PENDING,
+        created_at=datetime.now().isoformat(),
+    )
+    app_deploys[deploy_id] = result
+    background_tasks.add_task(_run_app_deploy, deploy_id, request)
+    return result
+
+
+@app.post("/deploy/app/{deploy_id}/upload")
+async def upload_config_file(deploy_id: str,
+                              file: UploadFile = File(...),
+                              remote_path: str = "",
+                              authorization: str = Header(default="")):
+    _check_perm(authorization, "login")
+    if deploy_id not in app_deploys:
+        raise HTTPException(status_code=404, detail="部署任务不存在")
+
+    d = app_deploys[deploy_id]
+    _check_owner(authorization, d.owner, "部署任务")
+    info = _get_agent(d.agent_id)
+
+    content = await file.read()
+    # 目标路径：remote_path 为空则放到 deploy_dir 下同名文件
+    target = remote_path or f"{d.deploy_dir}/{file.filename}"
+
+    try:
+        conn = await asyncssh.connect(**_ssh_kwargs(info))
+        try:
+            async with conn.start_sftp_client() as sftp:
+                # 确保目录存在
+                await conn.run(f"mkdir -p {'/'.join(target.split('/')[:-1])}", check=False)
+                async with sftp.open(target, 'wb') as f_remote:
+                    await f_remote.write(content)
+        finally:
+            conn.close()
+        return {"ok": True, "path": target, "size": len(content)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+async def list_app_deploys(authorization: str = Header(default="")):
+    result = list(app_deploys.values())
+    if not _is_admin(authorization):
+        caller = _get_caller(authorization)
+        result = [d for d in result if d.owner == caller]
+    return sorted(result, key=lambda d: d.created_at, reverse=True)
+
+
+@app.post("/deploy/app/{deploy_id}/chat")
+async def chat_with_deploy(deploy_id: str, req: ChatRequest,
+                            authorization: str = Header(default="")):
+    """基于部署结果继续对话，可执行命令或上传文件"""
+    _check_perm(authorization, "login")
+    if deploy_id not in app_deploys:
+        raise HTTPException(status_code=404, detail="部署任务不存在")
+    d = app_deploys[deploy_id]
+    _check_owner(authorization, d.owner, "部署任务")
+    info = _get_agent(d.agent_id)
+
+    if not hasattr(d, 'conversation'):
+        d.__dict__['conversation'] = []
+    conv = d.__dict__.get('conversation', [])
+    context = f"""你是一个 Linux 运维和应用部署专家。
+已部署的仓库：{d.repo_url}
+部署目录：{d.deploy_dir}
+目标服务器：{info.host} ({info.os_version})
+部署状态：{d.status}
+部署日志：
+{d.log[-1000:] if d.log else '无'}
+"""
+    if req.execute:
+        exec_system = context + "\n用户想执行操作，请只返回一条可直接执行的 shell 命令，不要任何解释，不要 markdown 格式。"
+        cmd_messages = [{"role": "system", "content": exec_system}]
+        for msg in conv:
+            if msg["role"] != "system":
+                cmd_messages.append({"role": msg["role"], "content": msg["content"]})
+        cmd_messages.append({"role": "user", "content": req.message})
+
+        command = await LLM.chat(cmd_messages, max_tokens=200)
+        command = command.strip().strip('`').strip()
+        if command.startswith("bash\n") or command.startswith("sh\n"):
+            command = command.split("\n", 1)[1].strip()
+
+        exec_result = await _agent_exec(info, command, 120)
+        success = exec_result.get("success", False)
+        output = exec_result.get("output") or exec_result.get("error", "")
+
+        analysis_messages = [{"role": "system", "content": context}]
+        for msg in conv:
+            if msg["role"] != "system":
+                analysis_messages.append({"role": msg["role"], "content": msg["content"]})
+        analysis_messages += [
+            {"role": "user", "content": req.message},
+            {"role": "assistant", "content": f"执行命令：`{command}`"},
+            {"role": "user", "content": f"命令执行{'成功' if success else '失败'}，输出：\n{output[:1000]}\n\n请分析结果。"}
+        ]
+        reply = await LLM.chat(analysis_messages, max_tokens=500)
+
+        conv.append({"role": "user", "content": req.message})
+        conv.append({"role": "assistant", "content": f"执行命令：`{command}`\n\n{reply}"})
+        d.__dict__['conversation'] = conv
+
+        return {"reply": reply, "command": command, "exec_result": exec_result, "conversation": conv}
+    else:
+        messages = [{"role": "system", "content": context}]
+        for msg in conv:
+            if msg["role"] != "system":
+                messages.append({"role": msg["role"], "content": msg["content"]})
+        messages.append({"role": "user", "content": req.message})
+        reply = await LLM.chat(messages, max_tokens=600)
+        conv.append({"role": "user", "content": req.message})
+        conv.append({"role": "assistant", "content": reply})
+        d.__dict__['conversation'] = conv
+        return {"reply": reply, "command": None, "exec_result": None, "conversation": conv}
+
+
+@app.get("/deploy/app/{deploy_id}", response_model=AppDeployResult)
+async def get_app_deploy(deploy_id: str):
+    if deploy_id not in app_deploys:
+        raise HTTPException(status_code=404, detail="部署任务不存在")
+    return app_deploys[deploy_id]
+
+
+@app.get("/deploy/app", response_model=List[AppDeployResult])
+async def list_app_deploys(authorization: str = Header(default="")):
+    result = list(app_deploys.values())
+    if not _is_admin(authorization):
+        caller = _get_caller(authorization)
+        result = [d for d in result if d.owner == caller]
+    return sorted(result, key=lambda d: d.created_at, reverse=True)
+
+
+async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
+    """后台执行应用部署"""
+    d = app_deploys[deploy_id]
+    info = agents[request.agent_id]
+    log_lines = []
+
+    def log(msg: str):
+        log_lines.append(msg)
+        d.log = "\n".join(log_lines)
+        print(f"[app-deploy] {msg}")
+
+    try:
+        d.status = AppDeployStatus.RUNNING
+        conn = await asyncssh.connect(**_ssh_kwargs(info))
+
+        try:
+            async def run(cmd, check=False):
+                r = await conn.run(cmd, check=check)
+                out = (r.stdout or r.stderr or "").strip()
+                if out:
+                    log(out)
+                return r
+
+            # 1. 检查 git
+            log(f"▶ 开始部署 {request.repo_url}")
+            git_check = await conn.run("which git", check=False)
+            if git_check.exit_status != 0:
+                log("安装 git...")
+                await run("apt-get install -y git 2>/dev/null || yum install -y git 2>/dev/null")
+
+            # 2. clone 或 pull
+            check_dir = await conn.run(f"test -d {request.deploy_dir}/.git && echo exists", check=False)
+            if "exists" in (check_dir.stdout or ""):
+                log(f"▶ 目录已存在，执行 git pull ({request.branch})")
+                await run(f"cd {request.deploy_dir} && git fetch origin && git checkout {request.branch} && git pull origin {request.branch}")
+            else:
+                log(f"▶ git clone {request.repo_url} -> {request.deploy_dir}")
+                await run(f"mkdir -p {request.deploy_dir}")
+                await run(f"git clone -b {request.branch} {request.repo_url} {request.deploy_dir}")
+
+            # 3. 安装依赖
+            if request.install_cmd:
+                log(f"▶ 安装依赖: {request.install_cmd}")
+                await run(f"cd {request.deploy_dir} && {request.install_cmd}")
+            else:
+                # AI 自动分析仓库结构，推断安装命令
+                log("▶ AI 分析仓库结构，自动推断安装命令...")
+                dir_info = await conn.run(
+                    f"ls {request.deploy_dir} && echo '---' && "
+                    f"cat {request.deploy_dir}/requirements.txt 2>/dev/null || "
+                    f"cat {request.deploy_dir}/package.json 2>/dev/null || "
+                    f"cat {request.deploy_dir}/Pipfile 2>/dev/null || "
+                    f"cat {request.deploy_dir}/pyproject.toml 2>/dev/null || echo 'no deps file'",
+                    check=False
+                )
+                ai_prompt = f"""分析以下仓库文件，给出安装依赖的 shell 命令（只返回命令，不要解释）：
+目录结构和依赖文件：
+{dir_info.stdout[:2000]}
+
+规则：
+- 有 requirements.txt → pip install -r requirements.txt
+- 有 package.json → npm install
+- 有 Pipfile → pipenv install
+- 没有依赖文件 → 返回空字符串
+只返回命令，没有依赖则返回空字符串。"""
+                install_cmd = await LLM.chat([{"role": "user", "content": ai_prompt}], max_tokens=100)
+                install_cmd = install_cmd.strip().strip('`')
+                if install_cmd and install_cmd != '""' and len(install_cmd) > 2:
+                    log(f"▶ AI 推断安装命令: {install_cmd}")
+                    await run(f"cd {request.deploy_dir} && {install_cmd}")
+                else:
+                    log("▶ 未检测到依赖文件，跳过安装")
+
+            # 4. 推断启动命令（如果用户没填）
+            start_cmd = request.start_cmd
+            if not start_cmd:
+                log("▶ AI 自动推断启动命令...")
+                files_out = await conn.run(
+                    f"ls {request.deploy_dir}",
+                    check=False
+                )
+                ai_prompt2 = f"""分析以下仓库文件列表，给出启动应用的 shell 命令（只返回命令，不要解释）：
+文件列表：
+{files_out.stdout[:500]}
+部署目录：{request.deploy_dir}
+
+规则：
+- 有 main.py / app.py / server.py / run.py → python3 <文件名>
+- 有 manage.py → python3 manage.py runserver 0.0.0.0:8000
+- 有 package.json → npm start
+- 有 Makefile → make run
+只返回一条命令，如 python3 server/main.py"""
+                start_cmd = (await LLM.chat([{"role": "user", "content": ai_prompt2}], max_tokens=100)).strip().strip('`')
+                if start_cmd:
+                    log(f"▶ AI 推断启动命令: {start_cmd}")
+
+            # 5. 启动
+            if request.use_systemd and request.service_name and start_cmd:
+                service_name = request.service_name
+                log(f"▶ 注册 systemd 服务: {service_name}")
+                service_content = f"[Unit]\nDescription={service_name}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory={request.deploy_dir}\nExecStart={start_cmd}\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\n"
+                async with conn.start_sftp_client() as sftp:
+                    async with sftp.open(f"/etc/systemd/system/{service_name}.service", 'w') as f:
+                        await f.write(service_content)
+                await run(f"systemctl daemon-reload && systemctl enable {service_name} && systemctl restart {service_name}")
+                await asyncio.sleep(2)
+                status_r = await conn.run(f"systemctl is-active {service_name}", check=False)
+                log(f"服务状态: {(status_r.stdout or '').strip()}")
+            elif start_cmd:
+                log(f"▶ 后台启动: {start_cmd}")
+                await run(f"cd {request.deploy_dir} && nohup {start_cmd} > app.log 2>&1 &")
+
+            log("✅ 部署完成")
+            d.status = AppDeployStatus.SUCCESS
+
+        finally:
+            conn.close()
+
+    except Exception as e:
+        log(f"❌ 部署失败: {e}")
+        d.status = AppDeployStatus.FAILED
+    finally:
+        d.completed_at = datetime.now().isoformat()
+
+
 async def _run_task(task_id: str, request: TaskRequest):
     """后台执行：LLM 生成命令 → Agent 执行 → LLM 分析结果"""
     task = tasks[task_id]
@@ -745,10 +1019,8 @@ async def _run_task(task_id: str, request: TaskRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    # 挂载 Web 静态文件
     if WEB_DIR.exists():
         from fastapi.responses import HTMLResponse
-        from fastapi import Response
 
         @app.get("/", include_in_schema=False)
         async def serve_index():
@@ -758,7 +1030,11 @@ if __name__ == "__main__":
                 "Pragma": "no-cache"
             })
 
-        app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
+        # 只挂载静态资源子目录，不覆盖 API 路由
+        static_dir = WEB_DIR / "static"
+        if static_dir.exists():
+            app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
     host = os.getenv("SERVER_HOST", "0.0.0.0")
     port = int(os.getenv("SERVER_PORT", "8000"))
     uvicorn.run(app, host=host, port=port)

@@ -191,6 +191,9 @@
         <div class="nav-item" v-if="role==='admin'" :class="{active: page==='users'}" @click="page='users'; loadUsers()">
           <span class="nav-icon">👥</span> 用户管理
         </div>
+        <div class="nav-item" :class="{active: page==='appdeploy'}" @click="page='appdeploy'; loadAppDeploys()">
+          <span class="nav-icon">🚀</span> 应用部署
+        </div>
       </nav>
       <!-- 用户状态 -->
       <div style="padding:12px 16px;border-top:1px solid #2d3148;font-size:12px">
@@ -594,6 +597,113 @@
         </div>
       </div>
 
+      <!-- ── 应用部署 ── -->
+      <div v-if="page==='appdeploy'">
+        <div class="page-title">应用部署</div>
+        <div class="alert alert-error" v-if="appDeployError">{{ appDeployError }}</div>
+        <div class="alert alert-success" v-if="appDeploySuccess">{{ appDeploySuccess }}</div>
+
+        <!-- 新建部署 -->
+        <div class="card">
+          <div class="card-title">从 GitHub 部署应用</div>
+          <div class="form-row">
+            <div class="form-group" style="flex:2">
+              <label>GitHub 仓库地址</label>
+              <input v-model="appForm.repo_url" placeholder="https://github.com/user/repo.git" />
+            </div>
+            <div class="form-group" style="max-width:120px">
+              <label>分支</label>
+              <input v-model="appForm.branch" placeholder="main" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex:2">
+              <label>目标 Agent</label>
+              <select v-model="appForm.agent_id">
+                <option value="">-- 选择目标服务器 --</option>
+                <option v-for="a in agents" :key="a.agent_id" :value="a.agent_id">
+                  {{ a.name || a.agent_id }} ({{ a.host }})
+                </option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>部署目录</label>
+              <input v-model="appForm.deploy_dir" placeholder="/opt/app" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>安装依赖命令（可选）</label>
+              <input v-model="appForm.install_cmd" placeholder="pip install -r requirements.txt" />
+            </div>
+            <div class="form-group">
+              <label>启动命令（可选）</label>
+              <input v-model="appForm.start_cmd" placeholder="python3 app.py" />
+            </div>
+          </div>
+          <div class="form-row" style="align-items:center">
+            <div class="form-group" style="flex:0;min-width:auto">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" v-model="appForm.use_systemd" style="width:auto" />
+                注册为 systemd 服务
+              </label>
+            </div>
+            <div class="form-group" v-if="appForm.use_systemd">
+              <label>服务名称</label>
+              <input v-model="appForm.service_name" placeholder="myapp" />
+            </div>
+          </div>
+
+          <!-- 配置文件上传 -->
+          <div style="margin-top:8px;margin-bottom:12px">
+            <div class="card-title">上传配置文件（可选，部署后自动上传到服务器）</div>
+            <div v-for="(cf, i) in appForm.configFiles" :key="i"
+                 style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+              <input type="file" @change="e => cf.file = e.target.files[0]"
+                     style="flex:1;padding:4px" />
+              <input v-model="cf.remote_path" placeholder="远端路径，如 /opt/app/.env"
+                     style="flex:1" />
+              <button class="btn btn-danger btn-sm" @click="appForm.configFiles.splice(i,1)">✕</button>
+            </div>
+            <button class="btn btn-ghost btn-sm" @click="appForm.configFiles.push({file:null,remote_path:''})">
+              + 添加配置文件
+            </button>
+          </div>
+
+          <div class="flex-end">
+            <button class="btn btn-primary" @click="startAppDeploy"
+                    :disabled="!appForm.repo_url||!appForm.agent_id||appDeploying">
+              {{ appDeploying ? '⏳ 部署中...' : '🚀 开始部署' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- 部署历史 -->
+        <div class="card" v-if="appDeployList.length">
+          <div class="card-title">部署历史</div>
+          <table>
+            <thead>
+              <tr><th>时间</th><th>仓库</th><th>目标服务器</th><th>状态</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="d in appDeployList" :key="d.deploy_id">
+                <td style="font-size:12px;white-space:nowrap">{{ d.created_at.slice(0,19).replace('T',' ') }}</td>
+                <td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                  {{ d.repo_url.replace('https://github.com/','') }}
+                </td>
+                <td><span class="tag">{{ agentName(d.agent_id) }}</span></td>
+                <td>
+                  <span class="badge" :class="d.status==='success'?'badge-success':d.status==='failed'?'badge-failed':d.status==='running'?'badge-running':'badge-pending'">
+                    {{ d.status }}
+                  </span>
+                </td>
+                <td><button class="btn btn-ghost btn-sm" @click="viewDeployLog(d)">查看日志</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div><!-- /main -->
   </div><!-- /layout -->
 
@@ -743,8 +853,72 @@
     </div>
   </div>
 
-  <!-- 任务详情 Modal -->
-  <div class="modal-overlay" v-if="detailTask" @click.self="detailTask=null">
+  <!-- 部署日志 Modal -->
+  <div class="modal-overlay" v-if="deployLogData" @click.self="deployLogData=null">
+    <div class="modal" style="width:700px;max-height:90vh;display:flex;flex-direction:column">
+      <div class="modal-title">部署日志 & 对话</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:8px">
+        {{ deployLogData.repo_url?.replace('https://github.com/','') }} → {{ agentName(deployLogData.agent_id) }}
+        <span class="badge" :class="deployLogData.status==='success'?'badge-success':deployLogData.status==='failed'?'badge-failed':'badge-running'" style="margin-left:8px">{{ deployLogData.status }}</span>
+      </div>
+
+      <!-- 日志 -->
+      <div class="output-box" style="max-height:200px;color:#e2e8f0;flex-shrink:0">{{ deployLogData.log || '暂无日志' }}</div>
+
+      <!-- 对话历史 -->
+      <div v-if="deployLogData.conversation?.length"
+           style="flex:1;overflow-y:auto;margin-top:12px;max-height:250px">
+        <div v-for="(msg,i) in deployLogData.conversation.filter(m=>m.role!=='system')" :key="i"
+             style="margin-bottom:10px">
+          <div v-if="msg.role==='user'" style="display:flex;justify-content:flex-end">
+            <div style="background:#2d3148;border-radius:10px 10px 2px 10px;padding:8px 12px;max-width:80%;font-size:13px">
+              {{ msg.content }}
+            </div>
+          </div>
+          <div v-else style="display:flex;gap:8px;align-items:flex-start">
+            <div style="width:24px;height:24px;border-radius:50%;background:#7c6af7;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">AI</div>
+            <div class="analysis-box" style="margin:0;flex:1;font-size:13px" v-html="renderMd(msg.content)"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 输入框 -->
+      <div style="margin-top:12px;border-top:1px solid #2d3148;padding-top:12px">
+        <!-- 上传文件 -->
+        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+          <input type="file" ref="deployFileInput" @change="onDeployFileChange"
+                 style="flex:1;font-size:12px;padding:4px" />
+          <input v-model="deployUploadPath" placeholder="远端路径，如 /opt/app/.env"
+                 style="flex:1;font-size:12px" />
+          <button class="btn btn-ghost btn-sm" @click="uploadDeployFile" :disabled="!deployFile">
+            📤 上传
+          </button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <textarea v-model="deployChatInput"
+            placeholder="继续操作，如：帮我安装依赖、启动服务、查看日志..."
+            style="flex:1;min-height:50px;max-height:100px;resize:vertical;font-size:13px"
+            @keydown.ctrl.enter="sendDeployChat(false)"></textarea>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <button class="btn btn-ghost btn-sm" @click="sendDeployChat(false)" :disabled="deployChatLoading||!deployChatInput">
+              {{ deployChatLoading ? '...' : '💬 提问' }}
+            </button>
+            <button class="btn btn-primary btn-sm" @click="sendDeployChat(true)" :disabled="deployChatLoading||!deployChatInput">
+              {{ deployChatLoading ? '...' : '⚡ 执行' }}
+            </button>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#475569;margin-top:4px">Ctrl+Enter 发送</div>
+      </div>
+
+      <div class="flex-end" style="margin-top:8px">
+        <button class="btn btn-ghost btn-sm" @click="refreshDeployLog">🔄 刷新</button>
+        <button class="btn btn-ghost" @click="deployLogData=null">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 任务详情 Modal -->  <div class="modal-overlay" v-if="detailTask" @click.self="detailTask=null">
     <div class="modal" style="width:600px">
       <div class="modal-title">任务详情</div>
       <div style="margin-bottom:8px;font-size:13px;color:#94a3b8">{{ detailTask.task }}</div>
@@ -1020,6 +1194,154 @@ createApp({
       if (r.ok) { u.perms = newPerms }
     }
 
+    // ── App Deploy ──
+    const appDeployList = ref([])
+    const appDeployError = ref('')
+    const appDeploySuccess = ref('')
+    const appDeploying = ref(false)
+    const deployLogData = ref(null)
+    const appForm = ref({
+      repo_url: '', branch: 'main', agent_id: '',
+      deploy_dir: '/opt/app', install_cmd: '', start_cmd: '',
+      use_systemd: false, service_name: '', configFiles: []
+    })
+
+    async function loadAppDeploys() {
+      const r = await fetch(`${API}/deploy/app`, {
+        headers: { 'Authorization': `Bearer ${token.value}` }
+      })
+      if (r.ok) appDeployList.value = await r.json()
+    }
+
+    async function startAppDeploy() {
+      appDeployError.value = ''
+      appDeploying.value = true
+      try {
+        // 1. 创建部署任务
+        const body = {
+          agent_id: appForm.value.agent_id,
+          repo_url: appForm.value.repo_url,
+          branch: appForm.value.branch,
+          deploy_dir: appForm.value.deploy_dir,
+          install_cmd: appForm.value.install_cmd,
+          start_cmd: appForm.value.start_cmd,
+          use_systemd: appForm.value.use_systemd,
+          service_name: appForm.value.service_name,
+        }
+        const r = await fetch(`${API}/deploy/app`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.value}` },
+          body: JSON.stringify(body)
+        })
+        if (!r.ok) {
+          const e = await r.json()
+          appDeployError.value = e.detail || '部署失败'
+          appDeploying.value = false
+          return
+        }
+        const deploy = await r.json()
+
+        // 2. 上传配置文件
+        for (const cf of appForm.value.configFiles) {
+          if (!cf.file) continue
+          const fd = new FormData()
+          fd.append('file', cf.file)
+          if (cf.remote_path) fd.append('remote_path', cf.remote_path)
+          await fetch(`${API}/deploy/app/${deploy.deploy_id}/upload`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token.value}` },
+            body: fd
+          })
+        }
+
+        appDeploySuccess.value = `部署任务已创建: ${deploy.deploy_id}`
+        deployLogData.value = deploy
+        await loadAppDeploys()
+        setTimeout(() => appDeploySuccess.value = '', 5000)
+
+        // 轮询日志
+        const poll = setInterval(async () => {
+          const r2 = await fetch(`${API}/deploy/app/${deploy.deploy_id}`, {
+            headers: { 'Authorization': `Bearer ${token.value}` }
+          })
+          const d = await r2.json()
+          if (deployLogData.value?.deploy_id === d.deploy_id) deployLogData.value = d
+          if (['success','failed'].includes(d.status)) {
+            clearInterval(poll)
+            appDeploying.value = false
+            loadAppDeploys()
+          }
+        }, 2000)
+
+      } catch(e) {
+        appDeployError.value = `请求失败: ${e.message}`
+        appDeploying.value = false
+      }
+    }
+
+    function viewDeployLog(d) { deployLogData.value = d }
+
+    async function refreshDeployLog() {
+      if (!deployLogData.value) return
+      const r = await fetch(`${API}/deploy/app/${deployLogData.value.deploy_id}`, {
+        headers: { 'Authorization': `Bearer ${token.value}` }
+      })
+      if (r.ok) deployLogData.value = await r.json()
+    }
+
+    // ── Deploy Chat ──
+    const deployChatInput = ref('')
+    const deployChatLoading = ref(false)
+    const deployFile = ref(null)
+    const deployUploadPath = ref('')
+
+    function onDeployFileChange(e) { deployFile.value = e.target.files[0] }
+
+    async function uploadDeployFile() {
+      if (!deployFile.value || !deployLogData.value) return
+      const fd = new FormData()
+      fd.append('file', deployFile.value)
+      if (deployUploadPath.value) fd.append('remote_path', deployUploadPath.value)
+      const r = await fetch(`${API}/deploy/app/${deployLogData.value.deploy_id}/upload`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token.value}` },
+        body: fd
+      })
+      const d = await r.json()
+      if (d.ok) {
+        alert(`✅ 文件已上传到 ${d.path}`)
+        deployFile.value = null
+        deployUploadPath.value = ''
+      } else {
+        alert(`❌ 上传失败: ${d.detail}`)
+      }
+    }
+
+    async function sendDeployChat(execute) {
+      if (!deployChatInput.value.trim() || !deployLogData.value) return
+      deployChatLoading.value = true
+      const msg = deployChatInput.value.trim()
+      deployChatInput.value = ''
+
+      if (!deployLogData.value.conversation) deployLogData.value.conversation = []
+      deployLogData.value.conversation.push({ role: 'user', content: msg })
+
+      try {
+        const r = await fetch(`${API}/deploy/app/${deployLogData.value.deploy_id}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.value}` },
+          body: JSON.stringify({ task_id: deployLogData.value.deploy_id, message: msg, execute })
+        })
+        if (r.ok) {
+          const d = await r.json()
+          deployLogData.value.conversation = d.conversation
+        }
+      } catch(e) {
+        deployLogData.value.conversation.push({ role: 'assistant', content: `请求失败: ${e.message}` })
+      }
+      deployChatLoading.value = false
+    }
+
     // ── Monitor ──
     let monitorTimer = null
     function startMonitor() {
@@ -1237,6 +1559,11 @@ createApp({
       tasks, currentTask, detailTask, submitting, historyFilter, taskForm,
       filteredTasks, loadTasks, submitTask, viewTask, agentName,
       chatInput, chatLoading, sendChat, renderMd,
+      appDeployList, appDeployError, appDeploySuccess, appDeploying,
+      deployLogData, appForm, loadAppDeploys, startAppDeploy,
+      viewDeployLog, refreshDeployLog,
+      deployChatInput, deployChatLoading, deployFile, deployUploadPath,
+      onDeployFileChange, uploadDeployFile, sendDeployChat,
     }
   }
 }).mount('#app')
