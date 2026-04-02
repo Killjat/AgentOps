@@ -1,7 +1,6 @@
 """SSH 自动部署 - 检测目标系统 OS，上传对应 Agent，启动服务"""
 import asyncio
 import uuid
-import shutil
 import os
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +11,7 @@ import asyncssh
 from models import AgentInfo, OSType, AgentStatus, RemoteHost
 
 # Agent 脚本路径（相对于本文件）
-AGENT_SCRIPT = Path(__file__).parent.parent / "agent" / "agent.py"
+AGENT_SCRIPT = Path(__file__).parent.parent / "agent" / "agent.py"  # server/ -> root -> agent/
 AGENT_PORT = 9000
 
 
@@ -22,10 +21,11 @@ async def _connect(host: RemoteHost) -> asyncssh.SSHClientConnection:
         host=host.host,
         port=host.port,
         username=host.username,
-        known_hosts=None,          # 不验证 host key（内网场景）
+        known_hosts=None,
     )
     if host.password:
         kwargs["password"] = host.password
+        kwargs["preferred_auth"] = "password,keyboard-interactive"
     if host.ssh_key:
         kwargs["client_keys"] = [host.ssh_key]
 
@@ -119,36 +119,32 @@ async def deploy(host: RemoteHost) -> AgentInfo:
         print("[deploy] 安装依赖 ...")
         await _install_deps(conn, py)
 
-        # 6. 启动 Agent（后台运行）
+        agent_id = f"agent-{uuid.uuid4().hex[:8]}"
+
+        # 6. 启动 Agent（后台运行，带上 server 地址和 agent_id 用于上报）
+        server_url = os.getenv("SERVER_URL", "")
         print(f"[deploy] 启动 Agent，监听端口 {AGENT_PORT} ...")
+        extra = f"--agent-id {agent_id}"
+        if server_url:
+            extra += f" --server {server_url}"
+
         if os_type == OSType.WINDOWS:
             start_cmd = (
                 f"cd /d {deploy_dir} && "
-                f"start /b {py} agent.py --port {AGENT_PORT} "
+                f"start /b {py} agent.py --port {AGENT_PORT} {extra} "
                 f"> agent.log 2>&1"
             )
         else:
             start_cmd = (
                 f"cd {host.deploy_dir} && "
                 f"pkill -f 'agent.py' 2>/dev/null; "
-                f"nohup {py} agent.py --port {AGENT_PORT} "
+                f"nohup {py} agent.py --port {AGENT_PORT} {extra} "
                 f"> agent.log 2>&1 &"
             )
         await conn.run(start_cmd, check=False)
-
-        # 7. 等待 Agent 启动
-        await asyncio.sleep(2)
-        check = await conn.run(
-            f"curl -s http://localhost:{AGENT_PORT}/ping 2>/dev/null || "
-            f"wget -qO- http://localhost:{AGENT_PORT}/ping 2>/dev/null",
-            check=False
-        )
-        if "pong" not in (check.stdout or "").lower():
-            print("[deploy] 警告: Agent 启动确认超时，可能仍在初始化")
-
-        agent_id = f"agent-{uuid.uuid4().hex[:8]}"
         info = AgentInfo(
             agent_id=agent_id,
+            name=host.name,
             host=host.host,
             port=host.port,
             username=host.username,

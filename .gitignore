@@ -215,6 +215,8 @@ dmypy.json
 # ============================================
 # 服务器配置（含密码，不提交）
 agentops/hosts.yaml
+hosts.yaml
+users.json
 
 # 不要忽略示例配置文件
 !.env.example
@@ -229,3 +231,8 @@ agentops/hosts.yaml
 !start*.sh
 !stop*.sh
 .
+
+# Node
+node_modules/
+package.json
+package-lock.json

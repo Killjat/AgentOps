@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CyberAgentOps</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+  /* Login */
+  .login-wrap { display:flex; align-items:center; justify-content:center; height:100vh; background:#0f1117; }
+  .login-box { background:#1a1d27; border:1px solid #2d3148; border-radius:14px; padding:40px; width:360px; }
+  .login-title { font-size:22px; font-weight:700; color:#7c6af7; margin-bottom:6px; }
+  .login-sub { font-size:13px; color:#64748b; margin-bottom:28px; }
+  .layout { display: flex; height: 100vh; }
+  .sidebar { width: 220px; background: #1a1d27; border-right: 1px solid #2d3148;
+             display: flex; flex-direction: column; flex-shrink: 0; }
+  .main { flex: 1; overflow-y: auto; padding: 24px; }
+
+  /* Sidebar */
+  .logo { padding: 20px 16px; font-size: 18px; font-weight: 700;
+          color: #7c6af7; border-bottom: 1px solid #2d3148; }
+  .logo span { font-size: 11px; color: #64748b; display: block; margin-top: 2px; font-weight: 400; }
+  .nav-item { padding: 12px 16px; cursor: pointer; display: flex; align-items: center;
+              gap: 10px; color: #94a3b8; transition: all .15s; font-size: 14px; }
+  .nav-item:hover { background: #252840; color: #e2e8f0; }
+  .nav-item.active { background: #252840; color: #7c6af7; border-left: 3px solid #7c6af7; }
+  .nav-icon { font-size: 16px; }
+
+  /* Cards */
+  .page-title { font-size: 20px; font-weight: 600; margin-bottom: 20px; }
+  .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 10px;
+          padding: 20px; margin-bottom: 16px; }
+  .card-title { font-size: 14px; font-weight: 600; color: #94a3b8;
+                text-transform: uppercase; letter-spacing: .5px; margin-bottom: 16px; }
+
+  /* Form */
+  .form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 160px; }
+  label { font-size: 12px; color: #64748b; }
+  input, select, textarea {
+    background: #0f1117; border: 1px solid #2d3148; border-radius: 6px;
+    color: #e2e8f0; padding: 8px 12px; font-size: 14px; outline: none;
+    transition: border-color .15s; width: 100%;
+  }
+  input:focus, select:focus, textarea:focus { border-color: #7c6af7; }
+  textarea { resize: vertical; min-height: 80px; font-family: inherit; }
+  select option { background: #1a1d27; }
+
+  /* Buttons */
+  .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer;
+         font-size: 13px; font-weight: 500; transition: all .15s; }
+  .btn-primary { background: #7c6af7; color: #fff; }
+  .btn-primary:hover { background: #6b5ce7; }
+  .btn-primary:disabled { background: #3d3a5c; color: #64748b; cursor: not-allowed; }
+  .btn-danger { background: #ef4444; color: #fff; }
+  .btn-danger:hover { background: #dc2626; }
+  .btn-ghost { background: transparent; color: #94a3b8; border: 1px solid #2d3148; }
+  .btn-ghost:hover { border-color: #7c6af7; color: #7c6af7; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 12px; color: #64748b; font-weight: 500;
+       border-bottom: 1px solid #2d3148; font-size: 12px; text-transform: uppercase; }
+  td { padding: 12px; border-bottom: 1px solid #1e2235; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #1e2235; }
+
+  /* Status badges */
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
+           border-radius: 20px; font-size: 11px; font-weight: 500; }
+  .badge-online  { background: #14532d33; color: #4ade80; }
+  .badge-offline { background: #7f1d1d33; color: #f87171; }
+  .badge-busy    { background: #78350f33; color: #fbbf24; }
+  .badge-success { background: #14532d33; color: #4ade80; }
+  .badge-failed  { background: #7f1d1d33; color: #f87171; }
+  .badge-running { background: #1e3a5f33; color: #60a5fa; }
+  .badge-pending { background: #2d2d2d; color: #94a3b8; }
+
+  /* Task output */
+  .output-box { background: #0a0c14; border: 1px solid #2d3148; border-radius: 6px;
+                padding: 12px; font-family: 'SF Mono', monospace; font-size: 12px;
+                color: #a3e635; white-space: pre-wrap; max-height: 300px; overflow-y: auto;
+                margin-top: 8px; line-height: 1.6; }
+  .analysis-box { background: #1a1d27; border-left: 3px solid #7c6af7; padding: 12px;
+                  font-size: 13px; color: #cbd5e1; margin-top: 8px; border-radius: 0 6px 6px 0;
+                  line-height: 1.7; }
+
+  /* Misc */
+  .empty { text-align: center; color: #475569; padding: 40px; font-size: 14px; }
+  .tag { background: #252840; color: #94a3b8; padding: 2px 8px; border-radius: 4px;
+         font-size: 11px; font-family: monospace; }
+  .flex-end { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .alert { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
+  .alert-error { background: #7f1d1d33; border: 1px solid #ef444433; color: #fca5a5; }
+  .alert-success { background: #14532d33; border: 1px solid #4ade8033; color: #86efac; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .dot-green { background: #4ade80; }
+  .dot-red { background: #f87171; }
+  .dot-yellow { background: #fbbf24; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .modal-overlay { position: fixed; inset: 0; background: #00000088;
+                   display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px;
+           padding: 24px; width: 480px; max-width: 95vw; }
+  .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
+  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- 登录页 -->
+  <div class="login-wrap" v-if="!token">
+    <div class="login-box">
+      <div class="login-title">CyberAgentOps</div>
+
+      <!-- 登录/注册 tab -->
+      <div style="display:flex;gap:0;margin-bottom:24px;border:1px solid #2d3148;border-radius:8px;overflow:hidden">
+        <div @click="authTab='login'" style="flex:1;text-align:center;padding:8px;cursor:pointer;font-size:13px;transition:all .15s"
+             :style="authTab==='login'?'background:#7c6af7;color:#fff':'color:#64748b'">登录</div>
+        <div @click="authTab='register'" style="flex:1;text-align:center;padding:8px;cursor:pointer;font-size:13px;transition:all .15s"
+             :style="authTab==='register'?'background:#7c6af7;color:#fff':'color:#64748b'">注册</div>
+      </div>
+
+      <div class="alert alert-error" v-if="loginError" style="margin-bottom:14px">{{ loginError }}</div>
+      <div class="alert alert-success" v-if="loginSuccess" style="margin-bottom:14px">{{ loginSuccess }}</div>
+
+      <!-- 登录表单 -->
+      <div v-if="authTab==='login'">
+        <div class="form-group" style="margin-bottom:12px">
+          <label>用户名</label>
+          <input id="cyber-login-user" type="text" placeholder="admin" style="background:#0f1117;border:1px solid #2d3148;border-radius:6px;color:#e2e8f0;padding:8px 12px;font-size:14px;width:100%" />
+        </div>
+        <div class="form-group" style="margin-bottom:20px">
+          <label>密码</label>
+          <input id="cyber-login-pass" type="password" placeholder="••••••••" style="background:#0f1117;border:1px solid #2d3148;border-radius:6px;color:#e2e8f0;padding:8px 12px;font-size:14px;width:100%" />
+        </div>
+        <button class="btn btn-primary" style="width:100%" @click="doLogin" :disabled="loginLoading">
+          {{ loginLoading ? '登录中...' : '登录' }}
+        </button>
+      </div>
+
+      <!-- 注册表单 -->
+      <div v-else>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>用户名</label>
+          <input id="cyber-reg-user" type="text" placeholder="至少2位" style="background:#0f1117;border:1px solid #2d3148;border-radius:6px;color:#e2e8f0;padding:8px 12px;font-size:14px;width:100%" />
+        </div>
+        <div class="form-group" style="margin-bottom:20px">
+          <label>密码</label>
+          <input id="cyber-reg-pass" type="password" placeholder="至少4位" style="background:#0f1117;border:1px solid #2d3148;border-radius:6px;color:#e2e8f0;padding:8px 12px;font-size:14px;width:100%" />
+        </div>
+        <button class="btn btn-primary" style="width:100%" @click="doRegister" :disabled="loginLoading">
+          {{ loginLoading ? '注册中...' : '注册账号' }}
+        </button>
+        <div style="margin-top:10px;font-size:12px;color:#475569;text-align:center">注册后默认只读，管理员可授权执行操作</div>
+      </div>
+
+      <div style="margin-top:16px;text-align:center;font-size:12px;color:#475569">
+        <span style="color:#7c6af7;cursor:pointer" @click="skipLogin">以游客身份浏览 →</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 主界面 -->
+  <div class="layout" v-else>
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="logo">CyberAgentOps</div>
+      <nav style="padding: 8px 0; flex:1">
+        <div class="nav-item" :class="{active: page==='monitor'}" @click="page='monitor'; startMonitor()">
+          <span class="nav-icon">📡</span> 实时监控
+        </div>
+        <div class="nav-item" :class="{active: page==='hosts'}" @click="page='hosts'">
+          <span class="nav-icon">🖥</span> 目标机器
+        </div>
+        <div class="nav-item" :class="{active: page==='agents'}" @click="page='agents'; loadAgents()">
+          <span class="nav-icon">🤖</span> Agent 管理
+        </div>
+        <div class="nav-item" :class="{active: page==='tasks'}" @click="page='tasks'; loadTasks()">
+          <span class="nav-icon">⚡</span> 任务执行
+        </div>
+        <div class="nav-item" :class="{active: page==='history'}" @click="page='history'; loadTasks()">
+          <span class="nav-icon">📋</span> 执行历史
+        </div>
+        <div class="nav-item" v-if="role==='admin'" :class="{active: page==='users'}" @click="page='users'; loadUsers()">
+          <span class="nav-icon">👥</span> 用户管理
+        </div>
+      </nav>
+      <!-- 用户状态 -->
+      <div style="padding:12px 16px;border-top:1px solid #2d3148;font-size:12px">
+        <div v-if="isAdmin" style="color:#4ade80;margin-bottom:6px">🔑 {{ adminUser }} (管理员)</div>
+        <div v-else-if="token && token!=='__guest__'" style="color:#60a5fa;margin-bottom:6px">👤 {{ adminUser }}</div>
+        <div v-else style="color:#64748b;margin-bottom:6px">👁 游客模式</div>
+        <button v-if="isAdmin" class="btn btn-ghost btn-sm" style="width:100%" @click="doLogout">退出登录</button>
+        <button v-else class="btn btn-ghost btn-sm" style="width:100%" @click="token=null;loginForm.username='';loginForm.password=''">去登录</button>
+      </div>
+    </div>
+
+    <!-- Main -->
+    <div class="main">
+
+      <!-- ── 实时监控 ── -->
+      <div v-if="page==='monitor'">
+        <div class="section-header">
+          <div class="page-title">实时监控</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:12px;color:#64748b">每30秒自动刷新</span>
+            <span class="dot dot-green" style="animation:pulse 1.5s infinite"></span>
+            <button class="btn btn-ghost" @click="refreshMonitor">刷新</button>
+          </div>
+        </div>
+
+        <div v-if="!agents.length" class="empty card">暂无 Agent，请先部署</div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px">
+          <div v-for="a in agents" :key="a.agent_id" class="card" style="padding:0;overflow:hidden">
+            <!-- 卡片头 -->
+            <div style="padding:14px 16px;border-bottom:1px solid #2d3148;display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-weight:600;font-size:15px">{{ a.name || a.agent_id }}</div>
+                <div style="font-size:12px;color:#64748b;margin-top:2px">{{ a.host }} · {{ a.os_version }}</div>
+              </div>
+              <span class="badge" :class="'badge-'+a.status">
+                <span class="dot" :class="a.status==='online'?'dot-green':a.status==='busy'?'dot-yellow':'dot-red'"></span>
+                {{ a.status }}
+              </span>
+            </div>
+
+            <!-- 无数据 -->
+            <div v-if="!a.metrics" style="padding:20px;text-align:center;color:#475569;font-size:13px">
+              等待上报数据...
+              <div style="font-size:11px;margin-top:4px">Agent 启动后10分钟内上报</div>
+            </div>
+
+            <!-- 有数据 -->
+            <div v-else style="padding:14px 16px">
+              <!-- CPU -->
+              <div style="margin-bottom:12px">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+                  <span style="color:#94a3b8">CPU 使用率</span>
+                  <span :style="{color: a.metrics.cpu_usage>80?'#f87171':'#4ade80'}">
+                    {{ a.metrics.cpu_usage }}%
+                  </span>
+                </div>
+                <div style="background:#0f1117;border-radius:4px;height:6px">
+                  <div :style="{width: a.metrics.cpu_usage+'%', height:'100%', borderRadius:'4px',
+                    background: a.metrics.cpu_usage>80?'#ef4444':a.metrics.cpu_usage>60?'#f59e0b':'#4ade80',
+                    transition:'width .5s'}"></div>
+                </div>
+              </div>
+
+              <!-- 磁盘 -->
+              <div v-if="a.metrics.disk?.length" style="margin-bottom:12px">
+                <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">磁盘</div>
+                <div v-for="d in a.metrics.disk.slice(0,2)" :key="d.mount"
+                     style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px">
+                  <span style="color:#64748b;font-family:monospace">{{ d.mount }}</span>
+                  <span :style="{color: parseInt(d.use_pct)>85?'#f87171':'#94a3b8'}">
+                    {{ d.used }} / {{ d.size }} ({{ d.use_pct }})
+                  </span>
+                </div>
+              </div>
+
+              <!-- 网络 IO -->
+              <div v-if="a.metrics.network_io" style="margin-bottom:12px">
+                <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">网络 IO</div>
+                <div v-for="(io, iface) in a.metrics.network_io" :key="iface"
+                     style="display:flex;justify-content:space-between;font-size:12px">
+                  <span style="color:#64748b">{{ iface }}</span>
+                  <span>
+                    <span style="color:#4ade80">↓ {{ io.rx_kbps }} KB/s</span>
+                    <span style="color:#60a5fa;margin-left:8px">↑ {{ io.tx_kbps }} KB/s</span>
+                  </span>
+                </div>
+              </div>
+
+              <!-- 公网 IP + 硬件指纹 -->
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:#475569;border-top:1px solid #2d3148;padding-top:8px;margin-top:4px">
+                <span>🌐 {{ a.metrics.network?.public || a.metrics.network?.eth || '-' }}</span>
+                <span>🔑 {{ a.metrics.hardware?.hw_fingerprint || '-' }}</span>
+              </div>
+
+              <!-- 上报时间 -->
+              <div style="font-size:11px;color:#334155;margin-top:6px;text-align:right">
+                上报: {{ (a.metrics.timestamp||'').slice(0,19).replace('T',' ') }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 目标机器 ── -->
+      <div v-if="page==='hosts'">
+        <div class="page-title">目标机器</div>
+        <div class="alert alert-error" v-if="hostError">{{ hostError }}</div>
+        <div class="alert alert-success" v-if="hostSuccess">{{ hostSuccess }}</div>
+
+        <!-- 新增表单（有 host 权限才显示） -->
+        <div class="card" v-if="hasPerm('host')">
+          <div class="card-title">新增机器并部署 Agent</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>名称（唯一标识）</label>
+              <input v-model="hostForm.name" placeholder="如 web-server-01" />
+            </div>
+            <div class="form-group">
+              <label>主机 IP / 域名</label>
+              <input v-model="hostForm.host" placeholder="192.168.1.100" />
+            </div>
+            <div class="form-group" style="max-width:100px">
+              <label>SSH 端口</label>
+              <input v-model="hostForm.port" type="number" placeholder="22" />
+            </div>
+            <div class="form-group" style="max-width:120px">
+              <label>用户名</label>
+              <input v-model="hostForm.username" placeholder="root" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>密码</label>
+              <input v-model="hostForm.password" type="password" placeholder="SSH 密码" />
+            </div>
+            <div class="form-group">
+              <label>SSH 私钥路径（可选，与密码二选一）</label>
+              <input v-model="hostForm.ssh_key" placeholder="~/.ssh/id_rsa" />
+            </div>
+            <div class="form-group">
+              <label>部署目录</label>
+              <input v-model="hostForm.deploy_dir" placeholder="/opt/agentops" />
+            </div>
+          </div>
+          <div class="flex-end">
+            <button class="btn btn-ghost" @click="addHostOnly" :disabled="!hostForm.name||!hostForm.host||!hasPerm('host')">
+              仅保存
+            </button>
+            <button class="btn btn-primary" @click="addAndDeploy"
+                    :disabled="!hostForm.name||!hostForm.host||deploying===hostForm.name||!hasPerm('host')">
+              {{ !hasPerm('host') ? '🔒 无权限' : deploying===hostForm.name ? '⏳ 部署中...' : '🚀 保存并部署 Agent' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- 已有机器列表 -->
+        <div class="card">
+          <div class="card-title">已配置的机器</div>
+          <table v-if="hosts.length">
+            <thead>
+              <tr><th>名称</th><th>主机</th><th>用户</th><th>认证</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="h in hosts" :key="h.name">
+                <td><span class="tag">{{ h.name }}</span></td>
+                <td>{{ h.host }}:{{ h.port }}</td>
+                <td>{{ h.username }}</td>
+                <td>
+                  <span class="badge badge-online" v-if="h.ssh_key">🔑 密钥</span>
+                  <span class="badge badge-pending" v-else>🔒 密码</span>
+                </td>
+                <td style="display:flex;gap:6px">
+                  <template v-if="hasPerm('host')">
+                    <button class="btn btn-ghost btn-sm" @click="editHost(h)">✏️ 编辑</button>
+                    <button class="btn btn-primary btn-sm" @click="deployHost(h)"
+                            :disabled="deploying===h.name">
+                      {{ deploying===h.name ? '部署中...' : '🚀 部署 Agent' }}
+                    </button>
+                    <button class="btn btn-danger btn-sm" @click="deleteHost(h.name)">删除</button>
+                  </template>
+                  <span v-else style="font-size:12px;color:#475569">只读</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="empty" v-else>暂无配置，在上方填写信息后添加</div>
+        </div>
+      </div>
+
+      <!-- ── Agent 管理 ── -->
+      <div v-if="page==='agents'">
+        <div class="section-header">
+          <div class="page-title">Agent 管理</div>
+          <button class="btn btn-ghost" @click="loadAgents()">刷新</button>
+        </div>
+        <div class="card">
+          <table v-if="agents.length">
+            <thead>
+              <tr><th>名称</th><th>Agent ID</th><th>主机</th><th>系统</th><th>状态</th><th>最后在线</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="a in agents" :key="a.agent_id">
+                <td><b>{{ a.name || '-' }}</b></td>
+                <td><span class="tag">{{ a.agent_id }}</span></td>
+                <td>{{ a.host }}</td>
+                <td>{{ a.os_version }}</td>
+                <td>
+                  <span class="badge" :class="'badge-'+a.status">
+                    <span class="dot" :class="a.status==='online'?'dot-green':a.status==='busy'?'dot-yellow':'dot-red'"></span>
+                    {{ a.status }}
+                  </span>
+                </td>
+                <td>{{ a.last_seen ? a.last_seen.slice(0,19).replace('T',' ') : '-' }}</td>
+                <td style="display:flex;gap:6px">
+                  <button class="btn btn-ghost btn-sm" @click="pingAgent(a.agent_id)">Ping</button>
+                  <button class="btn btn-ghost btn-sm" @click="viewMetrics(a)">📊 指标</button>
+                  <button v-if="hasPerm('host')" class="btn btn-danger btn-sm" style="margin-left:6px" @click="removeAgent(a.agent_id)">移除</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="empty" v-else>暂无 Agent，请先在「目标机器」页面部署</div>
+        </div>
+      </div>
+
+      <!-- ── 任务执行 ── -->
+      <div v-if="page==='tasks'">
+        <div class="page-title">下发任务</div>
+        <div class="card">
+          <div class="form-row">
+            <div class="form-group" style="flex:2">
+              <label>目标 Agent</label>
+              <select v-model="taskForm.agent_id">
+                <option value="">-- 选择 Agent --</option>
+                <option v-for="a in agents" :key="a.agent_id" :value="a.agent_id">
+                  {{ a.name || a.agent_id }} ({{ a.host }} · {{ a.os_version }})
+                </option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>指定操作系统（可选）</label>
+              <select v-model="taskForm.os_hint">
+                <option value="">自动检测</option>
+                <option value="linux">Linux</option>
+                <option value="windows">Windows</option>
+                <option value="macos">macOS</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>超时（秒）</label>
+              <input type="number" v-model="taskForm.timeout" min="10" max="300" />
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:12px">
+            <label>任务描述（自然语言）</label>
+            <textarea v-model="taskForm.task" placeholder="例如：查看磁盘使用情况、列出所有运行中的 Docker 容器、查看 nginx 错误日志最近50行..."></textarea>
+          </div>
+          <div class="flex-end">
+            <div v-if="!hasPerm('task')" style="font-size:12px;color:#f59e0b;align-self:center">
+              ⚠️ 执行任务需要登录并获得授权
+            </div>
+            <button class="btn btn-primary" @click="submitTask"
+                    :disabled="!taskForm.agent_id || !taskForm.task || submitting || !hasPerm('task')">
+              {{ !hasPerm('task') ? '🔒 无权限' : submitting ? '执行中...' : '⚡ 执行任务' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- 当前任务结果 -->
+        <div class="card" v-if="currentTask">
+          <div class="card-title">执行结果</div>
+          <div style="display:flex; gap:16px; align-items:center; margin-bottom:12px">
+            <span class="badge" :class="'badge-'+currentTask.status">{{ currentTask.status }}</span>
+            <span style="font-size:13px; color:#94a3b8">{{ currentTask.task }}</span>
+          </div>
+          <div v-if="currentTask.command">
+            <label style="font-size:12px;color:#64748b">生成的命令</label>
+            <div class="output-box" style="color:#7c6af7; max-height:60px">{{ currentTask.command }}</div>
+          </div>
+          <div v-if="currentTask.output" style="margin-top:10px">
+            <label style="font-size:12px;color:#64748b">执行输出</label>
+            <div class="output-box">{{ currentTask.output }}</div>
+          </div>
+          <div v-if="currentTask.analysis" style="margin-top:10px">
+            <label style="font-size:12px;color:#64748b">AI 分析</label>
+            <div class="analysis-box">{{ currentTask.analysis }}</div>
+          </div>
+          <div v-if="currentTask.error" style="margin-top:10px">
+            <label style="font-size:12px;color:#64748b">错误信息</label>
+            <div class="output-box" style="color:#f87171">{{ currentTask.error }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 执行历史 ── -->
+      <div v-if="page==='history'">
+        <div class="section-header">
+          <div class="page-title">执行历史</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select v-model="historyFilter" style="width:160px">
+              <option value="">全部 Agent</option>
+              <option v-for="a in agents" :key="a.agent_id" :value="a.agent_id">{{ a.agent_id }}</option>
+            </select>
+            <button class="btn btn-ghost" @click="loadTasks()">刷新</button>
+          </div>
+        </div>
+        <div class="card">
+          <table v-if="filteredTasks.length">
+            <thead>
+              <tr><th>时间</th><th>Agent</th><th>任务</th><th>命令</th><th>状态</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="t in filteredTasks" :key="t.task_id">
+                <td style="white-space:nowrap;font-size:12px">{{ t.created_at.slice(0,19).replace('T',' ') }}</td>
+                <td><span class="tag">{{ agentName(t.agent_id) }}</span></td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.task }}</td>
+                <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-size:12px;color:#7c6af7">{{ t.command || '-' }}</td>
+                <td><span class="badge" :class="'badge-'+t.status">{{ t.status }}</span></td>
+                <td><button class="btn btn-ghost btn-sm" @click="viewTask(t)">详情</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="empty" v-else>暂无执行记录</div>
+        </div>
+      </div>
+
+      <!-- ── 用户管理 ── -->
+      <div v-if="page==='users'">
+        <div class="page-title">用户管理</div>
+        <div class="card">
+          <div class="card-title">已注册用户</div>
+          <table v-if="userList.length">
+            <thead>
+              <tr><th>用户名</th><th>权限</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="u in userList" :key="u.username">
+                <td>{{ u.username }}</td>
+                <td>
+                  <span v-if="!u.perms.length" style="color:#475569;font-size:12px">无权限（只读）</span>
+                  <span v-for="p in u.perms" :key="p" class="badge badge-online" style="margin-right:4px">
+                    {{ p==='task'?'执行任务':'管理机器' }}
+                  </span>
+                </td>
+                <td style="display:flex;gap:6px">
+                  <button class="btn btn-ghost btn-sm"
+                    :style="u.perms.includes('task')?'border-color:#ef4444;color:#ef4444':''"
+                    @click="togglePerm(u,'task')">
+                    {{ u.perms.includes('task') ? '撤销任务权限' : '授权执行任务' }}
+                  </button>
+                  <button class="btn btn-ghost btn-sm"
+                    :style="u.perms.includes('host')?'border-color:#ef4444;color:#ef4444':''"
+                    @click="togglePerm(u,'host')">
+                    {{ u.perms.includes('host') ? '撤销机器权限' : '授权管理机器' }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="empty" v-else>暂无注册用户</div>
+        </div>
+      </div>
+
+    </div><!-- /main -->
+  </div><!-- /layout -->
+
+  <!-- 编辑机器 Modal -->
+  <div class="modal-overlay" v-if="editForm" @click.self="editForm=null">
+    <div class="modal">
+      <div class="modal-title">编辑机器配置</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>主机 IP / 域名</label>
+          <input v-model="editForm.host" />
+        </div>
+        <div class="form-group" style="max-width:100px">
+          <label>SSH 端口</label>
+          <input v-model="editForm.port" type="number" />
+        </div>
+        <div class="form-group" style="max-width:120px">
+          <label>用户名</label>
+          <input v-model="editForm.username" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>密码（留空保持不变）</label>
+          <input v-model="editForm.password" type="password" placeholder="输入新密码" />
+        </div>
+        <div class="form-group">
+          <label>SSH 私钥路径</label>
+          <input v-model="editForm.ssh_key" placeholder="~/.ssh/id_rsa" />
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:16px">
+        <label>部署目录</label>
+        <input v-model="editForm.deploy_dir" />
+      </div>
+      <div class="flex-end">
+        <button class="btn btn-ghost" @click="editForm=null">取消</button>
+        <button class="btn btn-ghost" @click="testEdit" :disabled="testing">
+          {{ testing ? '测试中...' : '🔌 测试连接' }}
+        </button>
+        <button class="btn btn-primary" @click="saveEdit">保存</button>
+      </div>
+      <div class="alert alert-error" style="margin-top:10px" v-if="editError">{{ editError }}</div>
+      <div class="alert alert-success" style="margin-top:10px" v-if="editSuccess">{{ editSuccess }}</div>
+    </div>
+  </div>
+
+  <!-- 指标详情 Modal -->
+  <div class="modal-overlay" v-if="metricsData" @click.self="metricsData=null">
+    <div class="modal" style="width:640px;max-height:85vh;overflow-y:auto">
+      <div class="modal-title">📊 {{ metricsAgent?.name || metricsAgent?.agent_id }} 系统指标</div>
+      <div v-if="metricsData" style="font-size:13px">
+        <div v-if="metricsData._empty" class="empty" style="padding:30px">
+          暂无数据，部署完成后会自动采集，请稍候刷新
+        </div>
+        <div v-else>
+
+        <!-- 基础信息 -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+          <div class="card" style="padding:12px;margin:0">
+            <div style="color:#64748b;font-size:11px;margin-bottom:4px">CPU 使用率</div>
+            <div style="font-size:22px;font-weight:700;color:#7c6af7">{{ metricsData.cpu_usage }}%</div>
+          </div>
+          <div class="card" style="padding:12px;margin:0">
+            <div style="color:#64748b;font-size:11px;margin-bottom:4px">上报时间</div>
+            <div style="font-size:13px">{{ (metricsData.timestamp||'').slice(0,19).replace('T',' ') }}</div>
+          </div>
+        </div>
+
+        <!-- 硬件信息 -->
+        <div v-if="metricsData.hardware" style="margin-bottom:14px">
+          <div class="card-title">硬件信息</div>
+          <table style="width:100%;font-size:12px">
+            <tr><td style="color:#64748b;padding:4px 0;width:120px">CPU 型号</td><td>{{ metricsData.hardware.cpu_model || '-' }}</td></tr>
+            <tr><td style="color:#64748b;padding:4px 0">CPU 核心</td><td>{{ metricsData.hardware.cpu_cores || '-' }}</td></tr>
+            <tr><td style="color:#64748b;padding:4px 0">内存</td><td>{{ metricsData.hardware.memory_mb ? metricsData.hardware.memory_mb + ' MB' : '-' }}</td></tr>
+            <tr><td style="color:#64748b;padding:4px 0">主板型号</td><td>{{ metricsData.hardware.board_name || '-' }}</td></tr>
+            <tr><td style="color:#64748b;padding:4px 0">主板序列号</td><td><span class="tag">{{ metricsData.hardware.board_serial || '-' }}</span></td></tr>
+            <tr><td style="color:#64748b;padding:4px 0">硬件指纹</td><td><span class="tag">{{ metricsData.hardware.hw_fingerprint || '-' }}</span></td></tr>
+          </table>
+        </div>
+
+        <!-- 磁盘 ID -->
+        <div v-if="metricsData.hardware?.disk_ids?.length" style="margin-bottom:14px">
+          <div class="card-title">磁盘 ID</div>
+          <div v-for="d in metricsData.hardware.disk_ids" :key="d" style="font-family:monospace;font-size:11px;color:#94a3b8;padding:2px 0">{{ d }}</div>
+        </div>
+
+        <!-- 网卡 MAC -->
+        <div v-if="metricsData.hardware?.mac_addresses" style="margin-bottom:14px">
+          <div class="card-title">网卡 MAC 地址</div>
+          <table style="width:100%;font-size:12px">
+            <tr v-for="(mac, iface) in metricsData.hardware.mac_addresses" :key="iface">
+              <td style="color:#64748b;padding:3px 0;width:100px">{{ iface }}</td>
+              <td><span class="tag">{{ mac }}</span></td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- 网络 IP -->
+        <div v-if="metricsData.network" style="margin-bottom:14px">
+          <div class="card-title">网络 IP</div>
+          <table style="width:100%;font-size:12px">
+            <tr v-for="(ip, key) in metricsData.network" :key="key">
+              <td style="color:#64748b;padding:3px 0;width:100px">{{ key }}</td>
+              <td>{{ ip }}</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- 网络 IO -->
+        <div v-if="metricsData.network_io && Object.keys(metricsData.network_io).length" style="margin-bottom:14px">
+          <div class="card-title">网络 IO（实时）</div>
+          <table style="width:100%;font-size:12px">
+            <thead><tr><th style="text-align:left;color:#64748b;font-weight:400">网卡</th><th style="color:#64748b;font-weight:400">↓ 入 KB/s</th><th style="color:#64748b;font-weight:400">↑ 出 KB/s</th></tr></thead>
+            <tbody>
+              <tr v-for="(io, iface) in metricsData.network_io" :key="iface">
+                <td style="padding:3px 0">{{ iface }}</td>
+                <td style="color:#4ade80">{{ io.rx_kbps }}</td>
+                <td style="color:#60a5fa">{{ io.tx_kbps }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 磁盘使用 -->
+        <div v-if="metricsData.disk?.length">
+          <div class="card-title">磁盘使用</div>
+          <table style="width:100%;font-size:12px">
+            <thead><tr><th style="text-align:left;color:#64748b;font-weight:400">挂载点</th><th style="color:#64748b;font-weight:400">总量</th><th style="color:#64748b;font-weight:400">已用</th><th style="color:#64748b;font-weight:400">使用率</th></tr></thead>
+            <tbody>
+              <tr v-for="d in metricsData.disk" :key="d.mount">
+                <td style="padding:3px 0;font-family:monospace">{{ d.mount }}</td>
+                <td>{{ d.size }}</td><td>{{ d.used }}</td>
+                <td :style="{color: parseInt(d.use_pct)>85 ? '#f87171' : '#4ade80'}">{{ d.use_pct }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+      </div><!-- /metricsData -->
+      <div class="flex-end" style="margin-top:16px">
+        <button class="btn btn-ghost btn-sm" @click="refreshMetrics">🔄 刷新</button>
+        <button class="btn btn-ghost" @click="metricsData=null">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 任务详情 Modal -->
+  <div class="modal-overlay" v-if="detailTask" @click.self="detailTask=null">
+    <div class="modal" style="width:600px">
+      <div class="modal-title">任务详情</div>
+      <div style="margin-bottom:8px;font-size:13px;color:#94a3b8">{{ detailTask.task }}</div>
+      <div v-if="detailTask.command">
+        <label style="font-size:12px;color:#64748b">命令</label>
+        <div class="output-box" style="color:#7c6af7;max-height:50px">{{ detailTask.command }}</div>
+      </div>
+      <div v-if="detailTask.output" style="margin-top:8px">
+        <label style="font-size:12px;color:#64748b">输出</label>
+        <div class="output-box">{{ detailTask.output }}</div>
+      </div>
+      <div v-if="detailTask.analysis" style="margin-top:8px">
+        <label style="font-size:12px;color:#64748b">AI 分析</label>
+        <div class="analysis-box">{{ detailTask.analysis }}</div>
+      </div>
+      <div class="flex-end"><button class="btn btn-ghost" @click="detailTask=null">关闭</button></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const { createApp, ref, computed, reactive, onMounted } = Vue
+
+createApp({
+  setup() {
+    const API = ''
+    const page = ref('hosts')
+
+    // ── Auth ──
+    const token = ref(null)
+    const isAdmin = ref(false)
+    const role = ref('')
+    const perms = ref([])
+    const adminUser = ref('')
+    const authTab = ref('login')
+    const loginError = ref('')
+    const loginSuccess = ref('')
+    const loginLoading = ref(false)
+
+    function hasPerm(p) { return role.value === 'admin' || perms.value.includes(p) }
+
+    async function doLogin() {
+      loginError.value = ''
+      loginLoading.value = true
+      const username = document.getElementById('cyber-login-user')?.value?.trim() || ''
+      const password = document.getElementById('cyber-login-pass')?.value?.trim() || ''
+      try {
+        const r = await fetch(`${API}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        })
+        if (r.ok) {
+          const d = await r.json()
+          token.value = d.token
+          isAdmin.value = d.role === 'admin'
+          role.value = d.role
+          perms.value = d.perms || []
+          adminUser.value = d.username
+        } else {
+          const e = await r.json()
+          loginError.value = e.detail || '登录失败'
+        }
+      } catch(e) {
+        loginError.value = '连接失败'
+      }
+      loginLoading.value = false
+    }
+
+    async function doRegister() {
+      loginError.value = ''
+      loginSuccess.value = ''
+      loginLoading.value = true
+      const username = document.getElementById('cyber-reg-user')?.value?.trim() || ''
+      const password = document.getElementById('cyber-reg-pass')?.value?.trim() || ''
+      try {
+        const r = await fetch(`${API}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        })
+        const d = await r.json()
+        if (r.ok) {
+          loginSuccess.value = '注册成功，请直接登录'
+          authTab.value = 'login'
+        } else {
+          loginError.value = d.detail || '注册失败'
+        }
+      } catch(e) {
+        loginError.value = '连接失败'
+      }
+      loginLoading.value = false
+    }
+
+    async function doLogout() {
+      if (token.value && token.value !== '__guest__') {
+        await fetch(`${API}/auth/logout`, {
+          method: 'POST', headers: { 'Authorization': `Bearer ${token.value}` }
+        })
+      }
+      token.value = null
+      isAdmin.value = false
+      role.value = ''
+      perms.value = []
+      adminUser.value = ''
+      loginForm.password = ''
+      localStorage.removeItem('cyber_token')
+      localStorage.removeItem('cyber_user')
+    }
+
+    function skipLogin() {
+      token.value = '__guest__'  // 访客标记
+      isAdmin.value = false
+    }
+
+    // ── Hosts ──
+    const hosts = ref([])
+    const showAddHost = ref(false)
+    const hostError = ref('')
+    const hostSuccess = ref('')
+    const deploying = ref('')
+    const hostForm = ref({ name:'', host:'', port:22, username:'root', password:'', ssh_key:'', deploy_dir:'/opt/agentops' })
+
+    async function loadHosts() {
+      const r = await fetch(`${API}/hosts`)
+      hosts.value = await r.json()
+    }
+
+    async function addHostOnly() {
+      hostError.value = ''
+      const body = { ...hostForm.value, port: Number(hostForm.value.port) }
+      if (!body.password) delete body.password
+      if (!body.ssh_key) delete body.ssh_key
+      const r = await fetch(`${API}/hosts`, { method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${token.value}`}, body: JSON.stringify(body) })
+      if (r.ok) {
+        hostSuccess.value = `机器 "${hostForm.value.name}" 保存成功`
+        resetHostForm()
+        loadHosts()
+        setTimeout(() => hostSuccess.value = '', 3000)
+      } else {
+        const e = await r.json()
+        hostError.value = e.detail || '保存失败'
+      }
+    }
+
+    async function addAndDeploy() {
+      hostError.value = ''
+      const body = { ...hostForm.value, port: Number(hostForm.value.port) }
+      if (!body.password) delete body.password
+      if (!body.ssh_key) delete body.ssh_key
+
+      // 1. 先测试 SSH 连接
+      hostSuccess.value = '🔌 正在测试 SSH 连接...'
+      const testR = await fetch(`${API}/hosts/test`, {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+      })
+      const testD = await testR.json()
+      if (!testD.ok) {
+        hostError.value = `SSH 连接失败: ${testD.error}`
+        hostSuccess.value = ''
+        return
+      }
+      hostSuccess.value = `✅ 连接成功 (${testD.info})，正在部署...`
+
+      // 2. 保存
+      const r = await fetch(`${API}/hosts`, {
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${token.value}`}, body: JSON.stringify(body)
+      })
+      if (!r.ok) {
+        const e = await r.json()
+        if (!e.detail?.includes('已存在')) { hostError.value = e.detail; hostSuccess.value=''; return }
+      }
+      await loadHosts()
+
+      // 3. 部署
+      const h = hosts.value.find(x => x.name === hostForm.value.name)
+      if (h) { resetHostForm(); await deployHost(h) }
+    }
+
+    function resetHostForm() {
+      hostForm.value = { name:'', host:'', port:22, username:'root', password:'', ssh_key:'', deploy_dir:'/opt/agentops' }
+    }
+
+    async function addHost() { await addHostOnly() }  // 兼容旧调用
+
+    async function deleteHost(name) {
+      if (!confirm(`确认删除 "${name}"？`)) return
+      await fetch(`${API}/hosts/${name}`, { method:'DELETE' })
+      loadHosts()
+    }
+
+    async function deployHost(h) {
+      deploying.value = h.name
+      hostError.value = ''
+
+      // 先测试连接
+      hostSuccess.value = `🔌 测试 ${h.host} SSH 连接...`
+      const testR = await fetch(`${API}/hosts/test`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name: h.name, host: h.host, port: h.port,
+                               username: h.username, password: h.password,
+                               ssh_key: h.ssh_key, deploy_dir: h.deploy_dir })
+      })
+      const testD = await testR.json()
+      if (!testD.ok) {
+        hostError.value = `SSH 连接失败: ${testD.error}`
+        hostSuccess.value = ''
+        deploying.value = ''
+        return
+      }
+      hostSuccess.value = `✅ 连接成功 (${testD.info})，正在部署 Agent...`
+
+      try {
+        const r = await fetch(`${API}/agents/deploy`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json', 'Authorization': `Bearer ${token.value}`},
+          body: JSON.stringify({ name: h.name, host: h.host, port: h.port, username: h.username,
+                                 password: h.password, ssh_key: h.ssh_key, deploy_dir: h.deploy_dir })
+        })
+        if (r.ok) {
+          const info = await r.json()
+          hostSuccess.value = `🎉 部署成功！Agent ID: ${info.agent_id}，系统: ${info.os_version}`
+          loadAgents()
+          setTimeout(() => hostSuccess.value = '', 6000)
+        } else {
+          const e = await r.json()
+          hostError.value = `部署失败: ${e.detail}`
+          hostSuccess.value = ''
+        }
+      } catch(e) {
+        hostError.value = `部署失败: ${e.message}`
+        hostSuccess.value = ''
+      }
+      deploying.value = ''
+    }
+
+    // ── Users ──
+    const userList = ref([])
+
+    async function loadUsers() {
+      const r = await fetch(`${API}/auth/users`, {
+        headers: { 'Authorization': `Bearer ${token.value}` }
+      })
+      if (r.ok) userList.value = await r.json()
+    }
+
+    async function togglePerm(u, perm) {
+      const newPerms = u.perms.includes(perm)
+        ? u.perms.filter(p => p !== perm)
+        : [...u.perms, perm]
+      const r = await fetch(`${API}/auth/grant`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.value}` },
+        body: JSON.stringify({ username: u.username, perms: newPerms })
+      })
+      if (r.ok) { u.perms = newPerms }
+    }
+
+    // ── Monitor ──
+    let monitorTimer = null
+    function startMonitor() {
+      loadAgents()
+      if (monitorTimer) clearInterval(monitorTimer)
+      monitorTimer = setInterval(loadAgents, 30000)
+    }
+    function refreshMonitor() { loadAgents() }
+
+    // ── Metrics ──
+    const metricsData = ref(null)
+    const metricsAgent = ref(null)
+
+    async function viewMetrics(a) {
+      metricsAgent.value = a
+      // 先用已有的 metrics，同时刷新 agent 列表获取最新数据
+      await loadAgents()
+      const fresh = agents.value.find(x => x.agent_id === a.agent_id)
+      metricsData.value = fresh?.metrics || null
+      if (!metricsData.value) {
+        metricsData.value = { _empty: true }
+      }
+    }
+
+    async function refreshMetrics() {
+      if (metricsAgent.value) await viewMetrics(metricsAgent.value)
+    }
+
+    // ── Edit Host ──
+    const editForm = ref(null)
+    const editError = ref('')
+    const editSuccess = ref('')
+    const testing = ref(false)
+
+    function editHost(h) {
+      editForm.value = { ...h, password: '' }  // 密码不回显
+      editError.value = ''
+      editSuccess.value = ''
+    }
+
+    async function testEdit() {
+      testing.value = true
+      editError.value = ''
+      editSuccess.value = ''
+      const body = { ...editForm.value, port: Number(editForm.value.port) }
+      if (!body.password) delete body.password
+      if (!body.ssh_key) delete body.ssh_key
+      const r = await fetch(`${API}/hosts/test`, {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+      })
+      const d = await r.json()
+      if (d.ok) editSuccess.value = `✅ 连接成功: ${d.info}`
+      else editError.value = `❌ 连接失败: ${d.error}`
+      testing.value = false
+    }
+
+    async function saveEdit() {
+      editError.value = ''
+      const body = { ...editForm.value, port: Number(editForm.value.port) }
+      if (!body.password) delete body.password
+      if (!body.ssh_key) delete body.ssh_key
+      const r = await fetch(`${API}/hosts/${editForm.value.name}`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+      })
+      if (r.ok) {
+        editForm.value = null
+        hostSuccess.value = '配置已更新'
+        loadHosts()
+        setTimeout(() => hostSuccess.value = '', 3000)
+      } else {
+        const e = await r.json()
+        editError.value = e.detail || '保存失败'
+      }
+    }
+    const agents = ref([])
+
+    async function loadAgents() {
+      const r = await fetch(`${API}/agents`)
+      agents.value = await r.json()
+    }
+
+    async function pingAgent(id) {
+      const r = await fetch(`${API}/agents/${id}/ping`, { method:'POST' })
+      const d = await r.json()
+      alert(d.online ? `✅ ${id} 在线` : `❌ ${id} 离线`)
+      loadAgents()
+    }
+
+    async function removeAgent(id) {
+      if (!confirm(`确认移除 Agent ${id}？`)) return
+      await fetch(`${API}/agents/${id}`, { method:'DELETE' })
+      loadAgents()
+    }
+
+    // ── Tasks ──
+    const tasks = ref([])
+    const currentTask = ref(null)
+    const detailTask = ref(null)
+    const submitting = ref(false)
+    const historyFilter = ref('')
+    const taskForm = ref({ agent_id:'', task:'', os_hint:'', timeout:60 })
+
+    const filteredTasks = computed(() =>
+      historyFilter.value ? tasks.value.filter(t => t.agent_id === historyFilter.value) : tasks.value
+    )
+
+    async function loadTasks() {
+      const r = await fetch(`${API}/tasks`)
+      tasks.value = await r.json()
+    }
+
+    async function submitTask() {
+      submitting.value = true
+      currentTask.value = null
+      const body = { ...taskForm.value }
+      if (!body.os_hint) delete body.os_hint
+      const r = await fetch(`${API}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json',
+                   'Authorization': `Bearer ${token.value}` },
+        body: JSON.stringify(body)
+      })
+      const task = await r.json()
+      currentTask.value = task
+
+      // 轮询等待结果
+      const poll = setInterval(async () => {
+        const r2 = await fetch(`${API}/tasks/${task.task_id}`)
+        const t = await r2.json()
+        currentTask.value = t
+        if (!['pending','running'].includes(t.status)) {
+          clearInterval(poll)
+          submitting.value = false
+          loadTasks()
+        }
+      }, 1500)
+    }
+
+    function viewTask(t) { detailTask.value = t }
+
+    function agentName(id) {
+      const a = agents.value.find(x => x.agent_id === id)
+      return a ? (a.name || id) : id
+    }
+
+    onMounted(() => { loadHosts(); loadAgents(); })
+
+    return {
+      page, token, isAdmin, role, perms, hasPerm, adminUser,
+      authTab, loginError, loginSuccess, loginLoading,
+      doLogin, doRegister, doLogout, skipLogin,
+      userList, loadUsers, togglePerm,
+      hosts, showAddHost, hostError, hostSuccess, deploying, hostForm,
+      loadHosts, addHost, addHostOnly, addAndDeploy, deleteHost, deployHost,
+      editForm, editError, editSuccess, testing, editHost, testEdit, saveEdit,
+      metricsData, metricsAgent, viewMetrics, refreshMetrics,
+      startMonitor, refreshMonitor,
+      agents, loadAgents, pingAgent, removeAgent,
+      tasks, currentTask, detailTask, submitting, historyFilter, taskForm,
+      filteredTasks, loadTasks, submitTask, viewTask, agentName
+    }
+  }
+}).mount('#app')
+</script>
+</body>
+</html>

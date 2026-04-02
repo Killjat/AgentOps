@@ -33,6 +33,7 @@ class LLMProvider(str, Enum):
 
 
 class RemoteHost(BaseModel):
+    name: str = ""               # 来自 hosts.yaml 的名称
     host: str
     port: int = 22
     username: str
@@ -43,11 +44,12 @@ class RemoteHost(BaseModel):
 
 class AgentInfo(BaseModel):
     agent_id: str
+    name: str = ""
     host: str
     port: int
     username: str
-    password: Optional[str] = None   # 用于建 SSH 隧道
-    ssh_key: Optional[str] = None    # 用于建 SSH 隧道（与 password 二选一）
+    password: Optional[str] = None
+    ssh_key: Optional[str] = None
     os_type: OSType
     os_version: str
     deploy_dir: str
@@ -55,12 +57,14 @@ class AgentInfo(BaseModel):
     agent_port: int = 9000
     created_at: str
     last_seen: Optional[str] = None
+    metrics: Optional[dict] = None   # 最新上报的系统指标
 
 
 class TaskRequest(BaseModel):
     task: str                          # 自然语言任务描述
     agent_id: str                      # 目标 Agent
-    auto_confirm: bool = True          # 自动确认（不拦截危险命令提示）
+    os_hint: Optional[str] = None      # 手动指定 OS（覆盖自动检测）
+    auto_confirm: bool = True
     timeout: int = 60
 
 
