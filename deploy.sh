@@ -23,21 +23,41 @@ if ! command -v python3 &>/dev/null; then
 fi
 echo "✅ Python: $($PYTHON --version)"
 
-# 1.5 停止现有服务（避免端口占用）
+# 1.5 停止现有服务并清理端口占用
 echo ""
-echo "[停止现有服务]..."
+echo "[停止现有服务并清理端口]..."
 if systemctl is-active --quiet $SERVICE_NAME 2>/dev/null; then
     echo "  正在停止服务 $SERVICE_NAME..."
     systemctl stop $SERVICE_NAME
-    sleep 2
-    echo "  ✅ 服务已停止"
+    sleep 3
+fi
+
+# 杀死残留的进程
+echo "  清理残留进程..."
+pkill -f "python.*server/main.py" 2>/dev/null || true
+pkill -f "uvicorn.*main:app" 2>/dev/null || true
+sleep 2
+
+# 检查并释放端口 8000
+echo "  检查端口 8000 占用情况..."
+if ss -tlnp 2>/dev/null | grep -q :8000; then
+    echo "  ⚠️  端口 8000 仍被占用，尝试释放..."
+    fuser -k 8000/tcp 2>/dev/null || true
+    sleep 3
+fi
+
+# 验证端口已释放
+if ss -tlnp 2>/dev/null | grep -q :8000; then
+    echo "  ❌ 端口 8000 仍被占用，显示占用进程："
+    lsof -i :8000 2>/dev/null || ss -tlnp 2>/dev/null | grep :8000
+    echo "  请手动终止占用进程"
 else
-    echo "  ℹ️  服务未运行，无需停止"
+    echo "  ✅ 端口 8000 已释放"
 fi
 
 # 2. 安装依赖
 echo ""
-echo "[1/4] 安装 Python 依赖..."
+echo "[2/5] 安装 Python 依赖..."
 # 确保 pip 可用
 if ! command -v pip3 &>/dev/null && ! $PYTHON -m pip --version &>/dev/null 2>&1; then
     echo "安装 pip..."
@@ -79,7 +99,7 @@ echo "✅ 依赖安装完成"
 
 # 3. 检查 .env
 echo ""
-echo "[3/5] 检查配置文件..."
+echo "[3/6] 检查配置文件..."
 if [ ! -f "$APP_DIR/.env" ]; then
     if [ -f "$APP_DIR/.env.example" ]; then
         cp "$APP_DIR/.env.example" "$APP_DIR/.env"
@@ -94,7 +114,7 @@ fi
 
 # 3.5 生成 SSL 证书（如果不存在）
 echo ""
-echo "[4/5] 配置 SSL 证书..."
+echo "[4/6] 配置 SSL 证书..."
 SSL_CERT_FILE="$SSL_CERT_DIR/server.crt"
 SSL_KEY_FILE="$SSL_KEY_DIR/server.key"
 
@@ -115,7 +135,7 @@ fi
 
 # 4. 注册 systemd 服务
 echo ""
-echo "[5/5] 配置 systemd 服务..."
+echo "[5/6] 配置 systemd 服务..."
 PYTHON_ABS_PATH=$(which $PYTHON)
 echo "  服务将使用的 Python: $PYTHON_ABS_PATH"
 echo "  Python 版本: $($PYTHON_ABS_PATH --version)"
