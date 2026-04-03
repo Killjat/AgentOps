@@ -34,6 +34,8 @@ fi
 
 # 安装依赖（支持多种方式）
 echo "  安装 requirements.txt 依赖..."
+echo "  Python 路径: $(which $PYTHON)"
+echo "  Pip 路径: $($PYTHON -m pip --version | head -1)"
 pip3 install -r "$APP_DIR/requirements.txt" -q 2>/dev/null \
     || $PYTHON -m pip install -r "$APP_DIR/requirements.txt" -q --break-system-packages 2>/dev/null \
     || $PYTHON -m pip install -r "$APP_DIR/requirements.txt" -q --user 2>/dev/null \
@@ -49,13 +51,16 @@ $PYTHON -m pip install aiohttp>=3.9.0 -q 2>/dev/null \
 # 验证 aiohttp 是否成功安装
 if ! $PYTHON -c "import aiohttp" 2>/dev/null; then
     echo "❌ aiohttp 安装失败，尝试强制安装..."
-    $PYTHON -m pip install aiohttp --force-reinstall -q
+    echo "  Python 版本: $($PYTHON --version)"
+    echo "  Python 路径: $(which $PYTHON)"
+    $PYTHON -m pip install aiohttp --force-reinstall
     if ! $PYTHON -c "import aiohttp" 2>/dev/null; then
         echo "❌ aiohttp 安装失败，部署可能无法正常工作"
+        echo "  请手动检查 Python 环境是否一致"
         exit 1
     fi
 fi
-echo "✅ aiohttp 安装成功"
+echo "✅ aiohttp 安装成功 (版本: $($PYTHON -c 'import aiohttp; print(aiohttp.__version__)'))"
 echo "✅ 依赖安装完成"
 
 # 3. 检查 .env
@@ -76,6 +81,8 @@ fi
 # 4. 注册 systemd 服务
 echo ""
 echo "[3/4] 配置 systemd 服务..."
+PYTHON_ABS_PATH=$(which $PYTHON)
+echo "  服务将使用的 Python: $PYTHON_ABS_PATH"
 cat > /etc/systemd/system/${SERVICE_NAME}.service << EOF
 [Unit]
 Description=CyberAgentOps Server
@@ -85,7 +92,7 @@ After=network.target
 Type=simple
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
-ExecStart=$PYTHON $APP_DIR/server/main.py
+ExecStart=$PYTHON_ABS_PATH $APP_DIR/server/main.py
 Restart=always
 RestartSec=5
 StandardOutput=journal
