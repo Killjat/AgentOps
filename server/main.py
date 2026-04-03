@@ -172,6 +172,12 @@ app = FastAPI(title="CyberAgentOps", version="3.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 
+# 健康检查端点
+@app.get("/health")
+async def health_check():
+    """健康检查端点，用于验证服务是否正常运行"""
+    return {"status": "ok", "service": "CyberAgentOps"}
+
 # 挂载 Web 界面
 if WEB_DIR.exists():
     from fastapi.responses import HTMLResponse
@@ -1224,8 +1230,9 @@ deploy.sh 执行结果：
             await asyncio.sleep(4)
 
             health_cmd = plan.get('health_check') or \
-                f"ss -tlnp | grep ':{plan.get('expected_port', 8000)}' 2>/dev/null || " \
-                f"ps aux | grep -E 'python|node|java|gunicorn' | grep -v grep | grep -v agent.py | head -3"
+                f"curl -s http://127.0.0.1:{plan.get('expected_port', 8000)}/health 2>/dev/null | grep -q 'ok' && echo 'OK' || " \
+                f"(ss -tlnp | grep ':{plan.get('expected_port', 8000)}' 2>/dev/null || " \
+                f"ps aux | grep -E 'python|node|java|gunicorn' | grep -v grep | grep -v agent.py | head -3)"
 
             health_r = await conn.run(health_cmd, check=False)
             health_out = (health_r.stdout or health_r.stderr or "").strip()

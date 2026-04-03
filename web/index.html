@@ -1279,7 +1279,14 @@ createApp({
             headers: { 'Authorization': `Bearer ${token.value}` }
           })
           const d = await r2.json()
-          if (deployLogData.value?.deploy_id === d.deploy_id) deployLogData.value = d
+          if (deployLogData.value?.deploy_id === d.deploy_id) {
+            // 只更新变化的字段，避免重新渲染整个模态框
+            if (d.log && d.log !== deployLogData.value.log) deployLogData.value.log = d.log
+            if (d.status && d.status !== deployLogData.value.status) deployLogData.value.status = d.status
+            if (d.conversation && JSON.stringify(d.conversation) !== JSON.stringify(deployLogData.value.conversation)) {
+              deployLogData.value.conversation = d.conversation
+            }
+          }
           if (['success','failed'].includes(d.status)) {
             clearInterval(poll)
             appDeploying.value = false
@@ -1321,7 +1328,14 @@ createApp({
               headers: { 'Authorization': `Bearer ${token.value}` }
             })
             const nd = await r2.json()
-            if (deployLogData.value?.deploy_id === nd.deploy_id) deployLogData.value = nd
+            if (deployLogData.value?.deploy_id === nd.deploy_id) {
+              // 只更新变化的字段，避免重新渲染整个模态框
+              if (nd.log && nd.log !== deployLogData.value.log) deployLogData.value.log = nd.log
+              if (nd.status && nd.status !== deployLogData.value.status) deployLogData.value.status = nd.status
+              if (nd.conversation && JSON.stringify(nd.conversation) !== JSON.stringify(deployLogData.value.conversation)) {
+                deployLogData.value.conversation = nd.conversation
+              }
+            }
             if (['success','failed'].includes(nd.status)) {
               clearInterval(poll)
               appDeploying.value = false
