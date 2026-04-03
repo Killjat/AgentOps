@@ -1053,8 +1053,27 @@ async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
                 await run("apt-get install -y git 2>/dev/null || dnf install -y git 2>/dev/null || yum install -y git 2>/dev/null")
 
             # ── 2. clone / pull ───────────────────────────────────
+            # 首先检查是否已有部署，可能在不同的目录
             check_dir = await conn.run(f"test -d {request.deploy_dir}/.git && echo exists", check=False)
             is_update = "exists" in (check_dir.stdout or "")
+
+            if not is_update:
+                # 如果配置的目录没有 .git，尝试在其他常见位置查找
+                log(f"⚠️  配置目录 {request.deploy_dir} 没有找到 .git")
+                search_cmd = "find /opt -maxdepth 2 -name '.git' -type d 2>/dev/null | head -5"
+                search_result = await conn.run(search_cmd, check=False)
+                if search_result.stdout and search_result.stdout.strip():
+                    found_dirs = [line.rsplit('/', 1)[0] for line in search_result.stdout.strip().split('\n') if line.strip()]
+                    if found_dirs:
+                        log(f"⚠️  检测到可能的现有部署目录: {found_dirs}")
+                        log(f"⚠️  建议更新 hosts.yaml 中的 deploy_dir 为正确的目录")
+                        # 使用找到的第一个目录
+                        actual_deploy_dir = found_dirs[0]
+                        log(f"▶ 将使用实际存在的目录: {actual_deploy_dir}")
+                        log(f"⚠️  请手动更新 hosts.yaml: deploy_dir: {actual_deploy_dir}")
+                        request.deploy_dir = actual_deploy_dir
+                        is_update = True
+
             if is_update:
                 log(f"▶ 检测到已有部署，执行更新 (git pull {request.branch})")
                 await run(f"cd {request.deploy_dir} && git fetch origin && git checkout {request.branch} && git pull origin {request.branch}")
@@ -1352,16 +1371,5 @@ async def _run_task(task_id: str, request: TaskRequest):
 if __name__ == "__main__":
     import uvicorn
     host = os.getenv("SERVER_HOST", "0.0.0.0")
-    port = int(os.getenv("SERVER_PORT", "8443"))
-    ssl_keyfile = os.getenv("SSL_KEYFILE", "/etc/ssl/private/server.key")
-    ssl_certfile = os.getenv("SSL_CERTFILE", "/etc/ssl/certs/server.crt")
-
-    # 检查 SSL 证书是否存在
-    if os.path.exists(ssl_keyfile) and os.path.exists(ssl_certfile):
-        logger.info(f"Starting HTTPS server on {host}:{port}")
-        uvicorn.run(app, host=host, port=port,
-                    ssl_keyfile=ssl_keyfile, ssl_certfile=ssl_certfile)
-    else:
-        logger.warning(f"SSL certificates not found at {ssl_keyfile} and {ssl_certfile}")
-        logger.warning("Falling back to HTTP mode (for development only)")
-        uvicorn.run(app, host=host, port=port)
+    port = int(os.getenv("SERVER_PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)

@@ -190,16 +190,16 @@ if command -v nginx &>/dev/null; then
     cat > $NGINX_CONF_FILE << 'NGINX'
 server {
     listen 80;
-    return 301 https://$host$request_uri;
+    return 301 https://$host:8443$request_uri;
 }
 server {
     listen 8443 ssl;
-    ssl_certificate     /etc/ssl/certs/server.crt;
-    ssl_certificate_key /etc/ssl/private/server.key;
+    ssl_certificate     /etc/nginx/ssl/cyberagentops.crt;
+    ssl_certificate_key /etc/nginx/ssl/cyberagentops.key;
     ssl_protocols       TLSv1.2 TLSv1.3;
     client_max_body_size 20m;
     location / {
-        proxy_pass https://127.0.0.1:8443;
+        proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
@@ -220,7 +220,7 @@ NGINX
         echo "⚠️  nginx 配置测试失败，请检查配置文件: $NGINX_CONF_FILE"
     fi
 else
-    echo "⚠️  未安装 nginx，服务运行在 https://localhost:8443"
+    echo "⚠️  未安装 nginx，服务运行在 http://localhost:8000"
 fi
 
 # 完成
