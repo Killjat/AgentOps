@@ -1,0 +1,20 @@
+# Agent 持久化数据示例文件
+# 复制此文件为 agents.json 后修改
+
+{
+  "agent-12345678": {
+    "agent_id": "agent-12345678",
+    "host": "example.com",
+    "port": 22,
+    "username": "root",
+    "password": "your-password-here",
+    "ssh_key": null,
+    "deploy_dir": "/opt/agentops",
+    "os_type": "LINUX",
+    "os_version": "Ubuntu 22.04.3 LTS",
+    "status": "ONLINE",
+    "last_seen": "2024-01-01T00:00:00",
+    "metrics": null,
+    "owner": "admin"
+  }
+}

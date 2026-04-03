@@ -32,9 +32,15 @@ if ! command -v pip3 &>/dev/null && ! $PYTHON -m pip --version &>/dev/null 2>&1;
         || curl -sS https://bootstrap.pypa.io/get-pip.py | $PYTHON
 fi
 
+# 安装依赖（支持多种方式）
 pip3 install -r "$APP_DIR/requirements.txt" -q 2>/dev/null \
     || $PYTHON -m pip install -r "$APP_DIR/requirements.txt" -q --break-system-packages 2>/dev/null \
     || $PYTHON -m pip install -r "$APP_DIR/requirements.txt" -q
+
+# 关键修复：确保 aiohttp 被安装（即使 requirements.txt 中没有）
+$PYTHON -m pip install aiohttp>=3.9.0 --break-system-packages -q 2>/dev/null \
+    || pip3 install aiohttp>=3.9.0 -q
+
 echo "✅ 依赖安装完成"
 
 # 3. 检查 .env
@@ -83,6 +89,31 @@ sleep 2
 echo ""
 echo "[4/4] 配置 nginx..."
 if command -v nginx &>/dev/null; then
+    # 检测系统类型并选择正确的配置路径
+    if [ -d "/etc/nginx/sites-available" ]; then
+        # Debian/Ubuntu 风格
+        NGINX_CONF_DIR="/etc/nginx/sites-available"
+        NGINX_ENABLED="/etc/nginx/sites-enabled"
+        NGINX_CONF_FILE="$NGINX_CONF_DIR/${SERVICE_NAME}"
+        ENABLE_CMD="ln -sf $NGINX_CONF_FILE $NGINX_ENABLED/${SERVICE_NAME}"
+        DISABLE_DEFAULT="rm -f /etc/nginx/sites-enabled/default 2>/dev/null"
+        echo "检测到 Debian/Ubuntu 风格 Nginx 配置"
+    elif [ -d "/etc/nginx/conf.d" ]; then
+        # CentOS/RHEL 风格
+        NGINX_CONF_DIR="/etc/nginx/conf.d"
+        NGINX_CONF_FILE="$NGINX_CONF_DIR/${SERVICE_NAME}.conf"
+        ENABLE_CMD="true"  # conf.d 目录下的配置自动生效
+        DISABLE_DEFAULT="true"
+        echo "检测到 CentOS/RHEL 风格 Nginx 配置"
+    else
+        # 未知系统，尝试使用 conf.d
+        NGINX_CONF_DIR="/etc/nginx/conf.d"
+        NGINX_CONF_FILE="$NGINX_CONF_DIR/${SERVICE_NAME}.conf"
+        ENABLE_CMD="true"
+        DISABLE_DEFAULT="true"
+        echo "⚠️  未知 Nginx 配置风格，使用 conf.d 目录"
+    fi
+
     # 生成自签证书（如果不存在）
     mkdir -p /etc/nginx/ssl
     if [ ! -f /etc/nginx/ssl/${SERVICE_NAME}.crt ]; then
@@ -93,7 +124,8 @@ if command -v nginx &>/dev/null; then
         echo "✅ 自签证书已生成"
     fi
 
-    cat > /etc/nginx/sites-available/${SERVICE_NAME} << 'NGINX'
+    # 生成 Nginx 配置文件
+    cat > $NGINX_CONF_FILE << 'NGINX'
 server {
     listen 80;
     return 301 https://$host$request_uri;
@@ -114,10 +146,17 @@ server {
 }
 NGINX
 
-    ln -sf /etc/nginx/sites-available/${SERVICE_NAME} /etc/nginx/sites-enabled/
-    rm -f /etc/nginx/sites-enabled/default 2>/dev/null
-    nginx -t && systemctl restart nginx
-    echo "✅ nginx 已配置，HTTPS 443 端口"
+    # 启用配置
+    eval $ENABLE_CMD
+    eval $DISABLE_DEFAULT
+
+    # 测试并重启 Nginx
+    if nginx -t 2>&1; then
+        systemctl restart nginx
+        echo "✅ nginx 已配置，HTTPS 443 端口"
+    else
+        echo "⚠️  nginx 配置测试失败，请检查配置文件: $NGINX_CONF_FILE"
+    fi
 else
     echo "⚠️  未安装 nginx，服务运行在 http://localhost:8000"
 fi

@@ -5,10 +5,15 @@ import os
 import asyncio
 import yaml
 import json
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # 自动加载 .env
 _env_file = Path(__file__).parent.parent / ".env"
@@ -25,6 +30,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import sys
+sys.path.insert(0, str(Path(__file__).parent))
 
 from models import (
     AgentInfo, AgentStatus, RemoteHost, TaskRequest, TaskResult, TaskStatus,
@@ -35,16 +42,152 @@ import llm as LLM
 
 HOSTS_FILE = Path(__file__).parent.parent / "hosts.yaml"
 WEB_DIR = Path(__file__).parent.parent / "web"
-AGENTS_FILE = Path(__file__).parent.parent / "agents.json"  # 持久化 Agent 列表
-
-app = FastAPI(title="CyberAgentOps", version="3.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"],
-                   allow_methods=["*"], allow_headers=["*"])
+AGENTS_FILE = Path(__file__).parent.parent / "agents.json"
+TASKS_FILE = Path(__file__).parent.parent / "tasks.json"
+APP_DEPLOYS_FILE = Path(__file__).parent.parent / "app_deploys.json"
+LOGS_DIR = Path(__file__).parent.parent / "logs"
 
 # 内存存储（可替换为数据库）
 agents: Dict[str, AgentInfo] = {}
 tasks: Dict[str, TaskResult] = {}
 app_deploys: Dict[str, AppDeployResult] = {}
+
+# ── 持久化函数 ────────────────────────────────────────────────────
+def _load_json(file_path: Path, default: dict) -> dict:
+    """加载 JSON 文件，不存在则返回默认值"""
+    if not file_path.exists():
+        return default
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[警告] 加载 {file_path} 失败: {e}")
+        return default
+
+def _save_json(file_path: Path, data: dict):
+    """保存数据到 JSON 文件"""
+    try:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+    except Exception as e:
+        print(f"[警告] 保存 {file_path} 失败: {e}")
+
+def _load_persistent_data():
+    """启动时加载持久化数据"""
+    global agents, tasks, app_deploys
+
+    # 加载 agents
+    logger.info(f"[加载] 从 {AGENTS_FILE} 加载 agents...")
+    agents_data = _load_json(AGENTS_FILE, {})
+    logger.info(f"[加载] agents 文件中有 {len(agents_data)} 条记录")
+    for agent_id, data in agents_data.items():
+        try:
+            agents[agent_id] = AgentInfo(**data)
+            logger.info(f"[加载] 成功加载 agent: {agent_id}")
+        except Exception as e:
+            logger.error(f"[加载] 加载 agent {agent_id} 失败: {e}")
+    logger.info(f"[加载] agents 加载完成，共 {len(agents)} 个")
+
+    # 加载 tasks
+    logger.info(f"[加载] 从 {TASKS_FILE} 加载 tasks...")
+    tasks_data = _load_json(TASKS_FILE, {})
+    logger.info(f"[加载] tasks 文件中有 {len(tasks_data)} 条记录")
+    for task_id, data in tasks_data.items():
+        try:
+            tasks[task_id] = TaskResult(**data)
+        except Exception as e:
+            logger.error(f"[加载] 加载 task {task_id} 失败: {e}")
+    logger.info(f"[加载] tasks 加载完成，共 {len(tasks)} 个")
+
+    # 加载 app_deploys
+    logger.info(f"[加载] 从 {APP_DEPLOYS_FILE} 加载 app_deploys...")
+    deploys_data = _load_json(APP_DEPLOYS_FILE, {})
+    logger.info(f"[加载] app_deploys 文件中有 {len(deploys_data)} 条记录")
+    for deploy_id, data in deploys_data.items():
+        try:
+            app_deploys[deploy_id] = AppDeployResult(**data)
+            logger.info(f"[加载] 成功加载 deploy: {deploy_id}")
+        except Exception as e:
+            logger.error(f"[加载] 加载 deploy {deploy_id} 失败: {e}")
+    logger.info(f"[加载] app_deploys 加载完成，共 {len(app_deploys)} 个")
+
+    print(f"[持久化] 已加载: {len(agents)} 个 Agent, {len(tasks)} 个任务, {len(app_deploys)} 个应用部署")
+
+def _save_agents():
+    """保存 agents 到文件"""
+    data = {k: v.model_dump(mode='json', exclude_none=True) for k, v in agents.items()}
+    _save_json(AGENTS_FILE, data)
+
+def _save_tasks():
+    """保存 tasks 到文件"""
+    data = {k: v.model_dump(mode='json', exclude_none=True) for k, v in tasks.items()}
+    _save_json(TASKS_FILE, data)
+
+def _save_app_deploys():
+    """保存 app_deploys 到文件"""
+    data = {k: v.model_dump(mode='json', exclude_none=True) for k, v in app_deploys.items()}
+    _save_json(APP_DEPLOYS_FILE, data)
+
+def _append_deploy_log(deploy_id: str, message: str):
+    """追加部署日志到单独的文件"""
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = LOGS_DIR / f"{deploy_id}.log"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"[{timestamp}] {message}\n")
+    except Exception as e:
+        print(f"[警告] 写入部署日志失败: {e}")
+
+# ── 生命周期事件 ────────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    # 启动时加载数据
+    logger.info("[lifespan] 开始加载持久化数据...")
+    try:
+        _load_persistent_data()
+        logger.info("[lifespan] 数据加载完成")
+    except Exception as e:
+        logger.error(f"[lifespan] 数据加载失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+    yield
+
+    # 关闭时保存数据
+    logger.info("[lifespan] 开始保存数据...")
+    try:
+        _save_agents()
+        _save_tasks()
+        _save_app_deploys()
+        logger.info("[持久化] 数据已保存")
+    except Exception as e:
+        logger.error(f"[lifespan] 数据保存失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+app = FastAPI(title="CyberAgentOps", version="3.0.0", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"],
+                   allow_methods=["*"], allow_headers=["*"])
+
+# 挂载 Web 界面
+if WEB_DIR.exists():
+    from fastapi.responses import HTMLResponse
+
+    @app.get("/", include_in_schema=False)
+    async def serve_index():
+        content = (WEB_DIR / "index.html").read_text()
+        return HTMLResponse(content=content, headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache"
+        })
+
+    # 挂载静态资源子目录
+    static_dir = WEB_DIR / "static"
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # ── 用户与权限系统 ────────────────────────────────────────────
 import secrets, hashlib
@@ -283,6 +426,7 @@ async def deploy_agent(host: RemoteHost, background_tasks: BackgroundTasks,
         info.ssh_key = host.ssh_key
         info.owner = caller          # 绑定 owner
         agents[info.agent_id] = info
+        _save_agents()  # 持久化
         asyncio.create_task(_collect_metrics_now(info.agent_id))
         return info
     except Exception as e:
@@ -300,6 +444,7 @@ async def remove_agent(agent_id: str, authorization: str = Header(default="")):
     )
     await undeploy(host)
     del agents[agent_id]
+    _save_agents()  # 持久化
     return {"message": f"Agent {agent_id} 已移除"}
 
 
@@ -327,6 +472,7 @@ async def receive_metrics(agent_id: str, payload: dict):
     info.metrics = payload.get("metrics", payload)
     info.last_seen = datetime.now().isoformat()
     info.status = AgentStatus.ONLINE
+    _save_agents()  # 持久化 Agent 状态
     return {"ok": True}
 
 
@@ -346,6 +492,7 @@ async def ping_agent(agent_id: str):
     result = await _agent_get(info, "/ping")
     info.status = AgentStatus.ONLINE if result else AgentStatus.OFFLINE
     info.last_seen = datetime.now().isoformat()
+    _save_agents()  # 持久化 Agent 状态
     return {"online": bool(result), "info": result}
 
 
@@ -370,6 +517,7 @@ async def submit_task(request: TaskRequest, background_tasks: BackgroundTasks,
         created_at=datetime.now().isoformat(),
     )
     tasks[task_id] = task
+    _save_tasks()  # 持久化
     background_tasks.add_task(_run_task, task_id, request)
     return task
 
@@ -724,6 +872,7 @@ async def create_app_deploy(request: AppDeployRequest, background_tasks: Backgro
         created_at=datetime.now().isoformat(),
     )
     app_deploys[deploy_id] = result
+    _save_app_deploys()  # 持久化
     background_tasks.add_task(_run_app_deploy, deploy_id, request)
     return result
 
@@ -763,12 +912,44 @@ async def upload_config_file(deploy_id: str,
         return {"ok": True, "path": target, "size": len(content)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/deploy/app/{deploy_id}", response_model=AppDeployResult)
+async def get_app_deploy(deploy_id: str, authorization: str = Header(default="")):
+    """获取单个部署详情"""
+    if deploy_id not in app_deploys:
+        raise HTTPException(status_code=404, detail="部署任务不存在")
+    d = app_deploys[deploy_id]
+    _check_owner(authorization, d.owner, "部署任务")
+    return d
+
+
+@app.get("/deploy/app")
 async def list_app_deploys(authorization: str = Header(default="")):
     result = list(app_deploys.values())
     if not _is_admin(authorization):
         caller = _get_caller(authorization)
         result = [d for d in result if d.owner == caller]
     return sorted(result, key=lambda d: d.created_at, reverse=True)
+
+
+@app.get("/deploy/app/{deploy_id}/log")
+async def get_deploy_log(deploy_id: str, authorization: str = Header(default="")):
+    """获取部署的详细日志文件"""
+    if deploy_id not in app_deploys:
+        raise HTTPException(status_code=404, detail="部署任务不存在")
+    d = app_deploys[deploy_id]
+    _check_owner(authorization, d.owner, "部署任务")
+
+    log_file = LOGS_DIR / f"{deploy_id}.log"
+    if not log_file.exists():
+        return {"log": d.log or "无详细日志", "file_exists": False}
+
+    try:
+        log_content = log_file.read_text(encoding='utf-8')
+        return {"log": log_content, "file_exists": True}
+    except Exception as e:
+        return {"log": f"读取日志失败: {e}", "file_exists": False, "inline_log": d.log}
 
 
 @app.post("/deploy/app/{deploy_id}/chat")
@@ -824,6 +1005,7 @@ async def chat_with_deploy(deploy_id: str, req: ChatRequest,
         conv.append({"role": "user", "content": req.message})
         conv.append({"role": "assistant", "content": f"执行命令：`{command}`\n\n{reply}"})
         d.__dict__['conversation'] = conv
+        _save_app_deploys()  # 持久化对话
 
         return {"reply": reply, "command": command, "exec_result": exec_result, "conversation": conv}
     else:
@@ -836,23 +1018,8 @@ async def chat_with_deploy(deploy_id: str, req: ChatRequest,
         conv.append({"role": "user", "content": req.message})
         conv.append({"role": "assistant", "content": reply})
         d.__dict__['conversation'] = conv
+        _save_app_deploys()  # 持久化对话
         return {"reply": reply, "command": None, "exec_result": None, "conversation": conv}
-
-
-@app.get("/deploy/app/{deploy_id}", response_model=AppDeployResult)
-async def get_app_deploy(deploy_id: str):
-    if deploy_id not in app_deploys:
-        raise HTTPException(status_code=404, detail="部署任务不存在")
-    return app_deploys[deploy_id]
-
-
-@app.get("/deploy/app", response_model=List[AppDeployResult])
-async def list_app_deploys(authorization: str = Header(default="")):
-    result = list(app_deploys.values())
-    if not _is_admin(authorization):
-        caller = _get_caller(authorization)
-        result = [d for d in result if d.owner == caller]
-    return sorted(result, key=lambda d: d.created_at, reverse=True)
 
 
 async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
@@ -887,11 +1054,12 @@ async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
 
             # ── 2. clone / pull ───────────────────────────────────
             check_dir = await conn.run(f"test -d {request.deploy_dir}/.git && echo exists", check=False)
-            if "exists" in (check_dir.stdout or ""):
-                log(f"▶ 目录已存在，git pull ({request.branch})")
+            is_update = "exists" in (check_dir.stdout or "")
+            if is_update:
+                log(f"▶ 检测到已有部署，执行更新 (git pull {request.branch})")
                 await run(f"cd {request.deploy_dir} && git fetch origin && git checkout {request.branch} && git pull origin {request.branch}")
             else:
-                log(f"▶ git clone -> {request.deploy_dir}")
+                log(f"▶ 首次部署，git clone -> {request.deploy_dir}")
                 await run(f"mkdir -p {request.deploy_dir}")
                 await run(f"git clone -b {request.branch} {request.repo_url} {request.deploy_dir}", timeout=180)
 
@@ -969,32 +1137,68 @@ async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
                 output = (r.stdout or r.stderr or "").strip()
                 if output:
                     log(output[-2000:])
+
+                # AI 分析 deploy.sh 执行结果，如果失败则提供修改建议
+                if r.exit_status != 0 or ("error" in output.lower() or "failed" in output.lower() or "no such file" in output.lower()):
+                    log("▶ deploy.sh 执行遇到问题，AI 分析中...")
+                    analysis_prompt = f"""分析以下 deploy.sh 执行输出，判断是否需要修改脚本：
+
+目标系统：{info.os_version}
+deploy.sh 执行结果：
+{output[-1500:]}
+
+如果执行失败，请：
+1. 指出具体错误原因（如路径错误、权限问题、依赖缺失等）
+2. 提供具体的修复建议，包括需要修改的代码片段
+3. 如果脚本中包含硬编码的路径（如 /etc/nginx/sites-available/），需要适配不同系统
+
+如果执行成功，则回答："脚本执行正常"
+
+回答格式：
+问题：[具体问题]
+原因：[原因分析]
+修复建议：[具体修改建议]"""
+
+                    try:
+                        analysis = await LLM.chat([{"role": "user", "content": analysis_prompt}], max_tokens=500)
+                        log(f"\n── deploy.sh 问题分析 ──\n{analysis}\n─────────────────")
+                    except Exception as e:
+                        log(f"⚠️  AI 分析失败: {e}")
             else:
                 # ── 5. 按 AI 计划安装依赖 ────────────────────────
                 install_steps = plan.get('install_steps') or []
                 if request.install_cmd:
                     install_steps = [request.install_cmd]
                 elif not install_steps:
-                    # 兜底：扫描依赖文件
-                    if await conn.run(f"test -f {request.deploy_dir}/requirements.txt", check=False).exit_status == 0:
+                    if (await conn.run(f"test -f {request.deploy_dir}/requirements.txt", check=False)).exit_status == 0:
                         install_steps = ["pip3 install -r requirements.txt 2>/dev/null || python3 -m pip install -r requirements.txt --break-system-packages"]
 
                 for step in install_steps:
                     log(f"▶ {step}")
                     await run(f"cd {request.deploy_dir} && {step}", timeout=300)
 
-                # ── 6. 启动 ──────────────────────────────────────
+                # ── 6. 启动或重启 ─────────────────────────────────
                 start_cmd = request.start_cmd or plan.get('start_cmd', '')
                 if request.use_systemd and request.service_name and start_cmd:
-                    log(f"▶ 注册 systemd 服务: {request.service_name}")
-                    svc = f"[Unit]\nDescription={request.service_name}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory={request.deploy_dir}\nExecStart={start_cmd}\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\n"
-                    async with conn.start_sftp_client() as sftp:
-                        async with sftp.open(f"/etc/systemd/system/{request.service_name}.service", 'w') as f:
-                            await f.write(svc)
-                    await run(f"systemctl daemon-reload && systemctl enable {request.service_name} && systemctl restart {request.service_name}")
+                    if is_update:
+                        log(f"▶ 更新：重启 systemd 服务 {request.service_name}")
+                        await run(f"systemctl restart {request.service_name}")
+                    else:
+                        log(f"▶ 注册 systemd 服务: {request.service_name}")
+                        svc = f"[Unit]\nDescription={request.service_name}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory={request.deploy_dir}\nExecStart={start_cmd}\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\n"
+                        async with conn.start_sftp_client() as sftp:
+                            async with sftp.open(f"/etc/systemd/system/{request.service_name}.service", 'w') as f:
+                                await f.write(svc)
+                        await run(f"systemctl daemon-reload && systemctl enable {request.service_name} && systemctl restart {request.service_name}")
                 elif start_cmd:
-                    log(f"▶ 后台启动: {start_cmd}")
-                    await run(f"cd {request.deploy_dir} && nohup {start_cmd} > app.log 2>&1 &")
+                    if is_update:
+                        # 更新时：杀掉旧进程，重新启动
+                        old_proc = start_cmd.split()[0]
+                        log(f"▶ 更新：重启应用进程")
+                        await run(f"pkill -f '{old_proc}' 2>/dev/null; sleep 1; cd {request.deploy_dir} && nohup {start_cmd} > app.log 2>&1 &")
+                    else:
+                        log(f"▶ 后台启动: {start_cmd}")
+                        await run(f"cd {request.deploy_dir} && nohup {start_cmd} > app.log 2>&1 &")
 
             # ── 7. 验证部署结果 ───────────────────────────────────
             log("\n▶ 验证部署结果...")
@@ -1027,10 +1231,63 @@ async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
 - 日志有 ModuleNotFoundError/ImportError/Error → 失败
 - 日志有 started/running/listening → 成功
 
-只回答：✅ 部署成功 或 ❌ 部署失败，然后一句话说明原因，如果失败给出修复建议。"""
+如果部署失败，请：
+1. 明确指出失败原因
+2. 如果是 deploy.sh 问题，提供具体的修改建议
+3. 如果是依赖问题，提供安装命令
+4. 如果是配置问题，提供修改方案
 
-            verdict = await LLM.chat([{"role": "user", "content": final_prompt}], max_tokens=200)
+只回答：✅ 部署成功 或 ❌ 部署失败，然后说明原因，如果失败给出具体的修复建议（包括需要修改的文件路径和代码）。"""
+
+            verdict = await LLM.chat([{"role": "user", "content": final_prompt}], max_tokens=400)
             log(f"\n── 部署验证结果 ──\n{verdict}\n─────────────────")
+
+            # 如果验证失败且 deploy.sh 存在，提供详细修改指导
+            if ("❌" in verdict or "失败" in verdict) and "exists" in (deploy_sh.stdout or ""):
+                log("▶ 生成 deploy.sh 修改指导...")
+                fix_prompt = f"""以下 deploy.sh 执行导致部署失败，请提供详细的修改指导：
+
+目标系统：{info.os_version}
+deploy.sh 错误输出：{output[-1000:] if 'output' in locals() else '无'}
+应用日志错误：{app_log_out[-300:] if app_log_out else '无'}
+验证结果：{verdict}
+
+请提供：
+1. deploy.sh 中需要修改的具体行数和代码
+2. 修改后的完整代码片段
+3. 需要额外执行的命令来修复问题
+4. 如何验证修复是否成功
+
+以以下格式回答：
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 deploy.sh 修改指导
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+问题定位：
+[具体问题描述]
+
+需要修改的位置：
+[文件名:行号] 原代码 → 修改后代码
+
+修复代码：
+```bash
+# 完整的修复代码
+```
+
+执行命令：
+```bash
+# 需要执行的命令
+```
+
+验证方法：
+[验证修复是否成功的方法]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+
+                try:
+                    fix_guide = await LLM.chat([{"role": "user", "content": fix_prompt}], max_tokens=800)
+                    log(f"\n{fix_guide}\n")
+                except Exception as e:
+                    log(f"⚠️  生成修改指导失败: {e}")
 
             if "❌" in verdict or "失败" in verdict:
                 d.status = AppDeployStatus.FAILED
@@ -1045,6 +1302,8 @@ async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
         d.status = AppDeployStatus.FAILED
     finally:
         d.completed_at = datetime.now().isoformat()
+        _save_app_deploys()  # 持久化部署结果
+        _append_deploy_log(deploy_id, d.log)  # 追加日志文件
 
 
 async def _run_task(task_id: str, request: TaskRequest):
@@ -1087,26 +1346,11 @@ async def _run_task(task_id: str, request: TaskRequest):
     finally:
         task.completed_at = datetime.now().isoformat()
         info.last_seen = datetime.now().isoformat()
+        _save_tasks()  # 持久化任务状态
 
 
 if __name__ == "__main__":
     import uvicorn
-    if WEB_DIR.exists():
-        from fastapi.responses import HTMLResponse
-
-        @app.get("/", include_in_schema=False)
-        async def serve_index():
-            content = (WEB_DIR / "index.html").read_text()
-            return HTMLResponse(content=content, headers={
-                "Cache-Control": "no-store, no-cache, must-revalidate",
-                "Pragma": "no-cache"
-            })
-
-        # 只挂载静态资源子目录，不覆盖 API 路由
-        static_dir = WEB_DIR / "static"
-        if static_dir.exists():
-            app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
     host = os.getenv("SERVER_HOST", "0.0.0.0")
     port = int(os.getenv("SERVER_PORT", "8000"))
     uvicorn.run(app, host=host, port=port)

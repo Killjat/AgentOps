@@ -704,7 +704,9 @@
                     {{ d.status }}
                   </span>
                 </td>
-                <td><button class="btn btn-ghost btn-sm" @click="viewDeployLog(d)">查看日志</button></td>
+                <td><button class="btn btn-ghost btn-sm" @click="viewDeployLog(d)">查看日志</button>
+                    <button class="btn btn-ghost btn-sm" style="margin-left:4px" @click="updateDeploy(d)" :disabled="appDeploying">🔄 更新</button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -1293,6 +1295,50 @@ createApp({
 
     function viewDeployLog(d) { deployLogData.value = d }
 
+    async function updateDeploy(d) {
+      if (!confirm(`确认更新 ${d.repo_url.replace('https://github.com/','')} 到 ${agentName(d.agent_id)}？`)) return
+      appDeploying.value = true
+      appDeployError.value = ''
+      try {
+        const r = await fetch(`${API}/deploy/app`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.value}` },
+          body: JSON.stringify({
+            agent_id: d.agent_id,
+            repo_url: d.repo_url,
+            branch: 'main',
+            deploy_dir: d.deploy_dir,
+          })
+        })
+        if (r.ok) {
+          const newDeploy = await r.json()
+          appDeploySuccess.value = `更新任务已创建: ${newDeploy.deploy_id}`
+          deployLogData.value = newDeploy
+          await loadAppDeploys()
+          // 轮询
+          const poll = setInterval(async () => {
+            const r2 = await fetch(`${API}/deploy/app/${newDeploy.deploy_id}`, {
+              headers: { 'Authorization': `Bearer ${token.value}` }
+            })
+            const nd = await r2.json()
+            if (deployLogData.value?.deploy_id === nd.deploy_id) deployLogData.value = nd
+            if (['success','failed'].includes(nd.status)) {
+              clearInterval(poll)
+              appDeploying.value = false
+              loadAppDeploys()
+            }
+          }, 2000)
+        } else {
+          const e = await r.json()
+          appDeployError.value = e.detail || '更新失败'
+          appDeploying.value = false
+        }
+      } catch(e) {
+        appDeployError.value = e.message
+        appDeploying.value = false
+      }
+    }
+
     async function refreshDeployLog() {
       if (!deployLogData.value) return
       const r = await fetch(`${API}/deploy/app/${deployLogData.value.deploy_id}`, {
@@ -1576,7 +1622,7 @@ createApp({
       chatInput, chatLoading, sendChat, renderMd,
       appDeployList, appDeployError, appDeploySuccess, appDeploying,
       deployLogData, appForm, loadAppDeploys, startAppDeploy,
-      viewDeployLog, refreshDeployLog,
+      viewDeployLog, updateDeploy, refreshDeployLog,
       deployChatInput, deployChatLoading, deployFile, deployUploadPath, deployAsEnv,
       onDeployFileChange, uploadDeployFile, sendDeployChat,
     }
