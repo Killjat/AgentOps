@@ -32,6 +32,11 @@ if systemctl is-active --quiet $SERVICE_NAME 2>/dev/null; then
     sleep 3
 fi
 
+# 禁用服务自启和自动重启，防止后台拉起
+echo "  禁用服务自启和自动重启..."
+systemctl disable $SERVICE_NAME 2>/dev/null || true
+sleep 2
+
 # 杀死残留的进程
 echo "  清理残留进程..."
 pkill -f "python.*server/main.py" 2>/dev/null || true
@@ -51,6 +56,7 @@ if ss -tlnp 2>/dev/null | grep -q :8000; then
     echo "  ❌ 端口 8000 仍被占用，显示占用进程："
     lsof -i :8000 2>/dev/null || ss -tlnp 2>/dev/null | grep :8000
     echo "  请手动终止占用进程"
+    exit 1
 else
     echo "  ✅ 端口 8000 已释放"
 fi
