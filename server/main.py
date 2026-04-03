@@ -689,16 +689,30 @@ async def _agent_get(info: AgentInfo, path: str) -> Optional[dict]:
     try:
         conn = await asyncssh.connect(**_ssh_kwargs(info))
         try:
-            r = await conn.run("pgrep -f 'agent.py' && echo running || echo stopped", check=False)
-            running = "running" in (r.stdout or "")
-            # 顺便获取系统信息
-            info_r = await conn.run("uname -n && uname -sr", check=False)
-            lines = (info_r.stdout or "").strip().splitlines()
+            # 根据系统类型使用不同的命令检查进程
+            if info.os_type == OSType.WINDOWS:
+                # Windows: 使用 tasklist 检查 python 进程
+                r = await conn.run('tasklist /FI "IMAGENAME eq pythonw.exe" /FI "STATUS eq running"', check=False,
+                                   encoding="latin-1", errors="replace")
+                running = "pythonw.exe" in (r.stdout or "")
+                # 获取系统信息
+                info_r = await conn.run("hostname", check=False, encoding="latin-1", errors="replace")
+                hostname = (info_r.stdout or "").strip()
+            else:
+                # Linux/macOS: 使用 pgrep 检查
+                r = await conn.run("pgrep -f 'agent.py' && echo running || echo stopped", check=False)
+                running = "running" in (r.stdout or "")
+                # 获取系统信息
+                info_r = await conn.run("uname -n && uname -sr", check=False)
+                lines = (info_r.stdout or "").strip().splitlines()
+                hostname = lines[0] if lines else ""
+                os_str = lines[1] if len(lines) > 1 else ""
+
             return {
                 "pong": running,
                 "info": {
-                    "hostname": lines[0] if lines else "",
-                    "os": lines[1] if len(lines) > 1 else "",
+                    "hostname": hostname,
+                    "os": os_str if info.os_type != OSType.WINDOWS else "Windows",
                     "os_version": info.os_version,
                 }
             }
