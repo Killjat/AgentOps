@@ -1352,5 +1352,16 @@ async def _run_task(task_id: str, request: TaskRequest):
 if __name__ == "__main__":
     import uvicorn
     host = os.getenv("SERVER_HOST", "0.0.0.0")
-    port = int(os.getenv("SERVER_PORT", "8000"))
-    uvicorn.run(app, host=host, port=port)
+    port = int(os.getenv("SERVER_PORT", "8443"))
+    ssl_keyfile = os.getenv("SSL_KEYFILE", "/etc/ssl/private/server.key")
+    ssl_certfile = os.getenv("SSL_CERTFILE", "/etc/ssl/certs/server.crt")
+
+    # 检查 SSL 证书是否存在
+    if os.path.exists(ssl_keyfile) and os.path.exists(ssl_certfile):
+        logger.info(f"Starting HTTPS server on {host}:{port}")
+        uvicorn.run(app, host=host, port=port,
+                    ssl_keyfile=ssl_keyfile, ssl_certfile=ssl_certfile)
+    else:
+        logger.warning(f"SSL certificates not found at {ssl_keyfile} and {ssl_certfile}")
+        logger.warning("Falling back to HTTP mode (for development only)")
+        uvicorn.run(app, host=host, port=port)

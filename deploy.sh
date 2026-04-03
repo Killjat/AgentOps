@@ -8,6 +8,8 @@ set -e
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICE_NAME="cyberagentops"
 PYTHON="python3"
+SSL_CERT_DIR="/etc/ssl/certs"
+SSL_KEY_DIR="/etc/ssl/private"
 
 echo "=================================="
 echo "CyberAgentOps 部署脚本"
@@ -78,9 +80,30 @@ else
     echo "✅ .env 已存在"
 fi
 
+# 3.5 生成 SSL 证书（如果不存在）
+echo ""
+echo "[3/4] 配置 SSL 证书..."
+SSL_CERT_FILE="$SSL_CERT_DIR/server.crt"
+SSL_KEY_FILE="$SSL_KEY_DIR/server.key"
+
+if [ ! -f "$SSL_CERT_FILE" ] || [ ! -f "$SSL_KEY_FILE" ]; then
+    echo "  生成自签名 SSL 证书..."
+    mkdir -p "$SSL_CERT_DIR" "$SSL_KEY_DIR"
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout "$SSL_KEY_FILE" \
+        -out "$SSL_CERT_FILE" \
+        -subj "/C=CN/ST=Beijing/L=Beijing/O=AgentOps/OU=Dev/CN=localhost" \
+        2>/dev/null
+    chmod 600 "$SSL_KEY_FILE"
+    chmod 644 "$SSL_CERT_FILE"
+    echo "  ✅ SSL 证书生成成功"
+else
+    echo "  ✅ SSL 证书已存在"
+fi
+
 # 4. 注册 systemd 服务
 echo ""
-echo "[3/4] 配置 systemd 服务..."
+echo "[4/4] 配置 systemd 服务..."
 PYTHON_ABS_PATH=$(which $PYTHON)
 echo "  服务将使用的 Python: $PYTHON_ABS_PATH"
 echo "  Python 版本: $($PYTHON_ABS_PATH --version)"
@@ -126,7 +149,7 @@ fi
 
 # 5. 配置 nginx（如果已安装）
 echo ""
-echo "[4/4] 配置 nginx..."
+echo "[5/5] 配置 nginx..."
 if command -v nginx &>/dev/null; then
     # 检测系统类型并选择正确的配置路径
     if [ -d "/etc/nginx/sites-available" ]; then
@@ -170,13 +193,13 @@ server {
     return 301 https://$host$request_uri;
 }
 server {
-    listen 443 ssl;
-    ssl_certificate     /etc/nginx/ssl/cyberagentops.crt;
-    ssl_certificate_key /etc/nginx/ssl/cyberagentops.key;
+    listen 8443 ssl;
+    ssl_certificate     /etc/ssl/certs/server.crt;
+    ssl_certificate_key /etc/ssl/private/server.key;
     ssl_protocols       TLSv1.2 TLSv1.3;
     client_max_body_size 20m;
     location / {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass https://127.0.0.1:8443;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
@@ -192,12 +215,12 @@ NGINX
     # 测试并重启 Nginx
     if nginx -t 2>&1; then
         systemctl restart nginx
-        echo "✅ nginx 已配置，HTTPS 443 端口"
+        echo "✅ nginx 已配置，HTTPS 8443 端口"
     else
         echo "⚠️  nginx 配置测试失败，请检查配置文件: $NGINX_CONF_FILE"
     fi
 else
-    echo "⚠️  未安装 nginx，服务运行在 http://localhost:8000"
+    echo "⚠️  未安装 nginx，服务运行在 https://localhost:8443"
 fi
 
 # 完成
