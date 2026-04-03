@@ -23,6 +23,18 @@ if ! command -v python3 &>/dev/null; then
 fi
 echo "✅ Python: $($PYTHON --version)"
 
+# 1.5 停止现有服务（避免端口占用）
+echo ""
+echo "[停止现有服务]..."
+if systemctl is-active --quiet $SERVICE_NAME 2>/dev/null; then
+    echo "  正在停止服务 $SERVICE_NAME..."
+    systemctl stop $SERVICE_NAME
+    sleep 2
+    echo "  ✅ 服务已停止"
+else
+    echo "  ℹ️  服务未运行，无需停止"
+fi
+
 # 2. 安装依赖
 echo ""
 echo "[1/4] 安装 Python 依赖..."
@@ -67,7 +79,7 @@ echo "✅ 依赖安装完成"
 
 # 3. 检查 .env
 echo ""
-echo "[2/4] 检查配置文件..."
+echo "[3/5] 检查配置文件..."
 if [ ! -f "$APP_DIR/.env" ]; then
     if [ -f "$APP_DIR/.env.example" ]; then
         cp "$APP_DIR/.env.example" "$APP_DIR/.env"
@@ -82,7 +94,7 @@ fi
 
 # 3.5 生成 SSL 证书（如果不存在）
 echo ""
-echo "[3/4] 配置 SSL 证书..."
+echo "[4/5] 配置 SSL 证书..."
 SSL_CERT_FILE="$SSL_CERT_DIR/server.crt"
 SSL_KEY_FILE="$SSL_KEY_DIR/server.key"
 
@@ -103,7 +115,7 @@ fi
 
 # 4. 注册 systemd 服务
 echo ""
-echo "[4/4] 配置 systemd 服务..."
+echo "[5/5] 配置 systemd 服务..."
 PYTHON_ABS_PATH=$(which $PYTHON)
 echo "  服务将使用的 Python: $PYTHON_ABS_PATH"
 echo "  Python 版本: $($PYTHON_ABS_PATH --version)"
@@ -149,7 +161,7 @@ fi
 
 # 5. 配置 nginx（如果已安装）
 echo ""
-echo "[5/5] 配置 nginx..."
+echo "[6/6] 配置 nginx..."
 if command -v nginx &>/dev/null; then
     # 检测系统类型并选择正确的配置路径
     if [ -d "/etc/nginx/sites-available" ]; then
