@@ -389,19 +389,42 @@
       <div v-if="page==='agents'">
         <div class="section-header">
           <div class="page-title">Agent 管理</div>
-          <button class="btn btn-ghost" @click="loadAgents()">刷新</button>
+          <div style="display:flex;gap:8px">
+            <select v-model="agentFilter.os" style="width:120px;font-size:12px">
+              <option value="">全部系统</option>
+              <option value="linux">🐧 Linux</option>
+              <option value="windows">🪟 Windows</option>
+              <option value="macos">🍎 macOS</option>
+              <option value="android">📱 Android</option>
+              <option value="ios">📱 iOS</option>
+            </select>
+            <select v-model="agentFilter.conn" style="width:120px;font-size:12px">
+              <option value="">全部连接</option>
+              <option value="ssh">SSH</option>
+              <option value="rdp">RDP</option>
+              <option value="usb">USB</option>
+              <option value="agent_push">主动上报</option>
+            </select>
+            <button class="btn btn-ghost" @click="loadAgents()">刷新</button>
+          </div>
         </div>
         <div class="card">
-          <table v-if="agents.length">
+          <table v-if="filteredAgents.length">
             <thead>
-              <tr><th>名称</th><th>Agent ID</th><th>主机</th><th>系统</th><th>状态</th><th>最后在线</th><th>操作</th></tr>
+              <tr><th>名称</th><th>系统</th><th>连接</th><th>Agent ID</th><th>主机</th><th>状态</th><th>最后在线</th><th>操作</th></tr>
             </thead>
             <tbody>
-              <tr v-for="a in agents" :key="a.agent_id">
+              <tr v-for="a in filteredAgents" :key="a.agent_id">
                 <td><b>{{ a.name || '-' }}</b></td>
+                <td>
+                  <span>{{ {linux:'🐧',windows:'🪟',macos:'🍎',android:'📱 Android',ios:'📱 iOS',unknown:'❓'}[a.os_type]||'❓' }}</span>
+                  <span style="font-size:11px;color:#64748b;margin-left:4px">{{ a.os_version?.slice(0,20) }}</span>
+                </td>
+                <td>
+                  <span class="tag" style="font-size:10px">{{ {ssh:'SSH',rdp:'RDP',usb:'USB',agent_push:'推送',api:'API'}[a.connection_type]||a.connection_type }}</span>
+                </td>
                 <td><span class="tag">{{ a.agent_id }}</span></td>
-                <td>{{ a.host }}</td>
-                <td>{{ a.os_version }}</td>
+                <td>{{ a.host || '-' }}</td>
                 <td>
                   <span class="badge" :class="'badge-'+a.status">
                     <span class="dot" :class="a.status==='online'?'dot-green':a.status==='busy'?'dot-yellow':'dot-red'"></span>
@@ -412,6 +435,7 @@
                 <td style="display:flex;gap:6px">
                   <button class="btn btn-ghost btn-sm" @click="pingAgent(a.agent_id)">Ping</button>
                   <button class="btn btn-ghost btn-sm" @click="viewMetrics(a)">📊 指标</button>
+                  <button class="btn btn-ghost btn-sm" @click="openSkills(a)">🔧 技能</button>
                   <button v-if="hasPerm('host')" class="btn btn-danger btn-sm" style="margin-left:6px" @click="removeAgent(a.agent_id)">移除</button>
                 </td>
               </tr>
@@ -775,6 +799,91 @@
       </div>
       <div class="alert alert-error" style="margin-top:10px" v-if="editError">{{ editError }}</div>
       <div class="alert alert-success" style="margin-top:10px" v-if="editSuccess">{{ editSuccess }}</div>
+    </div>
+  </div>
+
+  <!-- 技能 Modal -->
+  <div class="modal-overlay" v-if="skillsAgent" @click.self="skillsAgent=null">
+    <div class="modal" style="width:680px;max-height:90vh;overflow-y:auto">
+      <div class="modal-title">🔧 {{ skillsAgent.name || skillsAgent.agent_id }} 的技能</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:16px">{{ skillsAgent.host }} · {{ skillsAgent.os_version }}</div>
+
+      <!-- 已安装的技能 -->
+      <div class="card-title">已安装</div>
+      <div v-if="agentSkills.length" style="margin-bottom:16px">
+        <div v-for="s in agentSkills" :key="s.deploy_id"
+             style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #2d3148">
+          <div>
+            <div style="font-size:13px;font-weight:500">{{ s.repo_url.replace('https://github.com/','') }}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:2px">{{ s.deploy_dir }} · {{ s.created_at.slice(0,10) }}</div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span class="badge" :class="s.status==='success'?'badge-success':s.status==='failed'?'badge-failed':'badge-running'">{{ s.status }}</span>
+            <button class="btn btn-ghost btn-sm" @click="viewDeployLog(s); skillsAgent=null">日志</button>
+            <button class="btn btn-ghost btn-sm" @click="updateDeploy(s); skillsAgent=null">🔄 更新</button>
+          </div>
+        </div>
+      </div>
+      <div v-else class="empty" style="padding:16px">暂无已安装的技能</div>
+
+      <!-- 安装新技能 -->
+      <div class="card-title" style="margin-top:16px">安装新技能</div>
+      <div class="form-row">
+        <div class="form-group" style="flex:2">
+          <label>GitHub 仓库地址</label>
+          <input v-model="skillForm.repo_url" placeholder="https://github.com/user/repo.git"
+                 @blur="autoFillSkillDir" />
+        </div>
+        <div class="form-group" style="max-width:100px">
+          <label>分支</label>
+          <input v-model="skillForm.branch" placeholder="main" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>部署目录</label>
+          <input v-model="skillForm.deploy_dir" placeholder="/opt/app" />
+        </div>
+        <div class="form-group">
+          <label>服务名（可选）</label>
+          <input v-model="skillForm.service_name" placeholder="myapp" />
+        </div>
+      </div>
+      <div class="form-row" style="align-items:center">
+        <div class="form-group" style="flex:0;min-width:auto">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" v-model="skillForm.use_systemd" style="width:auto" />
+            注册为 systemd 服务
+          </label>
+        </div>
+      </div>
+
+      <!-- 上传配置文件 -->
+      <div style="margin-bottom:12px">
+        <div v-for="(cf, i) in skillForm.configFiles" :key="i"
+             style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+          <input type="file" @change="e => cf.file = e.target.files[0]"
+                 style="flex:1;min-width:140px;padding:4px;font-size:12px" />
+          <input v-model="cf.remote_path" placeholder="远端路径（留空自动）"
+                 style="flex:1;min-width:140px;font-size:12px" :disabled="cf.as_env" />
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;color:#94a3b8;white-space:nowrap">
+            <input type="checkbox" v-model="cf.as_env" style="width:auto" />
+            保存为 .env
+          </label>
+          <button class="btn btn-danger btn-sm" @click="skillForm.configFiles.splice(i,1)">✕</button>
+        </div>
+        <button class="btn btn-ghost btn-sm" @click="skillForm.configFiles.push({file:null,remote_path:'',as_env:false})">
+          + 上传配置文件
+        </button>
+      </div>
+
+      <div class="flex-end">
+        <button class="btn btn-ghost" @click="skillsAgent=null">关闭</button>
+        <button class="btn btn-primary" @click="installSkill"
+                :disabled="!skillForm.repo_url||skillInstalling">
+          {{ skillInstalling ? '⏳ 安装中...' : '⚡ 安装技能' }}
+        </button>
+      </div>
     </div>
   </div>
 
@@ -1474,6 +1583,76 @@ createApp({
       deployChatLoading.value = false
     }
 
+    // ── Skills ──
+    const skillsAgent = ref(null)
+    const agentSkills = ref([])
+    const skillInstalling = ref(false)
+    const skillForm = ref({ repo_url: '', branch: 'main', deploy_dir: '/opt/app',
+                             service_name: '', use_systemd: false, configFiles: [] })
+
+    async function openSkills(a) {
+      skillsAgent.value = a
+      skillForm.value = { repo_url: '', branch: 'main', deploy_dir: '/opt/app',
+                          service_name: '', use_systemd: false, configFiles: [] }
+      // 加载该 Agent 的已安装技能
+      const r = await fetch(`${API}/deploy/app`, {
+        headers: { 'Authorization': `Bearer ${token.value}` }
+      })
+      if (r.ok) {
+        const all = await r.json()
+        agentSkills.value = all.filter(d => d.agent_id === a.agent_id)
+      }
+    }
+
+    function autoFillSkillDir() {
+      const url = skillForm.value.repo_url.trim()
+      if (!url) return
+      const match = url.match(/\/([^\/]+?)(\.git)?$/)
+      if (match) skillForm.value.deploy_dir = `/opt/${match[1]}`
+    }
+
+    async function installSkill() {
+      if (!skillsAgent.value) return
+      skillInstalling.value = true
+      try {
+        const body = {
+          agent_id: skillsAgent.value.agent_id,
+          repo_url: skillForm.value.repo_url,
+          branch: skillForm.value.branch,
+          deploy_dir: skillForm.value.deploy_dir,
+          service_name: skillForm.value.service_name,
+          use_systemd: skillForm.value.use_systemd,
+        }
+        const r = await fetch(`${API}/deploy/app`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.value}` },
+          body: JSON.stringify(body)
+        })
+        if (!r.ok) { const e = await r.json(); alert(e.detail); return }
+        const deploy = await r.json()
+
+        // 上传配置文件
+        for (const cf of skillForm.value.configFiles) {
+          if (!cf.file) continue
+          const fd = new FormData()
+          fd.append('file', cf.file)
+          if (cf.remote_path) fd.append('remote_path', cf.remote_path)
+          if (cf.as_env) fd.append('as_env', 'true')
+          await fetch(`${API}/deploy/app/${deploy.deploy_id}/upload`, {
+            method: 'POST', headers: { 'Authorization': `Bearer ${token.value}` }, body: fd
+          })
+        }
+
+        // 关闭技能面板，打开日志
+        skillsAgent.value = null
+        deployLogData.value = { ...deploy, log: '' }
+        startLogStream(deploy.deploy_id)
+        await loadAppDeploys()
+      } finally {
+        skillInstalling.value = false
+      }
+    }
+
     // ── Monitor ──
     let monitorTimer = null
     function startMonitor() {
@@ -1549,6 +1728,13 @@ createApp({
       }
     }
     const agents = ref([])
+    const agentFilter = ref({ os: '', conn: '' })
+    const filteredAgents = computed(() => {
+      let list = agents.value
+      if (agentFilter.value.os) list = list.filter(a => a.os_type === agentFilter.value.os)
+      if (agentFilter.value.conn) list = list.filter(a => a.connection_type === agentFilter.value.conn)
+      return list
+    })
 
     async function loadAgents() {
       const r = await fetch(`${API}/agents`, {
@@ -1686,8 +1872,10 @@ createApp({
       loadHosts, addHost, addHostOnly, addAndDeploy, deleteHost, deployHost,
       editForm, editError, editSuccess, testing, editHost, testEdit, saveEdit,
       metricsData, metricsAgent, viewMetrics, refreshMetrics,
+      skillsAgent, agentSkills, skillInstalling, skillForm,
+      openSkills, autoFillSkillDir, installSkill,
       startMonitor, refreshMonitor,
-      agents, loadAgents, pingAgent, removeAgent,
+      agents, loadAgents, pingAgent, removeAgent, agentFilter, filteredAgents,
       tasks, currentTask, detailTask, submitting, historyFilter, taskForm,
       filteredTasks, loadTasks, submitTask, viewTask, agentName,
       chatInput, chatLoading, sendChat, renderMd,

@@ -8,6 +8,25 @@ class OSType(str, Enum):
     LINUX = "linux"
     WINDOWS = "windows"
     MACOS = "macos"
+    ANDROID = "android"
+    IOS = "ios"
+    UNKNOWN = "unknown"
+
+
+class ConnectionType(str, Enum):
+    SSH = "ssh"           # Linux/macOS SSH
+    RDP = "rdp"           # Windows 远程桌面
+    USB = "usb"           # USB 直连（手机/设备）
+    AGENT_PUSH = "agent_push"  # Agent 主动上报（内网穿透）
+    API = "api"           # HTTP API 接入
+
+
+class DeviceType(str, Enum):
+    SERVER = "server"           # 服务器
+    DESKTOP = "desktop"         # 桌面电脑
+    MOBILE_ANDROID = "mobile_android"  # Android 手机
+    MOBILE_IOS = "mobile_ios"   # iOS 手机
+    IOT = "iot"                 # IoT 设备
     UNKNOWN = "unknown"
 
 
@@ -45,15 +64,20 @@ class RemoteHost(BaseModel):
 class AgentInfo(BaseModel):
     agent_id: str
     name: str = ""
-    owner: str = ""              # 创建者用户名或游客 ID
-    host: str
-    port: int
-    username: str
+    owner: str = ""
+    # 分类
+    os_type: OSType = OSType.UNKNOWN
+    os_version: str = ""
+    device_type: DeviceType = DeviceType.SERVER
+    connection_type: ConnectionType = ConnectionType.SSH
+    # 连接信息
+    host: str = ""
+    port: int = 22
+    username: str = ""
     password: Optional[str] = None
     ssh_key: Optional[str] = None
-    os_type: OSType
-    os_version: str
-    deploy_dir: str
+    deploy_dir: str = "/opt/agentops"
+    # 状态
     status: AgentStatus = AgentStatus.OFFLINE
     agent_port: int = 9000
     created_at: str
