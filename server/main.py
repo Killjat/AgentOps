@@ -1173,26 +1173,29 @@ async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
                 await run("apt-get install -y git 2>/dev/null || dnf install -y git 2>/dev/null || yum install -y git 2>/dev/null")
 
             # ── 2. clone / pull ───────────────────────────────────
-            # 首先检查是否已有部署，可能在不同的目录
+            # 首先检查配置的目录是否已有该项目的部署
             check_dir = await conn.run(f"test -d {request.deploy_dir}/.git && echo exists", check=False)
             is_update = "exists" in (check_dir.stdout or "")
 
-            if not is_update:
-                # 如果配置的目录没有 .git，尝试在其他常见位置查找
-                log(f"⚠️  配置目录 {request.deploy_dir} 没有找到 .git")
-                search_cmd = "find /opt -maxdepth 2 -name '.git' -type d 2>/dev/null | head -5"
-                search_result = await conn.run(search_cmd, check=False)
-                if search_result.stdout and search_result.stdout.strip():
-                    found_dirs = [line.rsplit('/', 1)[0] for line in search_result.stdout.strip().split('\n') if line.strip()]
-                    if found_dirs:
-                        log(f"⚠️  检测到可能的现有部署目录: {found_dirs}")
-                        log(f"⚠️  建议更新 hosts.yaml 中的 deploy_dir 为正确的目录")
-                        # 使用找到的第一个目录
-                        actual_deploy_dir = found_dirs[0]
-                        log(f"▶ 将使用实际存在的目录: {actual_deploy_dir}")
-                        log(f"⚠️  请手动更新 hosts.yaml: deploy_dir: {actual_deploy_dir}")
-                        request.deploy_dir = actual_deploy_dir
-                        is_update = True
+            if is_update:
+                # 验证是否是同一个仓库
+                git_remote = await conn.run(f"cd {request.deploy_dir} && git remote get-url origin 2>/dev/null", check=False)
+                current_repo = (git_remote.stdout or "").strip()
+                # 规范化仓库 URL（去掉 .git 后缀，统一协议）
+                def normalize_repo_url(url):
+                    url = url.rstrip('/')
+                    if url.endswith('.git'):
+                        url = url[:-4]
+                    # 统一 https:// 和 git:// 协议
+                    url = url.replace('git@github.com:', 'https://github.com/')
+                    return url.lower()
+
+                if normalize_repo_url(current_repo) != normalize_repo_url(request.repo_url):
+                    log(f"⚠️  配置目录 {request.deploy_dir} 已有其他项目: {current_repo}")
+                    log(f"▶ 新项目: {request.repo_url}")
+                    log(f"▶ 将清空目录并重新 clone")
+                    await run(f"rm -rf {request.deploy_dir}")
+                    is_update = False
 
             if is_update:
                 log(f"▶ 检测到已有部署，执行更新 (git pull {request.branch})")
