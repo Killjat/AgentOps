@@ -149,7 +149,7 @@ echo "  验证 aiohttp 是否可用: $($PYTHON_ABS_PATH -c 'import aiohttp; prin
 
 cat > /etc/systemd/system/${SERVICE_NAME}.service << EOF
 [Unit]
-Description=CyberAgentOps Server
+Description=${SERVICE_NAME}
 After=network.target
 
 [Service]

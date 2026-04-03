@@ -609,7 +609,8 @@
           <div class="form-row">
             <div class="form-group" style="flex:2">
               <label>GitHub 仓库地址</label>
-              <input v-model="appForm.repo_url" placeholder="https://github.com/user/repo.git" />
+              <input v-model="appForm.repo_url" placeholder="https://github.com/user/repo.git"
+                     @blur="autoFillDeployDir" />
             </div>
             <div class="form-group" style="max-width:120px">
               <label>分支</label>
@@ -678,10 +679,27 @@
           </div>
 
           <div class="flex-end">
+            <button class="btn btn-ghost" @click="runPrecheck"
+                    :disabled="!appForm.agent_id||!appForm.repo_url||precheckLoading">
+              {{ precheckLoading ? '检查中...' : '🔍 部署前检查' }}
+            </button>
             <button class="btn btn-primary" @click="startAppDeploy"
                     :disabled="!appForm.repo_url||!appForm.agent_id||appDeploying">
               {{ appDeploying ? '⏳ 部署中...' : '🚀 开始部署' }}
             </button>
+          </div>
+
+          <!-- 预检结果 -->
+          <div v-if="precheckResult" style="margin-top:12px;border-top:1px solid #2d3148;padding-top:12px">
+            <div class="card-title">预检结果</div>
+            <div v-for="(v, k) in precheckResult" :key="k"
+                 style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px">
+              <span :style="{color: v.status==='ok'||v.status==='free'||v.status==='none'?'#4ade80':v.status==='found'?'#60a5fa':v.status==='missing'?'#f59e0b':'#f87171'}">
+                {{ v.status==='ok'||v.status==='free'||v.status==='none'?'✅':v.status==='found'?'ℹ️':v.status==='missing'?'⚠️':'❌' }}
+              </span>
+              <span style="color:#64748b;min-width:80px">{{ {existing_deploy:'已有部署',port:'端口',python:'Python',pip:'pip',git:'git',disk:'磁盘',deploy_sh:'deploy.sh'}[k]||k }}</span>
+              <span>{{ v.message }}</span>
+            </div>
           </div>
         </div>
 
@@ -872,7 +890,7 @@
       </div>
 
       <!-- 日志 -->
-      <div class="output-box" style="max-height:200px;color:#e2e8f0;flex-shrink:0">{{ deployLogData.log || '暂无日志' }}</div>
+      <div class="output-box" id="deploy-log-box" style="max-height:250px;color:#e2e8f0;flex-shrink:0">{{ deployLogData.log || '等待日志...' }}</div>
 
       <!-- 对话历史 -->
       <div v-if="deployLogData.conversation?.length"
@@ -1213,11 +1231,68 @@ createApp({
     const appDeploySuccess = ref('')
     const appDeploying = ref(false)
     const deployLogData = ref(null)
+    const precheckResult = ref(null)
+    const precheckLoading = ref(false)
     const appForm = ref({
       repo_url: '', branch: 'main', agent_id: '',
       deploy_dir: '/opt/agentops', install_cmd: '', start_cmd: '',
       use_systemd: false, service_name: '', configFiles: []
     })
+
+    function autoFillDeployDir() {
+      const url = appForm.value.repo_url.trim()
+      if (!url) return
+      // 从 URL 提取仓库名，如 https://github.com/user/myapp.git → myapp
+      const match = url.match(/\/([^\/]+?)(\.git)?$/)
+      if (match) {
+        appForm.value.deploy_dir = `/opt/${match[1]}`
+      }
+    }
+
+    async function runPrecheck() {
+      precheckLoading.value = true
+      precheckResult.value = null
+      try {
+        const r = await fetch(`${API}/deploy/app/precheck`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.value}` },
+          body: JSON.stringify({
+            agent_id: appForm.value.agent_id,
+            repo_url: appForm.value.repo_url,
+            branch: appForm.value.branch,
+            deploy_dir: appForm.value.deploy_dir,
+          })
+        })
+        if (r.ok) precheckResult.value = await r.json()
+        else appDeployError.value = '预检失败'
+      } catch(e) {
+        appDeployError.value = `预检失败: ${e.message}`
+      }
+      precheckLoading.value = false
+    }
+
+    let sseSource = null
+    function startLogStream(deploy_id) {
+      if (sseSource) sseSource.close()
+      const url = `${API}/deploy/app/${deploy_id}/stream?authorization=${encodeURIComponent('Bearer ' + token.value)}`
+      sseSource = new EventSource(url)
+      sseSource.onmessage = (e) => {
+        if (e.data.startsWith('__STATUS__')) {
+          const status = e.data.replace('__STATUS__', '')
+          if (deployLogData.value) deployLogData.value.status = status
+          appDeploying.value = false
+          sseSource.close()
+          loadAppDeploys()
+          return
+        }
+        if (deployLogData.value) {
+          deployLogData.value.log = (deployLogData.value.log || '') + e.data + '\n'
+          const box = document.getElementById('deploy-log-box')
+          if (box) box.scrollTop = box.scrollHeight
+        }
+      }
+      sseSource.onerror = () => { sseSource.close(); appDeploying.value = false }
+    }
 
     async function loadAppDeploys() {
       const r = await fetch(`${API}/deploy/app`, {
@@ -1269,30 +1344,12 @@ createApp({
         }
 
         appDeploySuccess.value = `部署任务已创建: ${deploy.deploy_id}`
-        deployLogData.value = deploy
+        deployLogData.value = { ...deploy, log: '' }
         await loadAppDeploys()
         setTimeout(() => appDeploySuccess.value = '', 5000)
 
-        // 轮询日志
-        const poll = setInterval(async () => {
-          const r2 = await fetch(`${API}/deploy/app/${deploy.deploy_id}`, {
-            headers: { 'Authorization': `Bearer ${token.value}` }
-          })
-          const d = await r2.json()
-          if (deployLogData.value?.deploy_id === d.deploy_id) {
-            // 只更新变化的字段，避免重新渲染整个模态框
-            if (d.log && d.log !== deployLogData.value.log) deployLogData.value.log = d.log
-            if (d.status && d.status !== deployLogData.value.status) deployLogData.value.status = d.status
-            if (d.conversation && JSON.stringify(d.conversation) !== JSON.stringify(deployLogData.value.conversation)) {
-              deployLogData.value.conversation = d.conversation
-            }
-          }
-          if (['success','failed'].includes(d.status)) {
-            clearInterval(poll)
-            appDeploying.value = false
-            loadAppDeploys()
-          }
-        }, 2000)
+        // 用 SSE 实时接收日志
+        startLogStream(deploy.deploy_id)
 
       } catch(e) {
         appDeployError.value = `请求失败: ${e.message}`
@@ -1635,7 +1692,8 @@ createApp({
       filteredTasks, loadTasks, submitTask, viewTask, agentName,
       chatInput, chatLoading, sendChat, renderMd,
       appDeployList, appDeployError, appDeploySuccess, appDeploying,
-      deployLogData, appForm, loadAppDeploys, startAppDeploy,
+      deployLogData, appForm, loadAppDeploys, startAppDeploy, updateDeploy,
+      precheckResult, precheckLoading, runPrecheck, autoFillDeployDir,
       viewDeployLog, updateDeploy, refreshDeployLog,
       deployChatInput, deployChatLoading, deployFile, deployUploadPath, deployAsEnv,
       onDeployFileChange, uploadDeployFile, sendDeployChat,

@@ -858,6 +858,106 @@ async def _collect_metrics_now(agent_id: str):
 
 # ── 应用部署 ─────────────────────────────────────────────────
 
+from fastapi.responses import StreamingResponse
+
+@app.post("/deploy/app/precheck")
+async def precheck_deploy(request: AppDeployRequest,
+                           authorization: str = Header(default="")):
+    """部署前检查：端口占用、已有部署、依赖环境"""
+    _check_perm(authorization, "login")
+    info = _get_agent(request.agent_id)
+    _check_owner(authorization, info.owner, "Agent")
+
+    results = {}
+    try:
+        conn = await asyncssh.connect(**_ssh_kwargs(info))
+        try:
+            async def check(cmd):
+                r = await conn.run(cmd, check=False)
+                return (r.stdout or r.stderr or "").strip()
+
+            # 1. 检查目录是否已有部署
+            existing = await check(f"test -d {request.deploy_dir}/.git && git -C {request.deploy_dir} log -1 --oneline 2>/dev/null || echo 'not_exists'")
+            if "not_exists" in existing:
+                results["existing_deploy"] = {"status": "none", "message": "目录不存在，将进行首次部署"}
+            else:
+                results["existing_deploy"] = {"status": "found", "message": f"已有部署: {existing}"}
+
+            # 2. 检查端口占用
+            port = 8000
+            port_check = await check(f"ss -tlnp | grep ':{port}' | head -3")
+            if port_check:
+                results["port"] = {"status": "occupied", "message": f"端口 {port} 已被占用: {port_check[:100]}"}
+            else:
+                results["port"] = {"status": "free", "message": f"端口 {port} 空闲"}
+
+            # 3. 检查 Python 和 pip
+            py_ver = await check("python3 --version 2>/dev/null || echo 'not_found'")
+            pip_ver = await check("pip3 --version 2>/dev/null || python3 -m pip --version 2>/dev/null || echo 'not_found'")
+            results["python"] = {
+                "status": "ok" if "not_found" not in py_ver else "missing",
+                "message": py_ver if "not_found" not in py_ver else "未安装 Python3"
+            }
+            results["pip"] = {
+                "status": "ok" if "not_found" not in pip_ver else "missing",
+                "message": pip_ver[:60] if "not_found" not in pip_ver else "未安装 pip，部署时会自动安装"
+            }
+
+            # 4. 检查 git
+            git_ver = await check("git --version 2>/dev/null || echo 'not_found'")
+            results["git"] = {
+                "status": "ok" if "not_found" not in git_ver else "missing",
+                "message": git_ver if "not_found" not in git_ver else "未安装 git，部署时会自动安装"
+            }
+
+            # 5. 检查磁盘空间
+            disk = await check(f"df -h {request.deploy_dir} 2>/dev/null | tail -1 || df -h / | tail -1")
+            results["disk"] = {"status": "ok", "message": disk}
+
+            # 6. 检查 deploy.sh（如果是更新）
+            if "found" in results.get("existing_deploy", {}).get("status", ""):
+                has_deploy_sh = await check(f"test -f {request.deploy_dir}/deploy.sh && echo yes || echo no")
+                results["deploy_sh"] = {
+                    "status": "found" if "yes" in has_deploy_sh else "none",
+                    "message": "仓库包含 deploy.sh，将直接执行" if "yes" in has_deploy_sh else "无 deploy.sh，将自动分析部署"
+                }
+
+        finally:
+            conn.close()
+    except Exception as e:
+        results["error"] = {"status": "error", "message": str(e)}
+
+    return results
+
+
+@app.get("/deploy/app/{deploy_id}/stream")
+async def stream_deploy_log(deploy_id: str, authorization: str = ""):
+    """SSE 实时推送部署日志，支持 query string 传 token"""
+    # EventSource 不支持自定义 header，从 query string 读
+    if deploy_id not in app_deploys:
+        raise HTTPException(status_code=404, detail="部署任务不存在")
+    _check_perm(authorization.replace("Bearer ", "").strip(), "login") if authorization else None
+
+    async def event_generator():
+        last_len = 0
+        for _ in range(300):  # 最多等 5 分钟
+            if deploy_id in app_deploys:
+                d = app_deploys[deploy_id]
+                current_log = d.log or ""
+                if len(current_log) > last_len:
+                    new_content = current_log[last_len:]
+                    for line in new_content.splitlines():
+                        yield f"data: {line}\n\n"
+                    last_len = len(current_log)
+                if d.status in ("success", "failed"):
+                    yield f"data: __STATUS__{d.status}\n\n"
+                    break
+            await asyncio.sleep(1)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @app.post("/deploy/app", response_model=AppDeployResult)
 async def create_app_deploy(request: AppDeployRequest, background_tasks: BackgroundTasks,
                              authorization: str = Header(default="")):
@@ -1155,8 +1255,9 @@ async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
 
             # 步骤1: 查找并禁用相关的 systemd 服务
             log("  检查 systemd 服务...")
+            svc_name = request.service_name or request.repo_url.split("/")[-1].replace(".", "")
             service_check = await conn.run(
-                f"systemctl list-units --all | grep -E '{request.service_name or request.repo_url.split(\"/\")[-1].replace(\".\",\"\")}' | awk '{{print $1}}'",
+                f"systemctl list-units --all | grep '{svc_name}' | awk '{{print $1}}'",
                 check=False
             )
 
