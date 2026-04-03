@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from models import (
     AgentInfo, AgentStatus, RemoteHost, TaskRequest, TaskResult, TaskStatus,
-    ChatRequest, AppDeployRequest, AppDeployResult, AppDeployStatus
+    ChatRequest, AppDeployRequest, AppDeployResult, AppDeployStatus, OSType
 )
 from deployer import deploy, undeploy
 import llm as LLM
@@ -1051,6 +1051,154 @@ async def list_app_deploys(authorization: str = Header(default="")):
         caller = _get_caller(authorization)
         result = [d for d in result if d.owner == caller]
     return sorted(result, key=lambda d: d.created_at, reverse=True)
+
+
+@app.post("/deploy/scan/{agent_id}")
+async def scan_agent_apps(agent_id: str, authorization: str = Header(default="")):
+    """扫描 Agent 服务器上的已部署应用，自动注册为技能"""
+    _check_perm(authorization, "login")
+    info = _get_agent(agent_id)
+
+    if info.os_type not in [OSType.LINUX, OSType.MACOS]:
+        raise HTTPException(status_code=400, detail="暂仅支持 Linux/macOS 系统的应用发现")
+
+    discovered = []
+
+    try:
+        conn = await asyncssh.connect(**_ssh_kwargs(info))
+        try:
+            # 1. 扫描 systemd 服务
+            log("▶ 扫描 systemd 服务...")
+            services = await conn.run(
+                "systemctl list-units --type=service --state=running --no-pager | grep -v 'UNIT\\|LOAD\\|ACTIVE\\|SUB' | awk '{print $1}'",
+                check=False
+            )
+            for svc in (services.stdout or "").splitlines():
+                svc = svc.strip()
+                if not svc or 'ssh' in svc.lower() or 'agent' in svc.lower():
+                    continue
+
+                # 获取服务详细信息
+                desc = await conn.run(f"systemctl show {svc} -p Description --value", check=False)
+                exec_start = await conn.run(f"systemctl show {svc} -p ExecStart --value", check=False)
+
+                # 尝试找到对应的端口
+                port = ""
+                exec_cmd = (exec_start.stdout or "").strip()
+                if 'python' in exec_cmd.lower() or 'node' in exec_cmd.lower():
+                    # 通过进程查找端口
+                    port_check = await conn.run(f"ss -tlnp | grep '{svc.split('.')[0]}' | head -1", check=False)
+                    if port_check.stdout:
+                        import re as _re
+                        m = _re.search(r':(\d+)', port_check.stdout)
+                        if m:
+                            port = m.group(1)
+
+                if port:
+                    discovered.append({
+                        "type": "systemd",
+                        "name": svc,
+                        "description": (desc.stdout or "").strip()[:100],
+                        "port": port,
+                        "status": "running"
+                    })
+
+            # 2. 扫描 Docker 容器
+            log("▶ 扫描 Docker 容器...")
+            docker_check = await conn.run("command -v docker", check=False)
+            if docker_check.exit_status == 0:
+                containers = await conn.run(
+                    "docker ps --format '{{.Names}}\t{{.Image}}\t{{.Ports}}'",
+                    check=False
+                )
+                for line in (containers.stdout or "").splitlines():
+                    parts = line.split('\t')
+                    if len(parts) >= 3:
+                        name, image, ports = parts[0], parts[1], parts[2]
+                        if not name or 'agent' in name.lower():
+                            continue
+
+                        # 提取端口
+                        port = ""
+                        import re as _re
+                        m = _re.search(r'0\.0\.0\.0:(\d+)->', ports)
+                        if m:
+                            port = m.group(1)
+
+                        discovered.append({
+                            "type": "docker",
+                            "name": name,
+                            "description": f"容器: {image}",
+                            "port": port,
+                            "status": "running"
+                        })
+
+            # 3. 扫描监听的端口（补充发现）
+            log("▶ 扫描监听端口...")
+            ports = await conn.run(
+                "ss -tlnp | awk 'NR>1 {print $4,$7}' | sort -u",
+                check=False
+            )
+            for line in (ports.stdout or "").splitlines():
+                if 'python' in line or 'node' in line or 'java' in line:
+                    import re as _re
+                    m = _re.search(r':(\d+)', line)
+                    if m:
+                        port = m.group(1)
+                        # 检查是否已发现
+                        if not any(d.get('port') == port for d in discovered):
+                            discovered.append({
+                                "type": "port",
+                                "name": f"port_{port}",
+                                "description": f"端口 {port} 监听服务",
+                                "port": port,
+                                "status": "running"
+                            })
+
+        finally:
+            conn.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"扫描失败: {str(e)}")
+
+    return {
+        "agent_id": agent_id,
+        "discovered": discovered,
+        "count": len(discovered)
+    }
+
+
+@app.post("/deploy/register/{agent_id}")
+async def register_discovered_app(agent_id: str, req: dict, authorization: str = Header(default="")):
+    """将发现的应用注册为技能"""
+    _check_perm(authorization, "login")
+    info = _get_agent(agent_id)
+
+    name = req.get("name", "")
+    app_type = req.get("type", "")
+    port = req.get("port", "")
+    description = req.get("description", "")
+
+    if not name or not port:
+        raise HTTPException(status_code=400, detail="name 和 port 是必填项")
+
+    deploy_id = f"app-{uuid.uuid4().hex[:8]}"
+    deploy_dir = f"/opt/{name.split('.')[0]}"  # 推断部署目录
+
+    app_deploy = AppDeployResult(
+        deploy_id=deploy_id,
+        agent_id=agent_id,
+        owner=_get_caller(authorization),
+        repo_url=f"{app_type}://{name}",  # 标记为手动注册
+        deploy_dir=deploy_dir,
+        status=AppDeployStatus.SUCCESS,
+        log=f"手动注册的 {app_type} 应用: {name}\n描述: {description}\n端口: {port}",
+        created_at=datetime.now().isoformat()
+    )
+
+    app_deploys[deploy_id] = app_deploy
+    _save_app_deploys()
+
+    return app_deploy
 
 
 @app.get("/deploy/app/{deploy_id}/log")
