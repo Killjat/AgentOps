@@ -35,10 +35,13 @@ fi
 # 安装依赖（支持多种方式）
 pip3 install -r "$APP_DIR/requirements.txt" -q 2>/dev/null \
     || $PYTHON -m pip install -r "$APP_DIR/requirements.txt" -q --break-system-packages 2>/dev/null \
+    || $PYTHON -m pip install -r "$APP_DIR/requirements.txt" -q --user 2>/dev/null \
     || $PYTHON -m pip install -r "$APP_DIR/requirements.txt" -q
 
 # 关键修复：确保 aiohttp 被安装（即使 requirements.txt 中没有）
-$PYTHON -m pip install aiohttp>=3.9.0 --break-system-packages -q 2>/dev/null \
+$PYTHON -m pip install aiohttp>=3.9.0 -q 2>/dev/null \
+    || $PYTHON -m pip install aiohttp>=3.9.0 --break-system-packages -q 2>/dev/null \
+    || $PYTHON -m pip install aiohttp>=3.9.0 --user -q 2>/dev/null \
     || pip3 install aiohttp>=3.9.0 -q
 
 echo "✅ 依赖安装完成"
