@@ -856,7 +856,7 @@ async def list_app_deploys(authorization: str = Header(default="")):
 
 
 async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
-    """后台执行应用部署"""
+    """后台执行应用部署 - AI 智能分析 + 验证"""
     d = app_deploys[deploy_id]
     info = agents[request.agent_id]
     log_lines = []
@@ -871,118 +871,171 @@ async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
         conn = await asyncssh.connect(**_ssh_kwargs(info))
 
         try:
-            async def run(cmd, check=False):
-                r = await conn.run(cmd, check=check)
+            async def run(cmd, timeout=120):
+                r = await asyncio.wait_for(conn.run(cmd, check=False), timeout=timeout)
                 out = (r.stdout or r.stderr or "").strip()
                 if out:
-                    log(out)
+                    log(out[-1000:])
                 return r
 
-            # 1. 检查 git
+            # ── 1. 安装 git ──────────────────────────────────────
             log(f"▶ 开始部署 {request.repo_url}")
             git_check = await conn.run("which git", check=False)
             if git_check.exit_status != 0:
                 log("安装 git...")
-                await run("apt-get install -y git 2>/dev/null || yum install -y git 2>/dev/null")
+                await run("apt-get install -y git 2>/dev/null || dnf install -y git 2>/dev/null || yum install -y git 2>/dev/null")
 
-            # 2. clone 或 pull
+            # ── 2. clone / pull ───────────────────────────────────
             check_dir = await conn.run(f"test -d {request.deploy_dir}/.git && echo exists", check=False)
             if "exists" in (check_dir.stdout or ""):
-                log(f"▶ 目录已存在，执行 git pull ({request.branch})")
+                log(f"▶ 目录已存在，git pull ({request.branch})")
                 await run(f"cd {request.deploy_dir} && git fetch origin && git checkout {request.branch} && git pull origin {request.branch}")
             else:
-                log(f"▶ git clone {request.repo_url} -> {request.deploy_dir}")
+                log(f"▶ git clone -> {request.deploy_dir}")
                 await run(f"mkdir -p {request.deploy_dir}")
-                await run(f"git clone -b {request.branch} {request.repo_url} {request.deploy_dir}")
+                await run(f"git clone -b {request.branch} {request.repo_url} {request.deploy_dir}", timeout=180)
 
-            # 3. 检查是否有 deploy.sh，有则直接执行
-            deploy_sh = await conn.run(
-                f"test -f {request.deploy_dir}/deploy.sh && echo exists || echo no",
+            # ── 3. AI 分析仓库，生成部署计划 ─────────────────────
+            log("▶ AI 分析仓库结构...")
+            repo_info = await conn.run(
+                f"ls -la {request.deploy_dir}/ && echo '===' && "
+                f"cat {request.deploy_dir}/requirements.txt 2>/dev/null && echo '===' && "
+                f"cat {request.deploy_dir}/package.json 2>/dev/null && echo '===' && "
+                f"cat {request.deploy_dir}/Dockerfile 2>/dev/null && echo '===' && "
+                f"cat {request.deploy_dir}/README.md 2>/dev/null | head -30",
                 check=False
+            )
+            sys_info = await conn.run(
+                "python3 --version 2>/dev/null; node --version 2>/dev/null; "
+                "java -version 2>/dev/null; docker --version 2>/dev/null; "
+                "which pip3 2>/dev/null; which npm 2>/dev/null",
+                check=False
+            )
+
+            plan_prompt = f"""你是一个 DevOps 专家，分析以下仓库信息，生成部署计划。
+
+仓库：{request.repo_url}
+目标服务器系统：{info.os_version}
+服务器已安装工具：
+{(sys_info.stdout or '').strip()}
+
+仓库文件结构和关键文件：
+{(repo_info.stdout or '')[:3000]}
+
+请生成一个 JSON 格式的部署计划：
+{{
+  "project_type": "python/node/java/docker/other",
+  "description": "项目简介",
+  "install_steps": ["步骤1命令", "步骤2命令"],
+  "start_cmd": "启动命令",
+  "health_check": "验证是否启动成功的命令",
+  "expected_port": 8000,
+  "warnings": ["注意事项1", "注意事项2"],
+  "suggestions": ["建议1", "建议2"]
+}}
+
+只返回 JSON，不要其他内容。"""
+
+            plan_raw = await LLM.chat([{"role": "user", "content": plan_prompt}], max_tokens=600)
+            # 解析 AI 生成的部署计划
+            import re as _re, json as _json
+            plan = {}
+            try:
+                json_match = _re.search(r'\{.*\}', plan_raw, _re.DOTALL)
+                if json_match:
+                    plan = _json.loads(json_match.group())
+            except Exception:
+                pass
+
+            log(f"\n── AI 部署分析 ──")
+            log(f"项目类型: {plan.get('project_type', '未知')}")
+            log(f"项目描述: {plan.get('description', '未知')}")
+            if plan.get('warnings'):
+                log(f"⚠️  注意: {'; '.join(plan.get('warnings', []))}")
+            if plan.get('suggestions'):
+                log(f"💡 建议: {'; '.join(plan.get('suggestions', []))}")
+            log("─────────────────")
+
+            # ── 4. 检查 deploy.sh ────────────────────────────────
+            deploy_sh = await conn.run(
+                f"test -f {request.deploy_dir}/deploy.sh && echo exists || echo no", check=False
             )
             if "exists" in (deploy_sh.stdout or ""):
                 log("▶ 检测到 deploy.sh，直接执行...")
-                await run(f"cd {request.deploy_dir} && chmod +x deploy.sh && bash deploy.sh")
-                log("✅ deploy.sh 执行完成")
-                d.status = AppDeployStatus.SUCCESS
-                d.completed_at = datetime.now().isoformat()
-                conn.close()
-                return
-
-            # 4. 安装依赖
-            if request.install_cmd:
-                log(f"▶ 安装依赖: {request.install_cmd}")
-                await run(f"cd {request.deploy_dir} && {request.install_cmd}")
+                r = await conn.run(
+                    f"cd {request.deploy_dir} && chmod +x deploy.sh && bash deploy.sh 2>&1",
+                    check=False
+                )
+                output = (r.stdout or r.stderr or "").strip()
+                if output:
+                    log(output[-2000:])
             else:
-                # AI 自动分析仓库结构，推断安装命令
-                log("▶ AI 分析仓库结构，自动推断安装命令...")
-                dir_info = await conn.run(
-                    f"ls {request.deploy_dir} && echo '---' && "
-                    f"cat {request.deploy_dir}/requirements.txt 2>/dev/null || "
-                    f"cat {request.deploy_dir}/package.json 2>/dev/null || "
-                    f"cat {request.deploy_dir}/Pipfile 2>/dev/null || "
-                    f"cat {request.deploy_dir}/pyproject.toml 2>/dev/null || echo 'no deps file'",
-                    check=False
-                )
-                ai_prompt = f"""分析以下仓库文件，给出安装依赖的 shell 命令（只返回命令，不要解释）：
-目录结构和依赖文件：
-{dir_info.stdout[:2000]}
+                # ── 5. 按 AI 计划安装依赖 ────────────────────────
+                install_steps = plan.get('install_steps') or []
+                if request.install_cmd:
+                    install_steps = [request.install_cmd]
+                elif not install_steps:
+                    # 兜底：扫描依赖文件
+                    if await conn.run(f"test -f {request.deploy_dir}/requirements.txt", check=False).exit_status == 0:
+                        install_steps = ["pip3 install -r requirements.txt 2>/dev/null || python3 -m pip install -r requirements.txt --break-system-packages"]
 
-规则：
-- 有 requirements.txt → pip install -r requirements.txt
-- 有 package.json → npm install
-- 有 Pipfile → pipenv install
-- 没有依赖文件 → 返回空字符串
-只返回命令，没有依赖则返回空字符串。"""
-                install_cmd = await LLM.chat([{"role": "user", "content": ai_prompt}], max_tokens=100)
-                install_cmd = install_cmd.strip().strip('`')
-                if install_cmd and install_cmd != '""' and len(install_cmd) > 2:
-                    log(f"▶ AI 推断安装命令: {install_cmd}")
-                    await run(f"cd {request.deploy_dir} && {install_cmd}")
-                else:
-                    log("▶ 未检测到依赖文件，跳过安装")
+                for step in install_steps:
+                    log(f"▶ {step}")
+                    await run(f"cd {request.deploy_dir} && {step}", timeout=300)
 
-            # 4. 推断启动命令（如果用户没填）
-            start_cmd = request.start_cmd
-            if not start_cmd:
-                log("▶ AI 自动推断启动命令...")
-                files_out = await conn.run(
-                    f"ls {request.deploy_dir}",
-                    check=False
-                )
-                ai_prompt2 = f"""分析以下仓库文件列表，给出启动应用的 shell 命令（只返回命令，不要解释）：
-文件列表：
-{files_out.stdout[:500]}
-部署目录：{request.deploy_dir}
+                # ── 6. 启动 ──────────────────────────────────────
+                start_cmd = request.start_cmd or plan.get('start_cmd', '')
+                if request.use_systemd and request.service_name and start_cmd:
+                    log(f"▶ 注册 systemd 服务: {request.service_name}")
+                    svc = f"[Unit]\nDescription={request.service_name}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory={request.deploy_dir}\nExecStart={start_cmd}\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\n"
+                    async with conn.start_sftp_client() as sftp:
+                        async with sftp.open(f"/etc/systemd/system/{request.service_name}.service", 'w') as f:
+                            await f.write(svc)
+                    await run(f"systemctl daemon-reload && systemctl enable {request.service_name} && systemctl restart {request.service_name}")
+                elif start_cmd:
+                    log(f"▶ 后台启动: {start_cmd}")
+                    await run(f"cd {request.deploy_dir} && nohup {start_cmd} > app.log 2>&1 &")
 
-规则：
-- 有 main.py / app.py / server.py / run.py → python3 <文件名>
-- 有 manage.py → python3 manage.py runserver 0.0.0.0:8000
-- 有 package.json → npm start
-- 有 Makefile → make run
-只返回一条命令，如 python3 server/main.py"""
-                start_cmd = (await LLM.chat([{"role": "user", "content": ai_prompt2}], max_tokens=100)).strip().strip('`')
-                if start_cmd:
-                    log(f"▶ AI 推断启动命令: {start_cmd}")
+            # ── 7. 验证部署结果 ───────────────────────────────────
+            log("\n▶ 验证部署结果...")
+            await asyncio.sleep(4)
 
-            # 5. 启动
-            if request.use_systemd and request.service_name and start_cmd:
-                service_name = request.service_name
-                log(f"▶ 注册 systemd 服务: {service_name}")
-                service_content = f"[Unit]\nDescription={service_name}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory={request.deploy_dir}\nExecStart={start_cmd}\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\n"
-                async with conn.start_sftp_client() as sftp:
-                    async with sftp.open(f"/etc/systemd/system/{service_name}.service", 'w') as f:
-                        await f.write(service_content)
-                await run(f"systemctl daemon-reload && systemctl enable {service_name} && systemctl restart {service_name}")
-                await asyncio.sleep(2)
-                status_r = await conn.run(f"systemctl is-active {service_name}", check=False)
-                log(f"服务状态: {(status_r.stdout or '').strip()}")
-            elif start_cmd:
-                log(f"▶ 后台启动: {start_cmd}")
-                await run(f"cd {request.deploy_dir} && nohup {start_cmd} > app.log 2>&1 &")
+            health_cmd = plan.get('health_check') or \
+                f"ss -tlnp | grep ':{plan.get('expected_port', 8000)}' 2>/dev/null || " \
+                f"ps aux | grep -E 'python|node|java|gunicorn' | grep -v grep | grep -v agent.py | head -3"
 
-            log("✅ 部署完成")
-            d.status = AppDeployStatus.SUCCESS
+            health_r = await conn.run(health_cmd, check=False)
+            health_out = (health_r.stdout or health_r.stderr or "").strip()
+
+            # 检查 app.log 是否有错误
+            app_log_r = await conn.run(
+                f"tail -20 {request.deploy_dir}/app.log 2>/dev/null || "
+                f"journalctl -u {request.service_name or 'app'} -n 10 --no-pager 2>/dev/null || echo ''",
+                check=False
+            )
+            app_log_out = (app_log_r.stdout or "").strip()
+
+            # AI 最终判断
+            final_prompt = f"""判断以下应用部署是否成功，给出简洁结论：
+
+健康检查结果：{health_out or '无输出'}
+应用日志（最后20行）：{app_log_out[-500:] if app_log_out else '无'}
+
+判断标准：
+- 有进程在运行 → 成功
+- 端口在监听 → 成功  
+- 日志有 ModuleNotFoundError/ImportError/Error → 失败
+- 日志有 started/running/listening → 成功
+
+只回答：✅ 部署成功 或 ❌ 部署失败，然后一句话说明原因，如果失败给出修复建议。"""
+
+            verdict = await LLM.chat([{"role": "user", "content": final_prompt}], max_tokens=200)
+            log(f"\n── 部署验证结果 ──\n{verdict}\n─────────────────")
+
+            if "❌" in verdict or "失败" in verdict:
+                d.status = AppDeployStatus.FAILED
+            else:
+                d.status = AppDeployStatus.SUCCESS
 
         finally:
             conn.close()
