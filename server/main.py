@@ -1149,7 +1149,53 @@ async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
                 log(f"💡 建议: {'; '.join(plan.get('suggestions', []))}")
             log("─────────────────")
 
-            # ── 4. 检查 deploy.sh ────────────────────────────────
+            # ── 4. 检查并关闭现有服务（基于部署计划）──────────────────
+            log("▶ 检测并关闭现有服务...")
+            expected_port = plan.get('expected_port', 8000)
+
+            # 方法1: 通过端口查找并关闭进程
+            port_check = await conn.run(
+                f"lsof -ti:{expected_port} 2>/dev/null || ss -tlnp | grep ':{expected_port}' | awk '{{print $7}}' | cut -d, -f2 | cut -d= -f2",
+                check=False
+            )
+
+            if port_check.stdout and port_check.stdout.strip():
+                pids = port_check.stdout.strip().split()
+                log(f"  ⚠️  发现端口 {expected_port} 被进程占用: {pids}")
+                await run(f"fuser -k {expected_port}/tcp 2>/dev/null || kill -9 {' '.join(pids)} 2>/dev/null || true", timeout=10)
+                log("  ✅ 已通过端口关闭服务")
+                await asyncio.sleep(3)
+
+            # 方法2: 通过进程名查找并关闭（作为补充）
+            project_type = plan.get('project_type', '')
+            if project_type == 'python':
+                proc_patterns = [
+                    f"python.*{request.deploy_dir}",
+                    f"python.*main.py",
+                    f"uvicorn.*main:app"
+                ]
+            elif project_type == 'node':
+                proc_patterns = [
+                    f"node.*{request.deploy_dir}",
+                    f"npm.*start"
+                ]
+            elif project_type == 'java':
+                proc_patterns = [
+                    f"java.*{request.deploy_dir}",
+                    "java.*-jar"
+                ]
+            else:
+                proc_patterns = []
+
+            for pattern in proc_patterns:
+                proc_check = await conn.run(f"pgrep -f '{pattern}'", check=False)
+                if proc_check.stdout and proc_check.stdout.strip():
+                    log(f"  ⚠️  发现匹配进程: {pattern}")
+                    await run(f"pkill -f '{pattern}' 2>/dev/null || true", timeout=10)
+                    log("  ✅ 已关闭相关进程")
+                    await asyncio.sleep(2)
+
+            # ── 5. 检查 deploy.sh ────────────────────────────────
             deploy_sh = await conn.run(
                 f"test -f {request.deploy_dir}/deploy.sh && echo exists || echo no", check=False
             )
@@ -1190,7 +1236,7 @@ deploy.sh 执行结果：
                     except Exception as e:
                         log(f"⚠️  AI 分析失败: {e}")
             else:
-                # ── 5. 按 AI 计划安装依赖 ────────────────────────
+                # ── 6. 按 AI 计划安装依赖 ────────────────────────
                 install_steps = plan.get('install_steps') or []
                 if request.install_cmd:
                     install_steps = [request.install_cmd]
@@ -1202,7 +1248,7 @@ deploy.sh 执行结果：
                     log(f"▶ {step}")
                     await run(f"cd {request.deploy_dir} && {step}", timeout=300)
 
-                # ── 6. 启动或重启 ─────────────────────────────────
+                # ── 7. 启动或重启 ─────────────────────────────────
                 start_cmd = request.start_cmd or plan.get('start_cmd', '')
                 if request.use_systemd and request.service_name and start_cmd:
                     if is_update:
@@ -1225,7 +1271,7 @@ deploy.sh 执行结果：
                         log(f"▶ 后台启动: {start_cmd}")
                         await run(f"cd {request.deploy_dir} && nohup {start_cmd} > app.log 2>&1 &")
 
-            # ── 7. 验证部署结果 ───────────────────────────────────
+            # ── 8. 验证部署结果 ───────────────────────────────────
             log("\n▶ 验证部署结果...")
             await asyncio.sleep(4)
 
