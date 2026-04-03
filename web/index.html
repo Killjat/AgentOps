@@ -628,7 +628,7 @@
             </div>
             <div class="form-group">
               <label>部署目录</label>
-              <input v-model="appForm.deploy_dir" placeholder="/opt/app" />
+              <input v-model="appForm.deploy_dir" placeholder="/opt/agentops" />
             </div>
           </div>
           <div class="form-row">
@@ -1215,7 +1215,7 @@ createApp({
     const deployLogData = ref(null)
     const appForm = ref({
       repo_url: '', branch: 'main', agent_id: '',
-      deploy_dir: '/opt/app', install_cmd: '', start_cmd: '',
+      deploy_dir: '/opt/agentops', install_cmd: '', start_cmd: '',
       use_systemd: false, service_name: '', configFiles: []
     })
 

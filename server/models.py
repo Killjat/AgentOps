@@ -101,7 +101,7 @@ class AppDeployRequest(BaseModel):
     agent_id: str                        # 目标服务器
     repo_url: str                        # GitHub 仓库地址
     branch: str = "main"                 # 分支
-    deploy_dir: str = "/opt/app"         # 部署到目标服务器的目录
+    deploy_dir: str = "/opt/agentops"         # 部署到目标服务器的目录
     install_cmd: str = ""                # 安装依赖命令，如 pip install -r requirements.txt
     start_cmd: str = ""                  # 启动命令，如 python3 app.py
     use_systemd: bool = False            # 是否注册为 systemd 服务
