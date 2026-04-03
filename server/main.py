@@ -1149,11 +1149,29 @@ async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
                 log(f"💡 建议: {'; '.join(plan.get('suggestions', []))}")
             log("─────────────────")
 
-            # ── 4. 检查并关闭现有服务（基于部署计划）──────────────────
+            # ── 4. 检查并关闭现有服务（包括禁用守护进程）────────────
             log("▶ 检测并关闭现有服务...")
             expected_port = plan.get('expected_port', 8000)
 
-            # 方法1: 通过端口查找并关闭进程
+            # 步骤1: 查找并禁用相关的 systemd 服务
+            log("  检查 systemd 服务...")
+            service_check = await conn.run(
+                f"systemctl list-units --all | grep -E '{request.service_name or request.repo_url.split(\"/\")[-1].replace(\".\",\"\")}' | awk '{{print $1}}'",
+                check=False
+            )
+
+            if service_check.stdout and service_check.stdout.strip():
+                services = [s.strip() for s in service_check.stdout.split('\n') if s.strip() and '.service' in s]
+                for svc in services:
+                    log(f"  ⚠️  发现 systemd 服务: {svc}")
+                    # 停止服务
+                    await run(f"systemctl stop {svc} 2>/dev/null || true", timeout=15)
+                    # 禁用服务（防止开机自启）
+                    await run(f"systemctl disable {svc} 2>/dev/null || true", timeout=10)
+                    log(f"  ✅ 已停止并禁用服务: {svc}")
+                await asyncio.sleep(3)
+
+            # 步骤2: 通过端口查找并关闭进程
             port_check = await conn.run(
                 f"lsof -ti:{expected_port} 2>/dev/null || ss -tlnp | grep ':{expected_port}' | awk '{{print $7}}' | cut -d, -f2 | cut -d= -f2",
                 check=False
@@ -1166,7 +1184,7 @@ async def _run_app_deploy(deploy_id: str, request: AppDeployRequest):
                 log("  ✅ 已通过端口关闭服务")
                 await asyncio.sleep(3)
 
-            # 方法2: 通过进程名查找并关闭（作为补充）
+            # 步骤3: 通过进程名查找并关闭（作为补充）
             project_type = plan.get('project_type', '')
             if project_type == 'python':
                 proc_patterns = [
