@@ -33,17 +33,29 @@ if ! command -v pip3 &>/dev/null && ! $PYTHON -m pip --version &>/dev/null 2>&1;
 fi
 
 # 安装依赖（支持多种方式）
+echo "  安装 requirements.txt 依赖..."
 pip3 install -r "$APP_DIR/requirements.txt" -q 2>/dev/null \
     || $PYTHON -m pip install -r "$APP_DIR/requirements.txt" -q --break-system-packages 2>/dev/null \
     || $PYTHON -m pip install -r "$APP_DIR/requirements.txt" -q --user 2>/dev/null \
     || $PYTHON -m pip install -r "$APP_DIR/requirements.txt" -q
 
 # 关键修复：确保 aiohttp 被安装（即使 requirements.txt 中没有）
+echo "  安装 aiohttp..."
 $PYTHON -m pip install aiohttp>=3.9.0 -q 2>/dev/null \
     || $PYTHON -m pip install aiohttp>=3.9.0 --break-system-packages -q 2>/dev/null \
     || $PYTHON -m pip install aiohttp>=3.9.0 --user -q 2>/dev/null \
     || pip3 install aiohttp>=3.9.0 -q
 
+# 验证 aiohttp 是否成功安装
+if ! $PYTHON -c "import aiohttp" 2>/dev/null; then
+    echo "❌ aiohttp 安装失败，尝试强制安装..."
+    $PYTHON -m pip install aiohttp --force-reinstall -q
+    if ! $PYTHON -c "import aiohttp" 2>/dev/null; then
+        echo "❌ aiohttp 安装失败，部署可能无法正常工作"
+        exit 1
+    fi
+fi
+echo "✅ aiohttp 安装成功"
 echo "✅ 依赖安装完成"
 
 # 3. 检查 .env
