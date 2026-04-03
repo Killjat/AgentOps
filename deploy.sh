@@ -83,6 +83,9 @@ echo ""
 echo "[3/4] 配置 systemd 服务..."
 PYTHON_ABS_PATH=$(which $PYTHON)
 echo "  服务将使用的 Python: $PYTHON_ABS_PATH"
+echo "  Python 版本: $($PYTHON_ABS_PATH --version)"
+echo "  验证 aiohttp 是否可用: $($PYTHON_ABS_PATH -c 'import aiohttp; print(\"aiohttp version:\", aiohttp.__version__)' 2>/dev/null || echo 'aiohttp NOT FOUND')"
+
 cat > /etc/systemd/system/${SERVICE_NAME}.service << EOF
 [Unit]
 Description=CyberAgentOps Server
@@ -104,8 +107,22 @@ EOF
 
 systemctl daemon-reload
 systemctl enable $SERVICE_NAME
+
+echo ""
+echo "  启动服务前最终检查..."
+echo "  Python: $PYTHON_ABS_PATH"
+echo "  aiohttp: $($PYTHON_ABS_PATH -c 'import aiohttp; print(aiohttp.__version__)' 2>/dev/null || echo '未安装')"
+
 systemctl restart $SERVICE_NAME
 sleep 2
+
+# 检查服务状态
+if systemctl is-active --quiet $SERVICE_NAME; then
+    echo "  ✅ 服务启动成功"
+else
+    echo "  ❌ 服务启动失败，查看日志:"
+    journalctl -u $SERVICE_NAME -n 20 --no-pager
+fi
 
 # 5. 配置 nginx（如果已安装）
 echo ""
