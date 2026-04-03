@@ -24,8 +24,16 @@ echo "✅ Python: $($PYTHON --version)"
 # 2. 安装依赖
 echo ""
 echo "[1/4] 安装 Python 依赖..."
-$PYTHON -m pip install -r "$APP_DIR/requirements.txt" -q \
-    --break-system-packages 2>/dev/null \
+# 确保 pip 可用
+if ! command -v pip3 &>/dev/null && ! $PYTHON -m pip --version &>/dev/null 2>&1; then
+    echo "安装 pip..."
+    dnf install -y python3-pip 2>/dev/null \
+        || apt-get install -y python3-pip 2>/dev/null \
+        || curl -sS https://bootstrap.pypa.io/get-pip.py | $PYTHON
+fi
+
+pip3 install -r "$APP_DIR/requirements.txt" -q 2>/dev/null \
+    || $PYTHON -m pip install -r "$APP_DIR/requirements.txt" -q --break-system-packages 2>/dev/null \
     || $PYTHON -m pip install -r "$APP_DIR/requirements.txt" -q
 echo "✅ 依赖安装完成"
 
