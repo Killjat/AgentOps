@@ -199,21 +199,21 @@ if command -v nginx &>/dev/null; then
     fi
 
     # 生成 Nginx 配置文件
-    cat > $NGINX_CONF_FILE << 'NGINX'
+    cat > $NGINX_CONF_FILE << NGINX
 server {
     listen 80;
-    return 301 https://$host:8443$request_uri;
+    return 301 https://\$host:8443\$request_uri;
 }
 server {
     listen 8443 ssl;
-    ssl_certificate     /etc/nginx/ssl/cyberagentops.crt;
-    ssl_certificate_key /etc/nginx/ssl/cyberagentops.key;
+    ssl_certificate     /etc/nginx/ssl/${SERVICE_NAME}.crt;
+    ssl_certificate_key /etc/nginx/ssl/${SERVICE_NAME}.key;
     ssl_protocols       TLSv1.2 TLSv1.3;
     client_max_body_size 20m;
     location / {
         proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-Proto https;
         proxy_read_timeout 120s;
     }
