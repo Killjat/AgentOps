@@ -808,6 +808,31 @@
       <div class="modal-title">🔧 {{ skillsAgent.name || skillsAgent.agent_id }} 的技能</div>
       <div style="font-size:12px;color:#64748b;margin-bottom:16px">{{ skillsAgent.host }} · {{ skillsAgent.os_version }}</div>
 
+      <!-- 操作按钮 -->
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn btn-ghost" @click="scanApps" :disabled="scanning">
+          🔍 {{ scanning ? '扫描中...' : '扫描已有应用' }}
+        </button>
+        <button class="btn btn-primary" @click="installSkill"
+                :disabled="!skillForm.repo_url||skillInstalling">
+          ⚡ 安装新技能
+        </button>
+      </div>
+
+      <!-- 扫描结果 -->
+      <div v-if="discoveredApps.length" style="margin-bottom:16px">
+        <div class="card-title">发现的应用 ({{ discoveredApps.length }})</div>
+        <div v-for="app in discoveredApps" :key="app.name"
+             style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:#1a1e3e;border-radius:6px;margin-bottom:8px">
+          <div>
+            <div style="font-size:13px;font-weight:500">{{ app.name }} <span class="badge badge-ghost">{{ app.type }}</span></div>
+            <div style="font-size:11px;color:#64748b;margin-top:2px">{{ app.description }}</div>
+            <div style="font-size:11px;color:#38bdf8;margin-top:2px">端口: {{ app.port || '未知' }}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" @click="registerApp(app)">注册为技能</button>
+        </div>
+      </div>
+
       <!-- 已安装的技能 -->
       <div class="card-title">已安装</div>
       <div v-if="agentSkills.length" style="margin-bottom:16px">
@@ -826,8 +851,8 @@
       </div>
       <div v-else class="empty" style="padding:16px">暂无已安装的技能</div>
 
-      <!-- 安装新技能 -->
-      <div class="card-title" style="margin-top:16px">安装新技能</div>
+      <!-- 安装新技能表单 -->
+      <div class="card-title" style="margin-top:24px">安装新技能</div>
       <div class="form-row">
         <div class="form-group" style="flex:2">
           <label>GitHub 仓库地址</label>
@@ -879,10 +904,6 @@
 
       <div class="flex-end">
         <button class="btn btn-ghost" @click="skillsAgent=null">关闭</button>
-        <button class="btn btn-primary" @click="installSkill"
-                :disabled="!skillForm.repo_url||skillInstalling">
-          {{ skillInstalling ? '⏳ 安装中...' : '⚡ 安装技能' }}
-        </button>
       </div>
     </div>
   </div>
@@ -1589,11 +1610,14 @@ createApp({
     const skillInstalling = ref(false)
     const skillForm = ref({ repo_url: '', branch: 'main', deploy_dir: '/opt/app',
                              service_name: '', use_systemd: false, configFiles: [] })
+    const scanning = ref(false)
+    const discoveredApps = ref([])
 
     async function openSkills(a) {
       skillsAgent.value = a
       skillForm.value = { repo_url: '', branch: 'main', deploy_dir: '/opt/app',
                           service_name: '', use_systemd: false, configFiles: [] }
+      discoveredApps.value = []
       // 加载该 Agent 的已安装技能
       const r = await fetch(`${API}/deploy/app`, {
         headers: { 'Authorization': `Bearer ${token.value}` }
@@ -1601,6 +1625,41 @@ createApp({
       if (r.ok) {
         const all = await r.json()
         agentSkills.value = all.filter(d => d.agent_id === a.agent_id)
+      }
+    }
+
+    async function scanApps() {
+      if (!skillsAgent.value) return
+      scanning.value = true
+      try {
+        const r = await fetch(`${API}/deploy/scan/${skillsAgent.value.agent_id}`, {
+          headers: { 'Authorization': `Bearer ${token.value}` }
+        })
+        if (r.ok) {
+          const result = await r.json()
+          discoveredApps.value = result.discovered
+        }
+      } catch(e) {
+        alert('扫描失败: ' + e.message)
+      }
+      scanning.value = false
+    }
+
+    async function registerApp(app) {
+      try {
+        const r = await fetch(`${API}/deploy/register/${skillsAgent.value.agent_id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token.value}` },
+          body: JSON.stringify(app)
+        })
+        if (r.ok) {
+          const newSkill = await r.json()
+          agentSkills.value.push(newSkill)
+          discoveredApps.value = discoveredApps.value.filter(a => a.name !== app.name)
+          alert('已注册为技能')
+        }
+      } catch(e) {
+        alert('注册失败: ' + e.message)
       }
     }
 
@@ -1873,7 +1932,8 @@ createApp({
       editForm, editError, editSuccess, testing, editHost, testEdit, saveEdit,
       metricsData, metricsAgent, viewMetrics, refreshMetrics,
       skillsAgent, agentSkills, skillInstalling, skillForm,
-      openSkills, autoFillSkillDir, installSkill,
+      scanning, discoveredApps,
+      openSkills, autoFillSkillDir, installSkill, scanApps, registerApp,
       startMonitor, refreshMonitor,
       agents, loadAgents, pingAgent, removeAgent, agentFilter, filteredAgents,
       tasks, currentTask, detailTask, submitting, historyFilter, taskForm,
