@@ -20,7 +20,7 @@ def main():
     parser.add_argument("--server", default="")
     parser.add_argument("--agent-id", default="")
     parser.add_argument("--type", default="auto",
-                        choices=["auto", "linux", "windows", "mac", "mobile"])
+                        choices=["auto", "linux", "windows", "mac", "android", "mobile"])
     args = parser.parse_args()
 
     agent_type = args.type
@@ -30,6 +30,8 @@ def main():
             agent_type = "windows"
         elif "darwin" in os_name:
             agent_type = "mac"
+        elif "android" in os_name or "ANDROID_ROOT" in __import__('os').environ:
+            agent_type = "android"
         else:
             agent_type = "linux"
 
@@ -44,6 +46,14 @@ def main():
     elif agent_type == "mac":
         from mac import MacAgent
         agent = MacAgent(
+            agent_id=args.agent_id,
+            server_url=args.server,
+            port=args.port,
+            host=args.host,
+        )
+    elif agent_type in ("android", "mobile"):
+        from android import AndroidAgent
+        agent = AndroidAgent(
             agent_id=args.agent_id,
             server_url=args.server,
             port=args.port,
