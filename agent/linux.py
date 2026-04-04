@@ -115,13 +115,22 @@ class LinuxAgent(BaseAgent):
 
         macs = {}
         iface = ""
-        for line in self._cmd("ip link show 2>/dev/null").splitlines():
+        ip_out = self._cmd("ip link show 2>/dev/null || ifconfig 2>/dev/null")
+        for line in ip_out.splitlines():
             m = re.match(r'\d+:\s+(\S+):', line)
             if m:
                 iface = m.group(1).rstrip(":")
+            # Linux 格式
             m2 = re.search(r'link/ether\s+([0-9a-f:]{17})', line, re.I)
             if m2 and iface and iface != "lo":
                 macs[iface] = m2.group(1)
+            # macOS ifconfig 格式
+            m3 = re.match(r'(\w+\d*):', line)
+            if m3:
+                iface = m3.group(1)
+            m4 = re.search(r'ether\s+([0-9a-f:]{17})', line, re.I)
+            if m4 and iface and iface != "lo":
+                macs[iface] = m4.group(1)
         hw["mac_addresses"] = macs
 
         raw = "|".join([hw.get("cpu_model", ""), hw.get("board_serial", ""),
@@ -232,12 +241,20 @@ class LinuxAgent(BaseAgent):
 
         def check_port(port):
             try:
-                port_info = self._cmd(f"ss -tlnp 2>/dev/null | grep ':{port} ' | head -1")
+                # macOS 用 lsof，Linux 用 ss
+                port_info = self._cmd(f"lsof -i :{port} -sTCP:LISTEN 2>/dev/null | tail -1 || ss -tlnp 2>/dev/null | grep ':{port} ' | head -1")
                 if port_info:
                     proc_match = re.search(r'pid=(\d+),name=([^,\s]+)', port_info)
+                    # lsof 格式
+                    lsof_match = re.match(r'(\S+)\s+(\d+)', port_info)
+                    process = "unknown"
+                    if proc_match:
+                        process = proc_match.group(2)
+                    elif lsof_match:
+                        process = lsof_match.group(1)
                     return {
                         "port": port,
-                        "process": proc_match.group(2) if proc_match else "unknown",
+                        "process": process,
                         "info": port_info[:100]
                     }
             except Exception:

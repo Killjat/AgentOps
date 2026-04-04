@@ -136,8 +136,7 @@ class BaseAgent(abc.ABC):
                 ssl_ctx.verify_mode = _ssl.CERT_NONE
                 async with websockets.connect(
                     ws_url,
-                    ping_interval=30,
-                    ping_timeout=10,
+                    ping_interval=None,
                     close_timeout=5,
                     ssl=ssl_ctx if ws_url.startswith("wss://") else None,
                 ) as ws:
