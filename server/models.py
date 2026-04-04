@@ -14,19 +14,19 @@ class OSType(str, Enum):
 
 
 class ConnectionType(str, Enum):
-    SSH = "ssh"           # Linux/macOS SSH
-    RDP = "rdp"           # Windows 远程桌面
-    USB = "usb"           # USB 直连（手机/设备）
-    AGENT_PUSH = "agent_push"  # Agent 主动上报（内网穿透）
-    API = "api"           # HTTP API 接入
+    SSH = "ssh"
+    RDP = "rdp"
+    USB = "usb"
+    AGENT_PUSH = "agent_push"
+    API = "api"
 
 
 class DeviceType(str, Enum):
-    SERVER = "server"           # 服务器
-    DESKTOP = "desktop"         # 桌面电脑
-    MOBILE_ANDROID = "mobile_android"  # Android 手机
-    MOBILE_IOS = "mobile_ios"   # iOS 手机
-    IOT = "iot"                 # IoT 设备
+    SERVER = "server"
+    DESKTOP = "desktop"
+    MOBILE_ANDROID = "mobile_android"
+    MOBILE_IOS = "mobile_ios"
+    IOT = "iot"
     UNKNOWN = "unknown"
 
 
@@ -52,7 +52,7 @@ class LLMProvider(str, Enum):
 
 
 class RemoteHost(BaseModel):
-    """旧架构：远程主机连接信息（已弃用，保留用于向后兼容）"""
+    """SSH 连接信息，用于 deployer"""
     name: str
     host: str
     port: int = 22
@@ -63,7 +63,7 @@ class RemoteHost(BaseModel):
 
 
 class ServerInfo(BaseModel):
-    """服务器连接信息（纯 SSH）"""
+    """服务器连接信息"""
     server_id: str
     name: str
     host: str
@@ -79,20 +79,17 @@ class ServerInfo(BaseModel):
 
 
 class AgentInfo(BaseModel):
-    """已部署的 Agent（依附于 Server）"""
+    """已部署的 Agent"""
     agent_id: str
-    server_id: str = ""  # 引用服务器，而非重复存储连接信息
+    server_id: str = ""
     name: str = ""
     owner: str = ""
-    # 分类
     os_type: OSType = OSType.UNKNOWN
     os_version: str = ""
     device_type: DeviceType = DeviceType.SERVER
     connection_type: ConnectionType = ConnectionType.SSH
-    # Agent 特有信息
-    agent_deploy_dir: str = "/opt/agentops"  # Agent 代码目录
+    agent_deploy_dir: str = "/opt/agentops"
     agent_port: int = 9000
-    # 状态
     status: AgentStatus = AgentStatus.OFFLINE
     created_at: str
     last_seen: Optional[str] = None
@@ -100,9 +97,9 @@ class AgentInfo(BaseModel):
 
 
 class TaskRequest(BaseModel):
-    task: str                          # 自然语言任务描述
-    agent_id: str                      # 目标 Agent
-    os_hint: Optional[str] = None      # 手动指定 OS（覆盖自动检测）
+    task: str
+    agent_id: str
+    os_hint: Optional[str] = None
     auto_confirm: bool = True
     timeout: int = 60
 
@@ -110,7 +107,7 @@ class TaskRequest(BaseModel):
 class TaskResult(BaseModel):
     task_id: str
     agent_id: str
-    owner: str = ""              # 提交任务的用户
+    owner: str = ""
     status: TaskStatus
     task: str
     command: Optional[str] = None
@@ -119,13 +116,13 @@ class TaskResult(BaseModel):
     error: Optional[str] = None
     created_at: str
     completed_at: Optional[str] = None
-    conversation: List[dict] = []      # 后续对话记录
+    conversation: List[dict] = []
 
 
 class ChatRequest(BaseModel):
-    task_id: str                       # 基于哪个任务继续对话
-    message: str                       # 用户消息
-    execute: bool = False              # 是否执行 AI 生成的命令
+    task_id: str
+    message: str
+    execute: bool = False
 
 
 class AppDeployStatus(str, Enum):
@@ -136,24 +133,22 @@ class AppDeployStatus(str, Enum):
 
 
 class AppDeployRequest(BaseModel):
-    target_type: str  # "server" 或 "agent"
-    target_id: str    # server_id 或 agent_id
-    repo_url: str     # GitHub 仓库地址
-    branch: str = "main"  # 分支
-    app_deploy_dir: str = "/opt/app"  # 应用代码部署目录
-    install_cmd: str = ""  # 安装依赖命令，如 pip install -r requirements.txt
-    start_cmd: str = ""  # 启动命令，如 python3 app.py
-    use_systemd: bool = False  # 是否注册为 systemd 服务
-    service_name: str = ""  # systemd 服务名
+    agent_id: str                      # 目标 Agent ID
+    repo_url: str
+    branch: str = "main"
+    deploy_dir: str = "/opt/app"       # 应用部署目录
+    install_cmd: str = ""
+    start_cmd: str = ""
+    use_systemd: bool = False
+    service_name: str = ""
 
 
 class AppDeployResult(BaseModel):
     deploy_id: str
-    target_type: str  # "server" 或 "agent"
-    target_id: str    # server_id 或 agent_id
+    agent_id: str
     owner: str = ""
     repo_url: str
-    app_deploy_dir: str
+    deploy_dir: str = "/opt/app"
     status: AppDeployStatus = AppDeployStatus.PENDING
     log: str = ""
     conversation: List[dict] = []

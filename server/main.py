@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from models import (
     AgentInfo, AgentStatus, TaskRequest, TaskResult, TaskStatus,
     ChatRequest, AppDeployRequest, AppDeployResult, AppDeployStatus, OSType,
-    ServerInfo, RemoteHost
+    ServerInfo, RemoteHost, DeviceType, ConnectionType
 )
 from deployer import deploy, undeploy, update
 import llm as LLM
@@ -267,11 +267,38 @@ async def ws_agent_endpoint(websocket: WebSocket, agent_id: str):
                 task_id = msg.get("task_id", "")
 
                 if msg_type == "register":
-                    # agent 注册/重连，更新信息
+                    os_info = msg.get("os_info", {})
                     if agent_id in agents:
+                        # 已知 agent，更新状态
                         agents[agent_id].status = AgentStatus.ONLINE
                         agents[agent_id].last_seen = datetime.now().isoformat()
-                    print(f"[WS] Agent {agent_id} 注册: {msg.get('os_info', {}).get('os', '')}")
+                    else:
+                        # 未知 agent，自动注册（主动接入场景：Mac/PC 用户自己运行 agent）
+                        os_name = os_info.get("os", "").lower()
+                        if "windows" in os_name:
+                            os_type = OSType.WINDOWS
+                        elif "darwin" in os_name:
+                            os_type = OSType.MACOS
+                        else:
+                            os_type = OSType.LINUX
+                        new_agent = AgentInfo(
+                            agent_id=agent_id,
+                            server_id="",  # 主动接入，无 server_id
+                            name=os_info.get("hostname", agent_id),
+                            owner="admin",
+                            os_type=os_type,
+                            os_version=os_info.get("os_version", ""),
+                            device_type=DeviceType.DESKTOP,
+                            connection_type=ConnectionType.AGENT_PUSH,
+                            agent_deploy_dir="",
+                            status=AgentStatus.ONLINE,
+                            created_at=datetime.now().isoformat(),
+                            last_seen=datetime.now().isoformat(),
+                        )
+                        agents[agent_id] = new_agent
+                        _save_agents()
+                        print(f"[WS] 新 Agent 自注册: {agent_id} ({os_info.get('hostname', '')})")
+                    print(f"[WS] Agent {agent_id} 注册: {os_info.get('os', '')}")
                     # 连接后立即采集一次指标
                     asyncio.create_task(_collect_metrics_now(agent_id))
 
@@ -755,6 +782,22 @@ async def list_agents(authorization: str = Header(default="")):
 @app.get("/agents/{agent_id}", response_model=AgentInfo)
 async def get_agent(agent_id: str):
     return _get_agent(agent_id)
+
+
+@app.get("/agents/{agent_id}/ports")
+async def get_agent_ports(agent_id: str, authorization: str = Header(default="")):
+    """获取 agent 机器上已占用的端口"""
+    _check_perm(authorization, "login")
+    info = _get_agent(agent_id)
+    try:
+        result = await _ws_call(agent_id, {
+            "type": "exec",
+            "command": "ss -tlnp 2>/dev/null | awk 'NR>1{print $4}' | grep -oP ':\\K\\d+' | sort -n | uniq || netstat -tlnp 2>/dev/null | awk 'NR>2{print $4}' | grep -oP ':\\K\\d+' | sort -n | uniq || lsof -i -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $9}' | grep -oP ':\\K\\d+' | sort -n | uniq"
+        }, timeout=10)
+        ports = [int(p) for p in (result.get("output") or "").splitlines() if p.strip().isdigit()]
+        return {"ports": sorted(set(ports))}
+    except Exception:
+        return {"ports": []}
 
 
 @app.post("/agents/{agent_id}/metrics")
