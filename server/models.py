@@ -52,17 +52,36 @@ class LLMProvider(str, Enum):
 
 
 class RemoteHost(BaseModel):
-    name: str = ""
+    """旧架构：远程主机连接信息（已弃用，保留用于向后兼容）"""
+    name: str
     host: str
     port: int = 22
     username: str
     password: Optional[str] = None
     ssh_key: Optional[str] = None
-    deploy_dir: str = "/opt/agentops"
+    deploy_dir: Optional[str] = None
+
+
+class ServerInfo(BaseModel):
+    """服务器连接信息（纯 SSH）"""
+    server_id: str
+    name: str
+    host: str
+    port: int = 22
+    username: str
+    password: Optional[str] = None
+    ssh_key: Optional[str] = None
+    os_type: OSType = OSType.UNKNOWN
+    os_version: str = ""
+    owner: str = ""
+    created_at: str = ""
+    last_connected: Optional[str] = None
 
 
 class AgentInfo(BaseModel):
+    """已部署的 Agent（依附于 Server）"""
     agent_id: str
+    server_id: str = ""  # 引用服务器，而非重复存储连接信息
     name: str = ""
     owner: str = ""
     # 分类
@@ -70,16 +89,11 @@ class AgentInfo(BaseModel):
     os_version: str = ""
     device_type: DeviceType = DeviceType.SERVER
     connection_type: ConnectionType = ConnectionType.SSH
-    # 连接信息
-    host: str = ""
-    port: int = 22
-    username: str = ""
-    password: Optional[str] = None
-    ssh_key: Optional[str] = None
-    deploy_dir: str = "/opt/agentops"
+    # Agent 特有信息
+    agent_deploy_dir: str = "/opt/agentops"  # Agent 代码目录
+    agent_port: int = 9000
     # 状态
     status: AgentStatus = AgentStatus.OFFLINE
-    agent_port: int = 9000
     created_at: str
     last_seen: Optional[str] = None
     metrics: Optional[dict] = None
@@ -122,22 +136,24 @@ class AppDeployStatus(str, Enum):
 
 
 class AppDeployRequest(BaseModel):
-    agent_id: str                        # 目标服务器
-    repo_url: str                        # GitHub 仓库地址
-    branch: str = "main"                 # 分支
-    deploy_dir: str = "/opt/agentops"         # 部署到目标服务器的目录
-    install_cmd: str = ""                # 安装依赖命令，如 pip install -r requirements.txt
-    start_cmd: str = ""                  # 启动命令，如 python3 app.py
-    use_systemd: bool = False            # 是否注册为 systemd 服务
-    service_name: str = ""               # systemd 服务名
+    target_type: str  # "server" 或 "agent"
+    target_id: str    # server_id 或 agent_id
+    repo_url: str     # GitHub 仓库地址
+    branch: str = "main"  # 分支
+    app_deploy_dir: str = "/opt/app"  # 应用代码部署目录
+    install_cmd: str = ""  # 安装依赖命令，如 pip install -r requirements.txt
+    start_cmd: str = ""  # 启动命令，如 python3 app.py
+    use_systemd: bool = False  # 是否注册为 systemd 服务
+    service_name: str = ""  # systemd 服务名
 
 
 class AppDeployResult(BaseModel):
     deploy_id: str
-    agent_id: str
+    target_type: str  # "server" 或 "agent"
+    target_id: str    # server_id 或 agent_id
     owner: str = ""
     repo_url: str
-    deploy_dir: str
+    app_deploy_dir: str
     status: AppDeployStatus = AppDeployStatus.PENDING
     log: str = ""
     conversation: List[dict] = []

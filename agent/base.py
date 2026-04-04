@@ -1,17 +1,14 @@
-"""BaseAgent - 所有 Agent 的抽象基类"""
+"""BaseAgent - WebSocket 反向连接架构"""
 import abc
-import hashlib
+import asyncio
 import json
 import re
 import socket
 import subprocess
-import sys
 import threading
 import time
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse
-from urllib.request import urlopen, Request
+from typing import Dict, List, Any, Optional
 
 # ── 安全黑名单 ──────────────────────────────────────────────
 DANGEROUS_PATTERNS = [
@@ -20,8 +17,8 @@ DANGEROUS_PATTERNS = [
     r"mkfs\.",
     r":\(\)\{.*\}",
     r">\s*/dev/sd[a-z]",
-    r"format\s+c:",          # Windows
-    r"del\s+/[sf].*\\",      # Windows
+    r"format\s+c:",
+    r"del\s+/[sf].*\\",
 ]
 
 
@@ -33,7 +30,6 @@ def is_safe(command: str) -> tuple:
 
 
 class BaseAgent(abc.ABC):
-    """所有 Agent 的基类，定义统一接口"""
 
     def __init__(self, agent_id: str = "", server_url: str = "",
                  port: int = 9000, host: str = "0.0.0.0"):
@@ -41,43 +37,37 @@ class BaseAgent(abc.ABC):
         self.server_url = server_url.rstrip("/")
         self.port = port
         self.host = host
-        self.report_interval = 600  # 10分钟
+        self._ws = None  # 当前 WebSocket 连接
 
-    # ── 必须实现的接口 ────────────────────────────────────────
-
-    @abc.abstractmethod
-    def get_os_info(self) -> dict:
-        """返回操作系统信息"""
+    # ── 子类必须实现 ──────────────────────────────────────────
 
     @abc.abstractmethod
-    def get_cpu_usage(self) -> float:
-        """返回 CPU 使用率（0-100）"""
+    def get_os_info(self) -> Dict[str, Any]: ...
 
     @abc.abstractmethod
-    def get_disk_usage(self) -> list:
-        """返回磁盘使用情况列表"""
+    def get_cpu_usage(self) -> float: ...
 
     @abc.abstractmethod
-    def get_network_ips(self) -> dict:
-        """返回网络 IP 信息"""
+    def get_disk_usage(self) -> List[Dict[str, Any]]: ...
 
     @abc.abstractmethod
-    def get_network_io(self) -> dict:
-        """返回网络 IO 速率"""
+    def get_network_ips(self) -> Dict[str, Any]: ...
 
     @abc.abstractmethod
-    def get_hardware_info(self) -> dict:
-        """返回硬件信息（CPU型号、主板、磁盘ID、MAC地址等）"""
+    def get_network_io(self) -> Dict[str, Any]: ...
 
     @abc.abstractmethod
-    def execute_command(self, command: str, timeout: int = 60) -> dict:
-        """执行命令，返回 {success, output, error}"""
+    def get_hardware_info(self) -> Dict[str, Any]: ...
 
-    # ── 通用实现 ──────────────────────────────────────────────
+    @abc.abstractmethod
+    def execute_command(self, command: str, timeout: int = 60) -> Dict[str, Any]: ...
+
+    @abc.abstractmethod
+    def discover_apps(self) -> Dict[str, Any]: ...
+
+    # ── 通用指标采集 ──────────────────────────────────────────
 
     def collect_metrics(self) -> dict:
-        """采集完整系统指标（通用，子类可覆盖）"""
-        hw = self.get_hardware_info()
         return {
             "timestamp": datetime.now().isoformat(),
             "agent_id": self.agent_id,
@@ -86,100 +76,147 @@ class BaseAgent(abc.ABC):
             "disk": self.get_disk_usage(),
             "network": self.get_network_ips(),
             "network_io": self.get_network_io(),
-            "hardware": hw,
+            "hardware": self.get_hardware_info(),
         }
 
-    def report_metrics(self):
-        """上报指标到控制端"""
-        if not self.server_url or not self.agent_id:
-            return
-        try:
-            metrics = self.collect_metrics()
-            data = json.dumps({"agent_id": self.agent_id, "metrics": metrics}).encode()
-            req = Request(
-                f"{self.server_url}/agents/{self.agent_id}/metrics",
-                data=data,
-                headers={"Content-Type": "application/json"},
-                method="POST"
-            )
-            urlopen(req, timeout=10)
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 指标上报成功")
-        except Exception as e:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 上报失败: {e}")
+    # ── 消息处理 ──────────────────────────────────────────────
 
-    def _report_loop(self):
-        """后台定时上报线程"""
-        time.sleep(10)
+    async def _handle_message(self, ws, msg: dict) -> Optional[dict]:
+        """处理 server 下发的消息，返回响应"""
+        msg_type = msg.get("type")
+        task_id = msg.get("task_id", "")
+
+        if msg_type == "ping":
+            return {"type": "pong", "task_id": task_id}
+
+        elif msg_type == "exec":
+            command = msg.get("command", "").strip()
+            timeout = int(msg.get("timeout", 60))
+            if not command:
+                return {"type": "result", "task_id": task_id,
+                        "success": False, "output": "", "error": "command is required", "done": True}
+            safe, reason = is_safe(command)
+            if not safe:
+                return {"type": "result", "task_id": task_id,
+                        "success": False, "output": "", "error": reason, "done": True}
+            # 在线程池里执行，避免阻塞事件循环
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, lambda: self.execute_command(command, timeout))
+            return {"type": "result", "task_id": task_id, "done": True, **result}
+
+        elif msg_type == "metrics":
+            loop = asyncio.get_event_loop()
+            metrics = await loop.run_in_executor(None, self.collect_metrics)
+            return {"type": "metrics_result", "task_id": task_id, "metrics": metrics, "done": True}
+
+        elif msg_type == "discover":
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self.discover_apps)
+            return {"type": "discover_result", "task_id": task_id, "data": result, "done": True}
+
+        else:
+            return {"type": "error", "task_id": task_id, "error": f"unknown type: {msg_type}"}
+
+    # ── WebSocket 连接循环 ────────────────────────────────────
+
+    async def _ws_loop(self):
+        """WebSocket 主循环，带指数退避重连"""
+        import websockets
+
+        ws_url = self.server_url.replace("http://", "ws://").replace("https://", "wss://")
+        ws_url = f"{ws_url}/ws/agent/{self.agent_id}"
+
+        delay = 1
         while True:
-            self.report_metrics()
-            time.sleep(self.report_interval)
+            try:
+                print(f"[{_ts()}] 连接 {ws_url} ...")
+                import ssl as _ssl
+                ssl_ctx = _ssl.create_default_context()
+                ssl_ctx.check_hostname = False
+                ssl_ctx.verify_mode = _ssl.CERT_NONE
+                async with websockets.connect(
+                    ws_url,
+                    ping_interval=30,
+                    ping_timeout=10,
+                    close_timeout=5,
+                    ssl=ssl_ctx if ws_url.startswith("wss://") else None,
+                ) as ws:
+                    self._ws = ws
+                    delay = 1  # 连上了，重置退避
+                    print(f"[{_ts()}] OK connected, Agent ID: {self.agent_id}")
 
-    # ── HTTP 服务（通用）─────────────────────────────────────
+                    # 注册
+                    await ws.send(json.dumps({
+                        "type": "register",
+                        "agent_id": self.agent_id,
+                        "os_info": self.get_os_info(),
+                    }))
 
-    def _make_handler(self):
-        agent = self
+                    # 消息循环 — 每条消息独立 task，不阻塞后续消息
+                    async for raw in ws:
+                        try:
+                            msg = json.loads(raw)
+                            # 兼容 Python 3.6（无 asyncio.create_task）
+                            asyncio.ensure_future(self._dispatch(ws, msg))
+                        except Exception as e:
+                            print(f"[{_ts()}] 消息解析错误: {e}")
 
-        class AgentHandler(BaseHTTPRequestHandler):
-            def log_message(self, fmt, *args):
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] {fmt % args}")
+            except Exception as e:
+                print(f"[{_ts()}] 连接断开: {e}，{delay}s 后重连...")
+            finally:
+                self._ws = None
 
-            def _send_json(self, data: dict, status: int = 200):
-                body = json.dumps(data, ensure_ascii=False).encode()
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 60)
 
-            def _read_body(self) -> dict:
-                length = int(self.headers.get("Content-Length", 0))
-                return json.loads(self.rfile.read(length)) if length else {}
+    async def _dispatch(self, ws, msg: dict):
+        """独立协程处理单条消息，异常不影响主循环"""
+        try:
+            resp = await self._handle_message(ws, msg)
+            if resp:
+                await ws.send(json.dumps(resp))
+        except Exception as e:
+            task_id = msg.get("task_id", "")
+            print(f"[{_ts()}] 任务 {task_id} 处理失败: {e}")
+            try:
+                await ws.send(json.dumps({
+                    "type": "result", "task_id": task_id,
+                    "success": False, "output": "", "error": str(e), "done": True
+                }))
+            except Exception:
+                pass
 
-            def do_GET(self):
-                path = urlparse(self.path).path
-                if path == "/ping":
-                    self._send_json({"pong": True, "agent_id": agent.agent_id,
-                                     "os": agent.get_os_info().get("os", "unknown")})
-                elif path == "/metrics":
-                    self._send_json(agent.collect_metrics())
-                elif path == "/info":
-                    self._send_json(agent.get_os_info())
-                else:
-                    self._send_json({"error": "not found"}, 404)
-
-            def do_POST(self):
-                path = urlparse(self.path).path
-                if path == "/exec":
-                    body = self._read_body()
-                    command = body.get("command", "").strip()
-                    timeout = int(body.get("timeout", 60))
-                    if not command:
-                        self._send_json({"error": "command is required"}, 400)
-                        return
-                    safe, reason = is_safe(command)
-                    if not safe:
-                        self._send_json({"success": False, "output": "", "error": reason})
-                        return
-                    self._send_json(agent.execute_command(command, timeout))
-                else:
-                    self._send_json({"error": "not found"}, 404)
-
-        return AgentHandler
+    # ── 启动 ──────────────────────────────────────────────────
 
     def start(self):
-        """启动 Agent：HTTP 服务 + 定时上报"""
         info = self.get_os_info()
         print(f"CyberAgentOps Agent 启动")
         print(f"  类型: {self.__class__.__name__}")
         print(f"  系统: {info.get('os')} {info.get('os_version', '')[:40]}")
         print(f"  主机: {info.get('hostname', socket.gethostname())}")
-        print(f"  监听: {self.host}:{self.port}")
+        print(f"  Agent ID: {self.agent_id}")
         if self.server_url:
-            print(f"  上报: {self.server_url} 每{self.report_interval//60}分钟")
-            threading.Thread(target=self._report_loop, daemon=True).start()
+            print(f"  Server: {self.server_url}")
+            import sys
+            if sys.platform == 'win32':
+                # Windows 需要 ProactorEventLoop 支持 WebSocket
+                loop = asyncio.ProactorEventLoop()
+            else:
+                loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self._ws_loop())
+            finally:
+                loop.close()
+        else:
+            print("  [!] 未配置 server_url，仅本地运行")
+            # 没有 server 时阻塞等待（保持进程存活）
+            try:
+                while True:
+                    time.sleep(60)
+            except KeyboardInterrupt:
+                print("Agent 已停止")
 
-        server = HTTPServer((self.host, self.port), self._make_handler())
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            print("Agent 已停止")
+
+def _ts() -> str:
+    return datetime.now().strftime("%H:%M:%S")

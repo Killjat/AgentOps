@@ -217,6 +217,7 @@ dmypy.json
 # 服务器配置（含密码，不提交）
 agentops/hosts.yaml
 hosts.yaml
+servers.yaml
 users.json
 deploy_remote.sh
 

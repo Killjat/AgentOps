@@ -28,19 +28,20 @@ import asyncssh
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import sys
 sys.path.insert(0, str(Path(__file__).parent))
 
 from models import (
-    AgentInfo, AgentStatus, RemoteHost, TaskRequest, TaskResult, TaskStatus,
-    ChatRequest, AppDeployRequest, AppDeployResult, AppDeployStatus, OSType
+    AgentInfo, AgentStatus, TaskRequest, TaskResult, TaskStatus,
+    ChatRequest, AppDeployRequest, AppDeployResult, AppDeployStatus, OSType,
+    ServerInfo, RemoteHost
 )
-from deployer import deploy, undeploy
+from deployer import deploy, undeploy, update
 import llm as LLM
 
-HOSTS_FILE = Path(__file__).parent.parent / "hosts.yaml"
+SERVERS_FILE = Path(__file__).parent.parent / "servers.yaml"
 WEB_DIR = Path(__file__).parent.parent / "web"
 AGENTS_FILE = Path(__file__).parent.parent / "agents.json"
 TASKS_FILE = Path(__file__).parent.parent / "tasks.json"
@@ -48,6 +49,7 @@ APP_DEPLOYS_FILE = Path(__file__).parent.parent / "app_deploys.json"
 LOGS_DIR = Path(__file__).parent.parent / "logs"
 
 # 内存存储（可替换为数据库）
+servers: Dict[str, ServerInfo] = {}
 agents: Dict[str, AgentInfo] = {}
 tasks: Dict[str, TaskResult] = {}
 app_deploys: Dict[str, AppDeployResult] = {}
@@ -75,7 +77,30 @@ def _save_json(file_path: Path, data: dict):
 
 def _load_persistent_data():
     """启动时加载持久化数据"""
-    global agents, tasks, app_deploys
+    global servers, agents, tasks, app_deploys
+
+    # 加载 servers
+    logger.info(f"[加载] 从 {SERVERS_FILE} 加载 servers...")
+    servers_data = _load_servers_yaml()
+    for server_id, data in servers_data.items():
+        try:
+            servers[server_id] = ServerInfo(
+                server_id=server_id,
+                name=data.get("name", server_id),
+                host=data["host"],
+                port=data.get("port", 22),
+                username=data["username"],
+                password=data.get("password"),
+                ssh_key=data.get("ssh_key"),
+                os_type=OSType(data.get("os_type", "unknown")),
+                os_version=data.get("os_version", ""),
+                owner=data.get("owner", ""),
+                created_at=data.get("created_at", ""),
+                last_connected=data.get("last_connected")
+            )
+        except Exception as e:
+            logger.error(f"[加载] 加载 server {server_id} 失败: {e}")
+    logger.info(f"[加载] servers 加载完成，共 {len(servers)} 个")
 
     # 加载 agents
     logger.info(f"[加载] 从 {AGENTS_FILE} 加载 agents...")
@@ -83,6 +108,10 @@ def _load_persistent_data():
     logger.info(f"[加载] agents 文件中有 {len(agents_data)} 条记录")
     for agent_id, data in agents_data.items():
         try:
+            # 兼容旧数据格式：如果有 host/port 等字段，需要迁移
+            if "host" in data:
+                # 旧数据格式，标记为待迁移
+                logger.warning(f"[加载] Agent {agent_id} 使用旧数据格式，需要迁移")
             agents[agent_id] = AgentInfo(**data)
             logger.info(f"[加载] 成功加载 agent: {agent_id}")
         except Exception as e:
@@ -106,13 +135,50 @@ def _load_persistent_data():
     logger.info(f"[加载] app_deploys 文件中有 {len(deploys_data)} 条记录")
     for deploy_id, data in deploys_data.items():
         try:
+            # 兼容旧数据：如果有 agent_id 但没有 target_type/target_id
+            if "agent_id" in data and "target_type" not in data:
+                data["target_type"] = "agent"
+                data["target_id"] = data["agent_id"]
             app_deploys[deploy_id] = AppDeployResult(**data)
             logger.info(f"[加载] 成功加载 deploy: {deploy_id}")
         except Exception as e:
             logger.error(f"[加载] 加载 deploy {deploy_id} 失败: {e}")
     logger.info(f"[加载] app_deploys 加载完成，共 {len(app_deploys)} 个")
 
-    print(f"[持久化] 已加载: {len(agents)} 个 Agent, {len(tasks)} 个任务, {len(app_deploys)} 个应用部署")
+    print(f"[持久化] 已加载: {len(servers)} 个服务器, {len(agents)} 个 Agent, {len(tasks)} 个任务, {len(app_deploys)} 个应用部署")
+
+def _load_servers_yaml() -> dict:
+    """加载 servers.yaml"""
+    if not SERVERS_FILE.exists():
+        return {}
+    with open(SERVERS_FILE) as f:
+        return (yaml.safe_load(f) or {}).get("servers", {})
+
+
+def _save_servers_yaml():
+    """保存 servers.yaml"""
+    SERVERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "servers": {
+            k: {
+                "name": v.name,
+                "host": v.host,
+                "port": v.port,
+                "username": v.username,
+                "password": v.password,
+                "ssh_key": v.ssh_key,
+                "os_type": v.os_type.value if isinstance(v.os_type, OSType) else v.os_type,
+                "os_version": v.os_version,
+                "owner": v.owner,
+                "created_at": v.created_at,
+                "last_connected": v.last_connected
+            }
+            for k, v in servers.items()
+        }
+    }
+    with open(SERVERS_FILE, "w") as f:
+        yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+
 
 def _save_agents():
     """保存 agents 到文件"""
@@ -171,6 +237,95 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="CyberAgentOps", version="3.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
+
+# ── WebSocket 连接池 ─────────────────────────────────────────
+from fastapi import WebSocket, WebSocketDisconnect
+
+# agent_id → WebSocket 连接
+_ws_connections: Dict[str, WebSocket] = {}
+# agent_id → 待处理任务 {task_id → asyncio.Future}
+_ws_pending: Dict[str, Dict[str, asyncio.Future]] = {}
+
+
+@app.websocket("/ws/agent/{agent_id}")
+async def ws_agent_endpoint(websocket: WebSocket, agent_id: str):
+    await websocket.accept()
+    _ws_connections[agent_id] = websocket
+    _ws_pending.setdefault(agent_id, {})
+    print(f"[WS] Agent {agent_id} 已连接")
+
+    # 更新 agent 状态为 online
+    if agent_id in agents:
+        agents[agent_id].status = AgentStatus.ONLINE
+        agents[agent_id].last_seen = datetime.now().isoformat()
+
+    try:
+        async for raw in websocket.iter_text():
+            try:
+                msg = json.loads(raw)
+                msg_type = msg.get("type")
+                task_id = msg.get("task_id", "")
+
+                if msg_type == "register":
+                    # agent 注册/重连，更新信息
+                    if agent_id in agents:
+                        agents[agent_id].status = AgentStatus.ONLINE
+                        agents[agent_id].last_seen = datetime.now().isoformat()
+                    print(f"[WS] Agent {agent_id} 注册: {msg.get('os_info', {}).get('os', '')}")
+                    # 连接后立即采集一次指标
+                    asyncio.create_task(_collect_metrics_now(agent_id))
+
+                elif msg_type == "pong":
+                    if agent_id in agents:
+                        agents[agent_id].last_seen = datetime.now().isoformat()
+
+                elif task_id and task_id in _ws_pending.get(agent_id, {}):
+                    # 任务响应，resolve 对应的 Future
+                    fut = _ws_pending[agent_id].pop(task_id)
+                    if not fut.done():
+                        fut.set_result(msg)
+
+            except Exception as e:
+                print(f"[WS] 消息处理错误: {e}")
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _ws_connections.pop(agent_id, None)
+        # 断线时取消所有等待中的 Future，避免泄漏
+        pending = _ws_pending.pop(agent_id, {})
+        for fut in pending.values():
+            if not fut.done():
+                fut.set_exception(ConnectionError(f"Agent {agent_id} 断线"))
+        if agent_id in agents:
+            agents[agent_id].status = AgentStatus.OFFLINE
+        print(f"[WS] Agent {agent_id} 断开连接，取消 {len(pending)} 个待处理任务")
+
+
+async def _ws_call(agent_id: str, msg: dict, timeout: int = 60) -> dict:
+    """通过 WebSocket 向 agent 发送消息并等待响应"""
+    ws = _ws_connections.get(agent_id)
+    if not ws:
+        raise HTTPException(status_code=503, detail="Agent 未连接（离线）")
+
+    task_id = msg.get("task_id") or uuid.uuid4().hex[:8]
+    msg["task_id"] = task_id
+
+    loop = asyncio.get_event_loop()
+    fut: asyncio.Future = loop.create_future()
+    _ws_pending.setdefault(agent_id, {})[task_id] = fut
+
+    await ws.send_text(json.dumps(msg))
+
+    try:
+        return await asyncio.wait_for(fut, timeout=timeout)
+    except asyncio.TimeoutError:
+        _ws_pending.get(agent_id, {}).pop(task_id, None)
+        raise HTTPException(status_code=504, detail=f"Agent 响应超时（{timeout}s）")
+    except ConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
 
 # 健康检查端点
 @app.get("/health")
@@ -314,88 +469,109 @@ def _check_owner(authorization: str, owner: str, resource: str = "资源"):
         raise HTTPException(status_code=403, detail=f"无权操作他人的{resource}")
 
 
-# ── Hosts 配置管理 ────────────────────────────────────────────
+# ── Servers 配置管理 ────────────────────────────────────────────
 
-class HostEntry(BaseModel):
+class ServerEntry(BaseModel):
     name: str
     host: str
     port: int = 22
     username: str
     password: Optional[str] = None
     ssh_key: Optional[str] = None
-    deploy_dir: str = "/opt/agentops"
+    os_type: Optional[str] = None
 
 
-def _read_hosts() -> dict:
-    if not HOSTS_FILE.exists():
-        return {}
-    with open(HOSTS_FILE) as f:
-        return (yaml.safe_load(f) or {}).get("hosts", {})
-
-
-def _write_hosts(hosts: dict):
-    HOSTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(HOSTS_FILE, "w") as f:
-        yaml.dump({"hosts": hosts}, f, allow_unicode=True, default_flow_style=False)
-
-
-@app.get("/hosts")
-async def list_hosts(authorization: str = Header(default="")):
-    """获取目标机器列表：admin 看全部，其他用户只看自己的"""
-    hosts = _read_hosts()
+@app.get("/servers")
+async def list_servers(authorization: str = Header(default="")):
+    """获取服务器列表：admin 看全部，其他用户只看自己的"""
     caller = _get_caller(authorization)
     if _is_admin(authorization):
-        return [{"name": k, **v} for k, v in hosts.items()]
-    # 非 admin 只返回自己添加的（owner 字段匹配）
-    return [{"name": k, **v} for k, v in hosts.items()
-            if v.get("owner") == caller]
+        return [s.model_dump(exclude_none=True) for s in servers.values()]
+    # 非 admin 只返回自己添加的
+    return [s.model_dump(exclude_none=True) for s in servers.values() if s.owner == caller]
 
 
-@app.post("/hosts")
-async def add_host(entry: HostEntry, authorization: str = Header(default="")):
+@app.post("/servers")
+async def add_server(entry: ServerEntry, authorization: str = Header(default="")):
     _check_perm(authorization, "login")
     caller = _get_caller(authorization)
-    hosts = _read_hosts()
-    if entry.name in hosts:
-        raise HTTPException(status_code=400, detail=f"主机 '{entry.name}' 已存在")
-    data = entry.model_dump(exclude={"name"}, exclude_none=True)
-    data["owner"] = caller          # 记录 owner
-    hosts[entry.name] = data
-    _write_hosts(hosts)
-    return {"message": "添加成功", "name": entry.name}
+
+    # 去重：同一 host + port + username 已存在则直接返回
+    for existing in servers.values():
+        if existing.host == entry.host and existing.port == entry.port and existing.username == entry.username:
+            # 更新名称和密码
+            existing.name = entry.name
+            if entry.password:
+                existing.password = entry.password
+            if entry.ssh_key:
+                existing.ssh_key = entry.ssh_key
+            _save_servers_yaml()
+            return {"message": "服务器已存在，已更新信息", "server_id": existing.server_id}
+
+    server_id = f"server-{uuid.uuid4().hex[:8]}"
+    server = ServerInfo(
+        server_id=server_id,
+        name=entry.name,
+        host=entry.host,
+        port=entry.port,
+        username=entry.username,
+        password=entry.password,
+        ssh_key=entry.ssh_key,
+        os_type=OSType(entry.os_type) if entry.os_type else OSType.UNKNOWN,
+        owner=caller,
+        created_at=datetime.now().isoformat()
+    )
+    servers[server_id] = server
+    _save_servers_yaml()
+    return {"message": "添加成功", "server_id": server_id}
 
 
-@app.put("/hosts/{name}")
-async def update_host(name: str, entry: HostEntry, authorization: str = Header(default="")):
+@app.put("/servers/{server_id}")
+async def update_server(server_id: str, entry: ServerEntry, authorization: str = Header(default="")):
     _check_perm(authorization, "login")
-    hosts = _read_hosts()
-    if name not in hosts:
-        raise HTTPException(status_code=404, detail="主机不存在")
+    if server_id not in servers:
+        raise HTTPException(status_code=404, detail="服务器不存在")
+
     # 只有 owner 或 admin 可以修改
-    if not _is_admin(authorization) and hosts[name].get("owner") != _get_caller(authorization):
-        raise HTTPException(status_code=403, detail="无权修改他人的机器")
-    data = entry.model_dump(exclude={"name"}, exclude_none=True)
-    data["owner"] = hosts[name].get("owner", _get_caller(authorization))
-    hosts[name] = data
-    _write_hosts(hosts)
+    server = servers[server_id]
+    if not _is_admin(authorization) and server.owner != _get_caller(authorization):
+        raise HTTPException(status_code=403, detail="无权修改他人的服务器")
+
+    server.name = entry.name
+    server.host = entry.host
+    server.port = entry.port
+    server.username = entry.username
+    server.password = entry.password
+    server.ssh_key = entry.ssh_key
+    if entry.os_type:
+        server.os_type = OSType(entry.os_type)
+
+    _save_servers_yaml()
     return {"message": "更新成功"}
 
 
-@app.delete("/hosts/{name}")
-async def delete_host(name: str, authorization: str = Header(default="")):
+@app.delete("/servers/{server_id}")
+async def delete_server(server_id: str, authorization: str = Header(default="")):
     _check_perm(authorization, "login")
-    hosts = _read_hosts()
-    if name not in hosts:
-        raise HTTPException(status_code=404, detail="主机不存在")
-    if not _is_admin(authorization) and hosts[name].get("owner") != _get_caller(authorization):
-        raise HTTPException(status_code=403, detail="无权删除他人的机器")
-    del hosts[name]
-    _write_hosts(hosts)
+    if server_id not in servers:
+        raise HTTPException(status_code=404, detail="服务器不存在")
+
+    server = servers[server_id]
+    if not _is_admin(authorization) and server.owner != _get_caller(authorization):
+        raise HTTPException(status_code=403, detail="无权删除他人的服务器")
+
+    # 检查是否有 Agent 依赖此服务器
+    for agent in agents.values():
+        if agent.server_id == server_id:
+            raise HTTPException(status_code=400, detail=f"此服务器有 {len([a for a in agents.values() if a.server_id == server_id])} 个 Agent 依赖，请先删除 Agent")
+
+    del servers[server_id]
+    _save_servers_yaml()
     return {"message": "删除成功"}
 
 
-@app.post("/hosts/test")
-async def test_host(entry: HostEntry):
+@app.post("/servers/test")
+async def test_server(entry: ServerEntry):
     """测试 SSH 连接是否可用"""
     import asyncssh
     kwargs = dict(host=entry.host, port=entry.port, username=entry.username,
@@ -413,45 +589,157 @@ async def test_host(entry: HostEntry):
         return {"ok": False, "error": str(e)}
 
 
-# ── 部署管理 ─────────────────────────────────────────────────
+# ── Agent 部署管理 ────────────────────────────────────────────────
 
-@app.post("/agents/deploy", response_model=AgentInfo)
-async def deploy_agent(host: RemoteHost, background_tasks: BackgroundTasks,
+class AgentDeployRequest(BaseModel):
+    server_id: str  # 目标服务器
+    name: str = ""  # Agent 名称
+
+
+# 存储 agent 部署任务日志 {deploy_id: {"log": str, "status": str, "agent_id": str}}
+_agent_deploy_tasks: dict = {}
+
+
+@app.post("/agents/deploy")
+async def deploy_agent(req: AgentDeployRequest, background_tasks: BackgroundTasks,
                        authorization: str = Header(default="")):
-    """部署 Agent，需要登录（任何登录用户都可以）"""
+    """创建 Agent 部署任务，立即返回 deploy_id，后台异步执行"""
     _check_perm(authorization, "login")
     caller = _get_caller(authorization)
-    try:
-        if host.name:
-            existing = next((a for a in agents.values() if a.name == host.name and a.owner == caller), None)
-            if existing:
-                del agents[existing.agent_id]
 
-        info = await deploy(host)
-        info.password = host.password
-        info.ssh_key = host.ssh_key
-        info.owner = caller          # 绑定 owner
+    if req.server_id not in servers:
+        raise HTTPException(status_code=404, detail="服务器不存在")
+
+    server = servers[req.server_id]
+    if not _is_admin(authorization) and server.owner != caller:
+        raise HTTPException(status_code=403, detail="无权在他人服务器上部署 Agent")
+
+    deploy_id = uuid.uuid4().hex[:12]
+    _agent_deploy_tasks[deploy_id] = {"log": "", "status": "running", "agent_id": None}
+
+    background_tasks.add_task(_run_agent_deploy, deploy_id, req, server, caller)
+    return {"deploy_id": deploy_id, "status": "running"}
+
+
+async def _run_agent_deploy(deploy_id: str, req: AgentDeployRequest, server: ServerInfo, caller: str):
+    task = _agent_deploy_tasks[deploy_id]
+
+    def log(msg: str):
+        task["log"] += msg + "\n"
+
+    try:
+        host = RemoteHost(
+            name=req.name or server.name,
+            host=server.host,
+            port=server.port,
+            username=server.username,
+            password=server.password,
+            ssh_key=server.ssh_key,
+            deploy_dir="/opt/agentops",
+        )
+        info = await deploy(host, log)
+        info.server_id = req.server_id
+        info.name = req.name or server.name
+        info.owner = caller
+
+        # 去重：同一 server 已有 agent 则覆盖，不新建
+        existing_agent_id = next(
+            (aid for aid, a in agents.items() if a.server_id == req.server_id), None
+        )
+        if existing_agent_id:
+            log(f"ℹ️ 覆盖已有 Agent: {existing_agent_id} → {info.agent_id}")
+            del agents[existing_agent_id]
+            _ws_connections.pop(existing_agent_id, None)
+
         agents[info.agent_id] = info
-        _save_agents()  # 持久化
+        _save_agents()
+        task["agent_id"] = info.agent_id
+        task["status"] = "success" if info.status == AgentStatus.ONLINE else "warning"
         asyncio.create_task(_collect_metrics_now(info.agent_id))
-        return info
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        err = traceback.format_exc()
+        log(f"❌ 部署失败: {e or type(e).__name__}\n{err}")
+        task["status"] = "failed"
+
+
+@app.get("/agents/deploy/{deploy_id}/stream")
+async def stream_agent_deploy_log(deploy_id: str):
+    """SSE 实时推送 Agent 部署日志"""
+    if deploy_id not in _agent_deploy_tasks:
+        raise HTTPException(status_code=404, detail="部署任务不存在")
+
+    async def event_generator():
+        last_len = 0
+        for _ in range(300):  # 最多等 5 分钟
+            task = _agent_deploy_tasks.get(deploy_id)
+            if not task:
+                break
+            current_log = task["log"]
+            if len(current_log) > last_len:
+                for line in current_log[last_len:].splitlines():
+                    yield f"data: {line}\n\n"
+                last_len = len(current_log)
+            if task["status"] != "running":
+                yield f"data: __STATUS__{task['status']}\n\n"
+                if task.get("agent_id"):
+                    yield f"data: __AGENT_ID__{task['agent_id']}\n\n"
+                break
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.delete("/agents/{agent_id}")
 async def remove_agent(agent_id: str, authorization: str = Header(default="")):
     info = _get_agent(agent_id)
     _check_owner(authorization, info.owner, "Agent")
-    info = _get_agent(agent_id)
+
+    if info.server_id not in servers:
+        raise HTTPException(status_code=404, detail="关联的服务器不存在")
+
+    server = servers[info.server_id]
     host = RemoteHost(
-        host=info.host, port=info.port,
-        username=info.username, deploy_dir=info.deploy_dir
+        name=info.name,
+        host=server.host,
+        port=server.port,
+        username=server.username,
+        password=server.password,
+        ssh_key=server.ssh_key,
+        deploy_dir=info.agent_deploy_dir,
     )
     await undeploy(host)
+
     del agents[agent_id]
-    _save_agents()  # 持久化
+    _save_agents()
     return {"message": f"Agent {agent_id} 已移除"}
+
+
+@app.post("/agents/{agent_id}/update")
+async def update_agent(agent_id: str, authorization: str = Header(default="")):
+    """更新 Agent 代码并重启服务"""
+    info = _get_agent(agent_id)
+    _check_owner(authorization, info.owner, "Agent")
+
+    host = RemoteHost(
+        name=info.name,
+        host=servers[info.server_id].host,
+        port=servers[info.server_id].port,
+        username=servers[info.server_id].username,
+        password=servers[info.server_id].password,
+        ssh_key=servers[info.server_id].ssh_key,
+        deploy_dir=info.agent_deploy_dir,
+    )
+    try:
+        result = await update(host, agent_id)
+        return {
+            "message": f"✅ Agent '{info.name or agent_id}' 更新成功",
+            "agent_id": agent_id,
+            "status": result["status"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
 
 
 @app.get("/agents", response_model=List[AgentInfo])
@@ -647,15 +935,20 @@ def _get_agent(agent_id: str) -> AgentInfo:
 
 def _ssh_kwargs(info: AgentInfo) -> dict:
     """构建 asyncssh 连接参数"""
-    kwargs = dict(host=info.host, port=info.port,
-                  username=info.username, known_hosts=None,
+    # 从 server_id 获取服务器信息
+    server = servers.get(info.server_id)
+    if not server:
+        raise ValueError(f"服务器 {info.server_id} 不存在")
+    
+    kwargs = dict(host=server.host, port=server.port,
+                  username=server.username, known_hosts=None,
                   keepalive_interval=15,
                   keepalive_count_max=6)
-    if info.password:
-        kwargs["password"] = info.password
+    if server.password:
+        kwargs["password"] = server.password
         kwargs["preferred_auth"] = "password,keyboard-interactive"
-    if info.ssh_key:
-        kwargs["client_keys"] = [info.ssh_key]
+    if server.ssh_key:
+        kwargs["client_keys"] = [server.ssh_key]
     return kwargs
 
 
@@ -723,14 +1016,20 @@ async def _agent_get(info: AgentInfo, path: str) -> Optional[dict]:
 
 
 async def _agent_exec(info: AgentInfo, command: str, timeout: int) -> dict:
-    """直接通过 SSH 在目标机器上执行命令（无需 HTTP 隧道）"""
+    """执行命令：优先走 WebSocket，降级走 SSH"""
+    # 优先 WebSocket
+    if info.agent_id in _ws_connections:
+        try:
+            resp = await _ws_call(info.agent_id, {"type": "exec", "command": command, "timeout": timeout}, timeout=timeout + 5)
+            return {"success": resp.get("success", False), "output": resp.get("output", ""), "error": resp.get("error", "")}
+        except HTTPException:
+            pass  # 降级到 SSH
+
+    # 降级：直接 SSH 执行
     try:
         conn = await asyncssh.connect(**_ssh_kwargs(info))
         try:
-            result = await asyncio.wait_for(
-                conn.run(command, check=False),
-                timeout=timeout + 10
-            )
+            result = await asyncio.wait_for(conn.run(command, check=False), timeout=timeout + 10)
             output = result.stdout or result.stderr or ""
             return {"success": result.exit_status == 0, "output": output, "error": ""}
         finally:
@@ -742,132 +1041,22 @@ async def _agent_exec(info: AgentInfo, command: str, timeout: int) -> dict:
 
 
 async def _collect_metrics_now(agent_id: str):
-    """部署完成后立即通过 SSH 采集一次系统指标"""
+    """通过 WebSocket 采集一次系统指标"""
     await asyncio.sleep(3)
     if agent_id not in agents:
         return
-    info = agents[agent_id]
+    if agent_id not in _ws_connections:
+        return
     try:
-        conn = await asyncssh.connect(**_ssh_kwargs(info))
-        try:
-            metrics = {}
-
-            async def run(cmd):
-                r = await conn.run(cmd, check=False)
-                return (r.stdout or "").strip()
-
-            # 基础信息
-            metrics["timestamp"] = datetime.now().isoformat()
-            metrics["hostname"] = await run("hostname")
-            metrics["os"] = await run("uname -s")
-            metrics["os_version"] = await run(
-                "cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d '\"' "
-                "|| uname -r"
-            )
-
-            # CPU 使用率（两次采样）
-            try:
-                v1 = list(map(int, (await run("cat /proc/stat | head -1")).split()[1:]))
-                await asyncio.sleep(1)
-                v2 = list(map(int, (await run("cat /proc/stat | head -1")).split()[1:]))
-                metrics["cpu_usage"] = round(100 * (1 - (v2[3]-v1[3]) / (sum(v2)-sum(v1))), 1)
-            except Exception:
-                metrics["cpu_usage"] = -1
-
-            # 硬件信息
-            hw = {}
-            hw["cpu_model"] = await run(
-                "cat /proc/cpuinfo | grep 'model name' | head -1 | cut -d: -f2 | xargs"
-            )
-            hw["cpu_cores"] = await run("nproc")
-            mem_kb = await run("grep MemTotal /proc/meminfo | awk '{print $2}'")
-            hw["memory_mb"] = round(int(mem_kb) / 1024) if mem_kb.isdigit() else 0
-            hw["board_name"] = await run("cat /sys/class/dmi/id/board_name 2>/dev/null || echo N/A")
-            hw["board_serial"] = await run("cat /sys/class/dmi/id/board_serial 2>/dev/null || echo N/A")
-
-            # 磁盘 ID
-            disk_ids_raw = await run("ls /dev/disk/by-id/ 2>/dev/null")
-            hw["disk_ids"] = [d for d in disk_ids_raw.splitlines() if d and "part" not in d][:6]
-            if not hw["disk_ids"]:
-                lsblk = await run("lsblk -d -o NAME,MODEL,SERIAL 2>/dev/null | tail -n +2")
-                hw["disk_ids"] = lsblk.splitlines()[:4]
-
-            # MAC 地址
-            macs = {}
-            ip_out = await run("ip link show 2>/dev/null")
-            iface = None
-            import re as _re
-            for line in ip_out.splitlines():
-                m = _re.match(r'\d+:\s+(\S+):', line)
-                if m:
-                    iface = m.group(1).rstrip(":")
-                m2 = _re.search(r'link/ether\s+([0-9a-f:]{17})', line, _re.I)
-                if m2 and iface and iface != "lo":
-                    macs[iface] = m2.group(1)
-            hw["mac_addresses"] = macs
-
-            # 硬件指纹
-            import hashlib as _hl
-            raw = "|".join([hw.get("cpu_model",""), hw.get("board_serial",""),
-                            str(hw.get("disk_ids","")), str(macs), metrics.get("hostname","")])
-            hw["hw_fingerprint"] = _hl.sha256(raw.encode()).hexdigest()[:16]
-            metrics["hardware"] = hw
-
-            # 磁盘使用
-            disk = []
-            df_out = await run("df -h")
-            for line in df_out.splitlines()[1:]:
-                p = line.split()
-                if len(p) >= 6:
-                    disk.append({"mount": p[5], "size": p[1], "used": p[2],
-                                 "avail": p[3], "use_pct": p[4]})
-            metrics["disk"] = disk[:5]
-
-            # 网络 IP
-            ips = {"hostname": metrics["hostname"]}
-            ip4_out = await run("ip -4 addr show")
-            for line in ip4_out.splitlines():
-                m = _re.search(r'inet\s+(\d+\.\d+\.\d+\.\d+)', line)
-                if m and not m.group(1).startswith("127."):
-                    ips["eth"] = m.group(1)
-                    break
-            pub = await run("curl -s --max-time 3 https://api.ipify.org 2>/dev/null || wget -qO- --timeout=3 https://api.ipify.org 2>/dev/null")
-            if pub:
-                ips["public"] = pub
-            metrics["network"] = ips
-
-            # 网络 IO
-            net_io = {}
-            def parse_net(raw):
-                s = {}
-                for line in raw.splitlines()[2:]:
-                    p = line.split()
-                    if len(p) >= 10:
-                        ifc = p[0].rstrip(":")
-                        if ifc != "lo":
-                            s[ifc] = {"rx": int(p[1]), "tx": int(p[9])}
-                return s
-            s1 = parse_net(await run("cat /proc/net/dev"))
-            await asyncio.sleep(1)
-            s2 = parse_net(await run("cat /proc/net/dev"))
-            for ifc in s1:
-                if ifc in s2:
-                    net_io[ifc] = {
-                        "rx_kbps": round((s2[ifc]["rx"] - s1[ifc]["rx"]) / 1024, 1),
-                        "tx_kbps": round((s2[ifc]["tx"] - s1[ifc]["tx"]) / 1024, 1),
-                        "rx_bytes_total": s2[ifc]["rx"],
-                        "tx_bytes_total": s2[ifc]["tx"],
-                    }
-            metrics["network_io"] = net_io
-
-            info.metrics = metrics
-            info.last_seen = datetime.now().isoformat()
-            print(f"[metrics] {info.name or agent_id} 初始采集完成")
-
-        finally:
-            conn.close()
+        resp = await _ws_call(agent_id, {"type": "metrics"}, timeout=30)
+        metrics = resp.get("metrics", {})
+        if metrics and agent_id in agents:
+            agents[agent_id].metrics = metrics
+            agents[agent_id].last_seen = datetime.now().isoformat()
+            agents[agent_id].status = AgentStatus.ONLINE
+            _save_agents()
     except Exception as e:
-        print(f"[metrics] {info.name or agent_id} 采集失败: {e}")
+        print(f"[metrics] {agent_id} 采集失败: {e}")
 
 
 # ── 应用部署 ─────────────────────────────────────────────────
@@ -1055,116 +1244,41 @@ async def list_app_deploys(authorization: str = Header(default="")):
 
 @app.post("/deploy/scan/{agent_id}")
 async def scan_agent_apps(agent_id: str, authorization: str = Header(default="")):
-    """扫描 Agent 服务器上的已部署应用，自动注册为技能"""
+    """扫描 Agent 服务器上的已部署应用"""
     _check_perm(authorization, "login")
     info = _get_agent(agent_id)
 
-    if info.os_type not in [OSType.LINUX, OSType.MACOS]:
-        raise HTTPException(status_code=400, detail="暂仅支持 Linux/macOS 系统的应用发现")
-
-    discovered = []
-
     try:
-        conn = await asyncssh.connect(**_ssh_kwargs(info))
-        try:
-            # 1. 扫描 systemd 服务
-            log("▶ 扫描 systemd 服务...")
-            services = await conn.run(
-                "systemctl list-units --type=service --state=running --no-pager | grep -v 'UNIT\\|LOAD\\|ACTIVE\\|SUB' | awk '{print $1}'",
-                check=False
-            )
-            for svc in (services.stdout or "").splitlines():
-                svc = svc.strip()
-                if not svc or 'ssh' in svc.lower() or 'agent' in svc.lower():
-                    continue
+        # 优先走 WebSocket
+        if agent_id in _ws_connections:
+            resp = await _ws_call(agent_id, {"type": "discover"}, timeout=60)
+            agent_data = resp.get("data", {})
+        else:
+            raise HTTPException(status_code=503, detail="Agent 未连接，请等待 Agent 上线后重试")
 
-                # 获取服务详细信息
-                desc = await conn.run(f"systemctl show {svc} -p Description --value", check=False)
-                exec_start = await conn.run(f"systemctl show {svc} -p ExecStart --value", check=False)
+        discovered = []
+        for svc in agent_data.get("services", []):
+            if svc.get("port"):
+                discovered.append({"type": "service", "name": svc["name"],
+                                    "description": svc.get("description", ""),
+                                    "port": svc["port"], "status": svc["status"]})
+        for container in agent_data.get("containers", []):
+            if container.get("port"):
+                discovered.append({"type": "container", "name": container["name"],
+                                    "description": f"Docker: {container.get('status', '')}",
+                                    "port": container["port"], "status": "running"})
+        for port_info in agent_data.get("ports", []):
+            discovered.append({"type": "port", "name": f"Port {port_info['port']}",
+                                "description": f"Process: {port_info.get('process', 'unknown')}",
+                                "port": port_info["port"], "status": "listening"})
 
-                # 尝试找到对应的端口
-                port = ""
-                exec_cmd = (exec_start.stdout or "").strip()
-                if 'python' in exec_cmd.lower() or 'node' in exec_cmd.lower():
-                    # 通过进程查找端口
-                    port_check = await conn.run(f"ss -tlnp | grep '{svc.split('.')[0]}' | head -1", check=False)
-                    if port_check.stdout:
-                        import re as _re
-                        m = _re.search(r':(\d+)', port_check.stdout)
-                        if m:
-                            port = m.group(1)
+        return {"agent_id": agent_id, "hostname": agent_data.get("hostname", ""),
+                "discovered": discovered, "count": len(discovered)}
 
-                if port:
-                    discovered.append({
-                        "type": "systemd",
-                        "name": svc,
-                        "description": (desc.stdout or "").strip()[:100],
-                        "port": port,
-                        "status": "running"
-                    })
-
-            # 2. 扫描 Docker 容器
-            log("▶ 扫描 Docker 容器...")
-            docker_check = await conn.run("command -v docker", check=False)
-            if docker_check.exit_status == 0:
-                containers = await conn.run(
-                    "docker ps --format '{{.Names}}\t{{.Image}}\t{{.Ports}}'",
-                    check=False
-                )
-                for line in (containers.stdout or "").splitlines():
-                    parts = line.split('\t')
-                    if len(parts) >= 3:
-                        name, image, ports = parts[0], parts[1], parts[2]
-                        if not name or 'agent' in name.lower():
-                            continue
-
-                        # 提取端口
-                        port = ""
-                        import re as _re
-                        m = _re.search(r'0\.0\.0\.0:(\d+)->', ports)
-                        if m:
-                            port = m.group(1)
-
-                        discovered.append({
-                            "type": "docker",
-                            "name": name,
-                            "description": f"容器: {image}",
-                            "port": port,
-                            "status": "running"
-                        })
-
-            # 3. 扫描监听的端口（补充发现）
-            log("▶ 扫描监听端口...")
-            ports = await conn.run(
-                "ss -tlnp | awk 'NR>1 {print $4,$7}' | sort -u",
-                check=False
-            )
-            for line in (ports.stdout or "").splitlines():
-                if 'python' in line or 'node' in line or 'java' in line:
-                    import re as _re
-                    m = _re.search(r':(\d+)', line)
-                    if m:
-                        port = m.group(1)
-                        # 检查是否已发现
-                        if not any(d.get('port') == port for d in discovered):
-                            discovered.append({
-                                "type": "port",
-                                "name": f"port_{port}",
-                                "description": f"端口 {port} 监听服务",
-                                "port": port,
-                                "status": "running"
-                            })
-
-        finally:
-            conn.close()
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"扫描失败: {str(e)}")
-
-    return {
-        "agent_id": agent_id,
-        "discovered": discovered,
-        "count": len(discovered)
-    }
+        raise HTTPException(status_code=500, detail=f"扫描失败: {e}")
 
 
 @app.post("/deploy/register/{agent_id}")
@@ -1186,10 +1300,11 @@ async def register_discovered_app(agent_id: str, req: dict, authorization: str =
 
     app_deploy = AppDeployResult(
         deploy_id=deploy_id,
-        agent_id=agent_id,
+        target_type="agent",
+        target_id=agent_id,
         owner=_get_caller(authorization),
         repo_url=f"{app_type}://{name}",  # 标记为手动注册
-        deploy_dir=deploy_dir,
+        app_deploy_dir=deploy_dir,
         status=AppDeployStatus.SUCCESS,
         log=f"手动注册的 {app_type} 应用: {name}\n描述: {description}\n端口: {port}",
         created_at=datetime.now().isoformat()
@@ -1237,7 +1352,7 @@ async def chat_with_deploy(deploy_id: str, req: ChatRequest,
     context = f"""你是一个 Linux 运维和应用部署专家。
 已部署的仓库：{d.repo_url}
 部署目录：{d.deploy_dir}
-目标服务器：{info.host} ({info.os_version})
+目标服务器：{servers[info.server_id].host if info.server_id in servers else info.name} ({info.os_version})
 部署状态：{d.status}
 部署日志：
 {d.log[-1000:] if d.log else '无'}

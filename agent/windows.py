@@ -5,15 +5,16 @@ import re
 import socket
 import subprocess
 import time
+from typing import Dict, List, Any
 from urllib.request import urlopen
 
-from .base import BaseAgent
+from base import BaseAgent
 
 
 class WindowsAgent(BaseAgent):
     """Windows Agent，通过 HTTP 服务接受控制端命令"""
 
-    def get_os_info(self) -> dict:
+    def get_os_info(self) -> Dict[str, Any]:
         return {
             "os": "Windows",
             "os_version": platform.version(),
@@ -33,7 +34,7 @@ class WindowsAgent(BaseAgent):
         except Exception:
             return -1.0
 
-    def get_disk_usage(self) -> list:
+    def get_disk_usage(self) -> List[Dict[str, Any]]:
         result = []
         try:
             out = self._cmd(
@@ -58,7 +59,7 @@ class WindowsAgent(BaseAgent):
             pass
         return result[:5]
 
-    def get_network_ips(self) -> dict:
+    def get_network_ips(self) -> Dict[str, Any]:
         ips = {"hostname": socket.gethostname()}
         try:
             out = self._cmd("ipconfig")
@@ -76,7 +77,7 @@ class WindowsAgent(BaseAgent):
             pass
         return ips
 
-    def get_network_io(self) -> dict:
+    def get_network_io(self) -> Dict[str, Any]:
         # Windows 网络 IO 通过 PowerShell 获取
         try:
             out1 = self._cmd(
@@ -107,7 +108,7 @@ class WindowsAgent(BaseAgent):
         except Exception:
             return {}
 
-    def get_hardware_info(self) -> dict:
+    def get_hardware_info(self) -> Dict[str, Any]:
         hw = {}
         hw["cpu_model"] = self._cmd(
             'powershell -Command "(Get-WmiObject Win32_Processor).Name"'
@@ -149,17 +150,16 @@ class WindowsAgent(BaseAgent):
         hw["hw_fingerprint"] = hashlib.sha256(raw.encode()).hexdigest()[:16]
         return hw
 
-    def execute_command(self, command: str, timeout: int = 60) -> dict:
+    def execute_command(self, command: str, timeout: int = 60) -> Dict[str, Any]:
         """Windows 命令执行，支持 cmd 和 PowerShell"""
         try:
-            # 自动判断是否需要 PowerShell
             if any(kw in command for kw in ["Get-", "Set-", "New-", "Remove-", "$"]):
                 cmd = ["powershell", "-Command", command]
             else:
                 cmd = ["cmd", "/c", command]
 
             result = subprocess.run(
-                cmd, capture_output=True, text=True,
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 timeout=timeout, encoding="utf-8", errors="replace"
             )
             output = result.stdout or result.stderr
@@ -173,8 +173,66 @@ class WindowsAgent(BaseAgent):
         try:
             result = subprocess.run(
                 cmd, shell=True, capture_output=True,
-                text=True, timeout=5, encoding="utf-8", errors="replace"
+                text=True, timeout=30, encoding="utf-8", errors="replace"
             )
             return result.stdout.strip()
-        except Exception:
+        except subprocess.TimeoutExpired:
+            print(f"[Agent] 命令超时: {cmd[:100]}")
             return ""
+        except Exception as e:
+            print(f"[Agent] 命令执行失败: {cmd[:100]}, error: {e}")
+            return ""
+
+    def discover_apps(self) -> Dict[str, Any]:
+        """发现 Windows 本地已部署的应用（服务、监听端口）"""
+        result: Dict[str, Any] = {
+            "services": [],
+            "containers": [],
+            "ports": [],
+            "agent_id": self.agent_id,
+            "hostname": self.get_os_info().get("hostname", "")
+        }
+
+        # 1. 扫描 Windows 服务
+        try:
+            services_out = self._cmd(
+                'powershell -Command "Get-Service | Where-Object {$_.Status -eq \'Running\'} | '
+                'Select-Object Name,DisplayName | ConvertTo-Csv -NoTypeInformation"'
+            )
+            for line in services_out.splitlines()[1:]:
+                parts = [p.strip('"') for p in line.split(',')]
+                if len(parts) >= 2 and parts[0]:
+                    # 排除系统服务
+                    svc_name = parts[0].lower()
+                    if any(x in svc_name for x in ['windows', 'microsoft', 'system', 'agent']):
+                        continue
+
+                    result["services"].append({
+                        "name": parts[0],
+                        "description": parts[1][:100],
+                        "port": "",
+                        "status": "running"
+                    })
+        except Exception:
+            pass
+
+        # 2. 扫描监听端口
+        try:
+            ports_out = self._cmd('netstat -ano | findstr LISTENING')
+            for line in ports_out.splitlines():
+                # 解析端口和进程
+                m = re.search(r':(\d+)\s+.*?(\d+)$', line.strip())
+                if m:
+                    port = m.group(1)
+                    pid = m.group(2)
+                    # 获取进程名
+                    proc_name = self._cmd(f'tasklist /FI "PID eq {pid}" /NH /FO CSV').strip('"')
+                    result["ports"].append({
+                        "port": port,
+                        "process": proc_name or "unknown",
+                        "pid": pid
+                    })
+        except Exception:
+            pass
+
+        return result

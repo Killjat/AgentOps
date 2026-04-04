@@ -2,110 +2,125 @@
 
 # CyberAgentOps
 
-**AI 驱动的智能运维平台**
+**用自然语言控制你的每一台机器**
 
-用自然语言管理你的服务器集群，无需记忆命令，无需手动 SSH
+一个平台，管理全球任意数量的 Linux / Windows / macOS 服务器，AI 驱动，实时响应
 
-[![Python](https://img.shields.io/badge/Python-3.10+-blue?style=flat-square&logo=python)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.6+-blue?style=flat-square&logo=python)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com)
 [![Vue3](https://img.shields.io/badge/Vue-3.x-brightgreen?style=flat-square&logo=vue.js)](https://vuejs.org)
-
-### 🌐 [https://47.111.28.162](https://47.111.28.162) — 立即体验
-
-> 注册账号即可使用，游客也可直接进入
+[![WebSocket](https://img.shields.io/badge/WebSocket-实时通信-orange?style=flat-square)](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket)
 
 </div>
 
 ---
 
+## 这是什么
+
+CyberAgentOps 是一个**分布式 AI 运维平台**。
+
+你只需要一个浏览器，就能用中文对话的方式管理散布在全球各地的服务器——不管是阿里云、AWS、自建机房，还是内网机器，都能接入。
+
+核心思路很简单：在每台目标机器上部署一个轻量 Agent，Agent 主动连回控制端，建立持久的 WebSocket 通道。之后你说什么，它就做什么。
+
+---
+
 ## 核心能力
 
-### 🤖 自然语言运维
+### 一键部署 Agent，跨平台支持
 
-不需要记忆任何 Linux 命令。用中文描述你想做的事，AI 自动生成命令、执行、分析结果。
+添加服务器 SSH 信息，点击部署，系统自动完成：
 
-```
-你说：查看 nginx 错误日志最近 50 行
-AI做：tail -n 50 /var/log/nginx/error.log
-分析：发现 3 条 502 错误，后端服务可能未启动，建议检查端口 8080 是否监听
-```
+- 检测操作系统（Ubuntu / CentOS / Debian / Windows Server / macOS）
+- 检测 Python 环境，缺失则自动安装
+- 上传 Agent 文件，安装依赖
+- 启动 Agent 进程，建立 WebSocket 连接
 
-支持 DeepSeek、OpenAI、Grok、Anthropic 四种 AI 模型，自动选择已配置的模型。
-
----
-
-### 💬 连续对话执行
-
-任务完成后可以继续追问，AI 始终记住完整上下文，支持连续操作：
-
-```
-查看系统进程
-  → AI 分析：发现 Neo4j、Docker、nginx 正常运行
-
-继续追问：帮我重启 nginx  [⚡ 问并执行]
-  → 执行：systemctl restart nginx
-  → AI 分析：nginx 已重启，服务状态正常
-
-继续追问：查一下外网 IP  [⚡ 问并执行]
-  → 执行：curl -s ifconfig.me
-  → 结果：47.111.28.162
-```
-
-两种模式：
-- **💬 提问** — 获取 AI 分析和建议，不执行命令
-- **⚡ 问并执行** — AI 直接生成命令并在目标服务器执行
+支持 Python 3.6+，兼容 CentOS 7 这类老系统。
 
 ---
 
-### 🚀 智能应用部署
+### WebSocket 反向连接，内网机器也能管
 
-填入任意 GitHub 仓库地址，系统自动完成整个部署流程：
+传统运维工具需要目标机器开放端口，内网机器根本无法接入。
 
-1. **AI 分析仓库** — 识别项目类型（Python / Node.js / Java / Docker），读取依赖文件，生成部署计划，给出注意事项和建议
-2. **自动安装** — 按计划执行安装步骤，兼容不同系统环境
-3. **智能启动** — 推断启动命令，支持 systemd 服务注册
-4. **验证结果** — 检查进程、端口、日志，AI 给出 ✅/❌ 结论和修复建议
+CyberAgentOps 反过来——Agent 主动连控制端，只要目标机器能访问互联网，就能接入，无需开放任何入站端口。
 
-> 如果仓库里有 `deploy.sh`，直接执行它，跳过其他步骤
-
-支持上传配置文件（`.env` 等），可将任意格式的配置文件自动转换为 `.env` 上传到目标服务器。
+断线自动重连，指数退避，网络抖动不影响使用。
 
 ---
 
-### 📡 实时监控
+### 自然语言执行任务
 
-Agent 部署完成后立即采集系统指标，每 10 分钟自动上报：
+不需要记忆命令。用中文描述你想做的事：
+
+```
+查看 nginx 错误日志最近 50 行
+  → tail -n 50 /var/log/nginx/error.log
+  → AI 分析：发现 3 条 502 错误，后端服务可能未启动
+
+帮我重启 nginx
+  → systemctl restart nginx
+  → nginx 已重启，服务状态正常
+
+查一下磁盘使用情况
+  → df -h
+  → /dev/sda1 使用率 87%，建议清理 /var/log 目录
+```
+
+支持连续对话，AI 始终记住完整上下文。两种模式：
+- **提问** — 获取分析和建议，不执行命令
+- **问并执行** — AI 生成命令并直接在目标机器执行
+
+---
+
+### 多 Agent 协同（分布式任务）
+
+这是 CyberAgentOps 区别于其他运维工具的核心能力。
+
+你可以同时向多台机器下发任务，每台机器独立执行，结果汇总回来。
+
+典型场景：
+- 16 台机器同时爬取 16 个页面，每台机器 IP 不同，完全规避封禁
+- 批量部署应用到 100 台服务器，并行执行，分钟级完成
+- 多地区同时压测，模拟真实用户分布
+
+---
+
+### 智能应用部署
+
+填入 GitHub 仓库地址，系统自动完成整个部署流程：
+
+1. AI 分析仓库结构，识别项目类型（Python / Node.js / Java / Docker）
+2. 自动安装依赖
+3. 推断启动命令，支持 systemd 服务注册
+4. 验证部署结果，AI 给出结论和修复建议
+
+支持上传 `.env` 等配置文件，支持 `deploy.sh` 自定义部署脚本。
+
+---
+
+### 实时监控
+
+Agent 连接后立即采集系统指标，定时上报：
 
 | 指标 | 说明 |
 |------|------|
-| CPU 使用率 | 实时进度条，超过 80% 红色预警 |
+| CPU 使用率 | 实时进度条，超 80% 红色预警 |
 | 磁盘使用 | 各挂载点使用情况 |
-| 网络 IO | 实时入站/出站速率（KB/s） |
+| 网络 IO | 实时入站/出站速率 |
 | 公网 IP | 自动获取 |
-| 硬件指纹 | CPU 型号、主板序列号、磁盘 ID、MAC 地址 |
+| 硬件指纹 | CPU、主板、磁盘、MAC 地址唯一标识 |
 
 ---
 
-### 🔐 权限隔离
+### 多用户权限隔离
 
 | 角色 | 权限 |
 |------|------|
-| admin | 全部权限，可查看所有用户的数据 |
+| admin | 全部权限，可查看所有用户数据 |
 | 注册用户 | 管理自己的服务器和任务，数据互相隔离 |
-| 游客 | 按 IP 自动分配唯一 ID，与注册用户权限相同 |
-
-每个用户只能看到和操作自己的服务器、Agent 和任务记录。
-
----
-
-### 🖥 零配置部署 Agent
-
-添加服务器信息后，一键部署 Agent：
-
-- 自动检测目标系统（Linux / macOS / Windows）
-- 全程走 SSH，目标服务器只需开放 22 端口
-- 支持密码和 SSH 密钥两种认证
-- 部署完成后立即采集系统指标
+| 游客 | 按 IP 自动分配唯一 ID |
 
 ---
 
@@ -115,38 +130,75 @@ Agent 部署完成后立即采集系统指标，每 10 分钟自动上报：
 浏览器
   │
   ▼
-CyberAgentOps 控制端（47.111.28.162）
-  │  ├── Web UI（Vue3）
-  │  ├── 用户认证 & 权限隔离
-  │  ├── AI 调用（DeepSeek / OpenAI / Grok / Anthropic）
-  │  └── SSH 连接管理
+CyberAgentOps 控制端
+  ├── Web UI（Vue3，单文件，无构建）
+  ├── REST API（FastAPI）
+  ├── WebSocket 连接池（管理所有 Agent 连接）
+  ├── AI 调用（DeepSeek / OpenAI / Grok / Anthropic）
+  └── SSH 部署引擎
+
+  ▲  Agent 主动连接，无需开放入站端口
   │
-  ▼  仅需 22 端口，无需开放其他端口
-目标服务器
-  └── Agent（Python 标准库，轻量无依赖）
+目标机器（任意数量）
+  └── Agent（Python，~50KB，无外部依赖）
+       ├── WebSocket 客户端，断线自动重连
        ├── 执行命令并返回结果
-       └── 定时上报系统指标
+       ├── 采集系统指标
+       └── 支持 Linux / Windows / macOS
 ```
 
 ---
 
-## 实战案例
+## 快速开始
 
-**在阿里云 ECS（Ubuntu 22.04）上的真实操作记录：**
+**1. 启动控制端**
 
-查看系统进程 → AI 发现 Neo4j、Docker、nginx 正常运行，AliYunDun 为阿里云安全监控组件
+```bash
+git clone https://github.com/your/cyberagentops
+cd cyberagentops
+pip install -r requirements.txt
+cp .env.example .env  # 填入 AI API Key
+cd server && python3 -m uvicorn main:app --host 0.0.0.0 --port 8000
+```
 
-调查安全组件 → AI 分析 AliYunDun 安装路径、systemd 配置，确认为 ECS 预装组件
+**2. 访问 Web 界面**
 
-连续对话查外网 IP → 执行 `curl -s ifconfig.me` → 返回 `47.111.28.162`，AI 确认网络连通正常
+打开 `http://localhost:8000`，用 `.env` 里配置的 admin 账号登录。
+
+**3. 添加第一台服务器**
+
+进入「目标机器」，填入 SSH 信息，点击「保存并部署 Agent」。
+
+部署完成后，Agent 自动上线，可以开始下发任务。
+
+---
+
+## 支持的平台
+
+| 平台 | 版本 | 状态 |
+|------|------|------|
+| Ubuntu / Debian | 18.04+ | ✅ 完整支持 |
+| CentOS / RHEL | 7+ | ✅ 完整支持（自动安装 Python3） |
+| Windows Server | 2016+ | ✅ 完整支持 |
+| macOS | 10.15+ | ✅ 完整支持 |
+| 内网机器 | 任意 | ✅ WebSocket 反向连接 |
+
+---
+
+## AI 模型支持
+
+| 模型 | 配置项 |
+|------|--------|
+| DeepSeek | `DEEPSEEK_API_KEY` |
+| OpenAI GPT-4 | `OPENAI_API_KEY` |
+| Anthropic Claude | `ANTHROPIC_API_KEY` |
+| Grok | `GROK_API_KEY` |
 
 ---
 
 <div align="center">
 
-**[立即访问 https://47.111.28.162](https://47.111.28.162)**
-
-注册账号，添加你的第一台服务器，开始用自然语言管理它
+**用自然语言，控制你的每一台机器**
 
 Made with ❤️ — CyberAgentOps
 

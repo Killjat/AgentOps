@@ -1,0 +1,86 @@
+#!/usr/bin/expect -f
+# 测试 Agent 上传和执行
+
+set HOST "165.154.235.9"
+set USER "root"
+set PASS "kqvfhpsiq@099211"
+set DEPLOY_DIR "/opt/agentops"
+set AGENT_DIR "$DEPLOY_DIR/agent"
+
+puts "=== 1. 创建目录 ==="
+spawn ssh -o StrictHostKeyChecking=no $USER@$HOST "mkdir -p $AGENT_DIR"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    eof
+}
+
+puts "\n=== 2. 上传 Agent 文件 ==="
+set files [list "__init__.py" "__main__.py" "agent.py" "base.py" "linux.py" "windows.py"]
+foreach file $files {
+    spawn scp -o StrictHostKeyChecking=no agent/$file $USER@$HOST:$AGENT_DIR/
+    expect {
+        "password:" { send "$PASS\r"; exp_continue }
+        eof
+    }
+}
+
+puts "\n=== 3. 验证文件 ==="
+spawn ssh -o StrictHostKeyChecking=no $USER@$HOST "ls -la $AGENT_DIR"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    eof
+}
+
+puts "\n=== 4. 测试模块导入 ==="
+spawn ssh -o StrictHostKeyChecking=no $USER@$HOST "cd $AGENT_DIR && python3 -c \"import agent; print('Agent 模块导入成功')\""
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    eof
+}
+
+puts "\n=== 5. 测试入口函数 ==="
+spawn ssh -o StrictHostKeyChecking=no $USER@$HOST "cd $AGENT_DIR && python3 -m agent --help"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    eof
+}
+
+puts "\n=== 6. 停止旧进程 ==="
+spawn ssh -o StrictHostKeyChecking=no $USER@$HOST "pkill -9 -f 'agent' 2>/dev/null; echo 'done'"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    eof
+}
+
+puts "\n=== 7. 启动 Agent ==="
+spawn ssh -o StrictHostKeyChecking=no $USER@$HOST "cd $AGENT_DIR && nohup python3 -m agent --host 0.0.0.0 --port 9000 > agent.log 2>&1 & echo 'started'"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    eof
+}
+
+puts "\n=== 8. 等待启动 ==="
+sleep 3
+
+puts "\n=== 9. 检查进程 ==="
+spawn ssh -o StrictHostKeyChecking=no $USER@$HOST "ps aux | grep -E 'agent.py|python.*agent' | grep -v grep"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    eof
+}
+
+puts "\n=== 10. 检查日志 ==="
+spawn ssh -o StrictHostKeyChecking=no $USER@$HOST "cat $AGENT_DIR/agent.log"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    eof
+}
+
+puts "\n=== 11. 测试端口 ==="
+spawn ssh -o StrictHostKeyChecking=no $USER@$HOST "curl -s http://localhost:9000/ || echo '端口测试失败'"
+expect {
+    "password:" { send "$PASS\r"; exp_continue }
+    eof
+}
+
+puts "\n=== 完成 ==="

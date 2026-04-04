@@ -5,15 +5,16 @@ import re
 import socket
 import subprocess
 import time
+from typing import Dict, List, Any
 from urllib.request import urlopen
 
-from .base import BaseAgent
+from base import BaseAgent
 
 
 class LinuxAgent(BaseAgent):
     """Linux / macOS Agent，通过 HTTP 服务接受控制端命令"""
 
-    def get_os_info(self) -> dict:
+    def get_os_info(self) -> Dict[str, Any]:
         return {
             "os": platform.system(),
             "os_version": platform.version()[:80],
@@ -33,7 +34,7 @@ class LinuxAgent(BaseAgent):
         except Exception:
             return -1.0
 
-    def get_disk_usage(self) -> list:
+    def get_disk_usage(self) -> List[Dict[str, Any]]:
         result = []
         try:
             out = self._cmd("df -h")
@@ -46,7 +47,7 @@ class LinuxAgent(BaseAgent):
             pass
         return result[:5]
 
-    def get_network_ips(self) -> dict:
+    def get_network_ips(self) -> Dict[str, Any]:
         ips = {"hostname": socket.gethostname()}
         try:
             out = self._cmd("ip -4 addr show 2>/dev/null || ifconfig 2>/dev/null")
@@ -64,8 +65,8 @@ class LinuxAgent(BaseAgent):
             pass
         return ips
 
-    def get_network_io(self) -> dict:
-        def read_net():
+    def get_network_io(self) -> Dict[str, Any]:
+        def read_net() -> Dict[str, Any]:
             s = {}
             try:
                 with open("/proc/net/dev") as f:
@@ -93,7 +94,7 @@ class LinuxAgent(BaseAgent):
                 }
         return result
 
-    def get_hardware_info(self) -> dict:
+    def get_hardware_info(self) -> Dict[str, Any]:
         hw = {}
         hw["cpu_model"] = self._cmd(
             "cat /proc/cpuinfo | grep 'model name' | head -1 | cut -d: -f2 | xargs"
@@ -113,6 +114,7 @@ class LinuxAgent(BaseAgent):
             ).splitlines()[:4]
 
         macs = {}
+        iface = ""
         for line in self._cmd("ip link show 2>/dev/null").splitlines():
             m = re.match(r'\d+:\s+(\S+):', line)
             if m:
@@ -127,11 +129,12 @@ class LinuxAgent(BaseAgent):
         hw["hw_fingerprint"] = hashlib.sha256(raw.encode()).hexdigest()[:16]
         return hw
 
-    def execute_command(self, command: str, timeout: int = 60) -> dict:
+    def execute_command(self, command: str, timeout: int = 60) -> Dict[str, Any]:
         try:
             result = subprocess.run(
-                command, shell=True, capture_output=True,
-                text=True, timeout=timeout
+                command, shell=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                universal_newlines=True, timeout=timeout
             )
             output = result.stdout or result.stderr
             return {"success": result.returncode == 0, "output": output, "error": ""}
@@ -143,7 +146,108 @@ class LinuxAgent(BaseAgent):
     def _cmd(self, cmd: str) -> str:
         try:
             return subprocess.check_output(
-                cmd, shell=True, stderr=subprocess.DEVNULL, timeout=5
+                cmd, shell=True, stderr=subprocess.DEVNULL, timeout=30
             ).decode().strip()
-        except Exception:
+        except subprocess.TimeoutExpired:
+            print(f"[Agent] 命令超时: {cmd[:100]}")
             return ""
+        except Exception as e:
+            print(f"[Agent] 命令执行失败: {cmd[:100]}, error: {e}")
+            return ""
+
+    def discover_apps(self) -> Dict[str, Any]:
+        """发现本地已部署的应用（systemd服务、Docker容器、监听端口）"""
+        print(f"[Agent] discover_apps 开始执行")
+        result: Dict[str, Any] = {
+            "services": [],
+            "containers": [],
+            "ports": [],
+            "agent_id": self.agent_id,
+            "hostname": self.get_os_info().get("hostname", "")
+        }
+
+        # 1. 扫描 systemd 服务
+        print(f"[Agent] 扫描 systemd 服务...")
+        try:
+            services_out = self._cmd("systemctl list-units --type=service --state=running --no-pager 2>/dev/null")
+            for line in services_out.splitlines()[1:]:  # 跳过表头
+                if not line.strip() or any(x in line for x in ['UNIT', 'LOAD', 'ssh', 'agent', 'docker']):
+                    continue
+
+                parts = line.split()
+                if len(parts) >= 4:
+                    svc_name = parts[0]
+                    if not svc_name.endswith('.service'):
+                        continue
+
+                    # 获取服务描述
+                    desc = self._cmd(f"systemctl show {svc_name} -p Description --value 2>/dev/null") or svc_name
+                    exec_start = self._cmd(f"systemctl show {svc_name} -p ExecStart --value 2>/dev/null")
+
+                    # 尝试查找端口
+                    port = ""
+                    if exec_start:
+                        # 通过进程名查找端口
+                        proc_name = svc_name.split('.')[0]
+                        port_match = re.search(r':(\d+)', self._cmd(f"ss -tlnp | grep '{proc_name}' 2>/dev/null | head -1"))
+                        if port_match:
+                            port = port_match.group(1)
+
+                    if port or any(k in exec_start.lower() for k in ['python', 'node', 'java', 'gunicorn', 'uvicorn']):
+                        result["services"].append({
+                            "name": svc_name,
+                            "description": desc[:100],
+                            "port": port,
+                            "exec": exec_start[:200],
+                            "status": "running"
+                        })
+        except Exception as e:
+            print(f"[Agent] systemd 扫描错误: {e}")
+
+        # 2. 扫描 Docker 容器
+        print(f"[Agent] 扫描 Docker 容器...")
+        try:
+            docker_out = self._cmd("docker ps --format '{{.Names}}|{{.Status}}|{{.Ports}}' 2>/dev/null")
+            for line in docker_out.splitlines():
+                if '|' not in line:
+                    continue
+                name, status, ports = line.split('|', 2)
+                if name and status:
+                    # 提取端口号
+                    port_match = re.search(r':(\d+)->', ports)
+                    port = port_match.group(1) if port_match else ""
+
+                    result["containers"].append({
+                        "name": name,
+                        "status": status,
+                        "ports": ports,
+                        "port": port
+                    })
+        except Exception as e:
+            print(f"[Agent] Docker 扫描错误: {e}")
+
+        # 3. 扫描常见端口（并发）
+        print(f"[Agent] 扫描常见端口...")
+        common_ports = [80, 443, 8000, 8080, 3000, 5000, 9000, 5001, 5432, 3306, 6379, 27017]
+
+        def check_port(port):
+            try:
+                port_info = self._cmd(f"ss -tlnp 2>/dev/null | grep ':{port} ' | head -1")
+                if port_info:
+                    proc_match = re.search(r'pid=(\d+),name=([^,\s]+)', port_info)
+                    return {
+                        "port": port,
+                        "process": proc_match.group(2) if proc_match else "unknown",
+                        "info": port_info[:100]
+                    }
+            except Exception:
+                pass
+            return None
+
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+            port_results = list(executor.map(check_port, common_ports))
+        result["ports"] = [r for r in port_results if r is not None]
+
+        print(f"[Agent] discover_apps 完成，共发现 {len(result['services'])} 个服务, {len(result['containers'])} 个容器, {len(result['ports'])} 个端口")
+        return result

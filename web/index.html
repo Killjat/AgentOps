@@ -374,7 +374,7 @@
                             :disabled="deploying===h.name">
                       {{ deploying===h.name ? '部署中...' : '🚀 部署 Agent' }}
                     </button>
-                    <button class="btn btn-danger btn-sm" @click="deleteHost(h.name)">删除</button>
+                    <button class="btn btn-danger btn-sm" @click="deleteHost(h.server_id, h.name)">删除</button>
                   </template>
                   <span v-else style="font-size:12px;color:#475569">只读</span>
                 </td>
@@ -436,6 +436,9 @@
                   <button class="btn btn-ghost btn-sm" @click="pingAgent(a.agent_id)">Ping</button>
                   <button class="btn btn-ghost btn-sm" @click="viewMetrics(a)">📊 指标</button>
                   <button class="btn btn-ghost btn-sm" @click="openSkills(a)">🔧 技能</button>
+                  <button v-if="hasPerm('host')" class="btn btn-ghost btn-sm" @click="updateAgent(a.agent_id)" :disabled="updatingAgent===a.agent_id">
+                    🔄 {{ updatingAgent===a.agent_id ? '更新中...' : '更新' }}
+                  </button>
                   <button v-if="hasPerm('host')" class="btn btn-danger btn-sm" style="margin-left:6px" @click="removeAgent(a.agent_id)">移除</button>
                 </td>
               </tr>
@@ -1011,6 +1014,23 @@
   </div>
 
   <!-- 部署日志 Modal -->
+  <!-- Agent 部署日志 Modal -->
+  <div class="modal-overlay" v-if="agentDeployLog" @click.self="agentDeployLog=null">
+    <div class="modal" style="width:640px;max-height:80vh;display:flex;flex-direction:column">
+      <div class="modal-title">
+        🚀 部署 Agent: {{ agentDeployLog.name }}
+        <span class="badge" :class="agentDeployLog.status==='success'?'badge-online':agentDeployLog.status==='failed'?'badge-failed':'badge-pending'" style="margin-left:8px">
+          {{ agentDeployLog.status==='running'?'部署中...':agentDeployLog.status==='success'?'成功':agentDeployLog.status==='warning'?'完成(警告)':'失败' }}
+        </span>
+      </div>
+      <div class="output-box" id="agent-deploy-log-box" style="flex:1;min-height:300px;color:#e2e8f0;white-space:pre-wrap;overflow-y:auto">{{ agentDeployLog.log || '等待日志...' }}</div>
+      <div class="flex-end" style="margin-top:8px">
+        <button class="btn btn-ghost" @click="agentDeployLog=null">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 应用部署日志 Modal -->
   <div class="modal-overlay" v-if="deployLogData" @click.self="deployLogData=null">
     <div class="modal" style="width:700px;max-height:90vh;display:flex;flex-direction:column">
       <div class="modal-title">部署日志 & 对话</div>
@@ -1216,10 +1236,11 @@ createApp({
     const hostError = ref('')
     const hostSuccess = ref('')
     const deploying = ref('')
+    const updatingAgent = ref('')
     const hostForm = ref({ name:'', host:'', port:22, username:'root', password:'', ssh_key:'', deploy_dir:'/opt/agentops' })
 
     async function loadHosts() {
-      const r = await fetch(`${API}/hosts`, {
+      const r = await fetch(`${API}/servers`, {
         headers: { 'Authorization': `Bearer ${token.value}` }
       })
       hosts.value = await r.json()
@@ -1230,7 +1251,8 @@ createApp({
       const body = { ...hostForm.value, port: Number(hostForm.value.port) }
       if (!body.password) delete body.password
       if (!body.ssh_key) delete body.ssh_key
-      const r = await fetch(`${API}/hosts`, { method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${token.value}`}, body: JSON.stringify(body) })
+      delete body.deploy_dir
+      const r = await fetch(`${API}/servers`, { method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${token.value}`}, body: JSON.stringify(body) })
       if (r.ok) {
         hostSuccess.value = `机器 "${hostForm.value.name}" 保存成功`
         resetHostForm()
@@ -1247,10 +1269,11 @@ createApp({
       const body = { ...hostForm.value, port: Number(hostForm.value.port) }
       if (!body.password) delete body.password
       if (!body.ssh_key) delete body.ssh_key
+      delete body.deploy_dir
 
       // 1. 先测试 SSH 连接
       hostSuccess.value = '🔌 正在测试 SSH 连接...'
-      const testR = await fetch(`${API}/hosts/test`, {
+      const testR = await fetch(`${API}/servers/test`, {
         method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
       })
       const testD = await testR.json()
@@ -1259,21 +1282,23 @@ createApp({
         hostSuccess.value = ''
         return
       }
-      hostSuccess.value = `✅ 连接成功 (${testD.info})，正在部署...`
+      hostSuccess.value = `✅ 连接成功 (${testD.info})，正在保存...`
 
-      // 2. 保存
-      const r = await fetch(`${API}/hosts`, {
+      // 2. 保存，拿到 server_id
+      const r = await fetch(`${API}/servers`, {
         method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${token.value}`}, body: JSON.stringify(body)
       })
       if (!r.ok) {
         const e = await r.json()
-        if (!e.detail?.includes('已存在')) { hostError.value = e.detail; hostSuccess.value=''; return }
+        hostError.value = e.detail; hostSuccess.value=''; return
       }
+      const { server_id } = await r.json()
+      const name = hostForm.value.name
+      resetHostForm()
       await loadHosts()
 
       // 3. 部署
-      const h = hosts.value.find(x => x.name === hostForm.value.name)
-      if (h) { resetHostForm(); await deployHost(h) }
+      await deployHost({ server_id, name })
     }
 
     function resetHostForm() {
@@ -1282,56 +1307,64 @@ createApp({
 
     async function addHost() { await addHostOnly() }  // 兼容旧调用
 
-    async function deleteHost(name) {
+    async function deleteHost(server_id, name) {
       if (!confirm(`确认删除 "${name}"？`)) return
-      await fetch(`${API}/hosts/${name}`, { method:'DELETE' })
+      await fetch(`${API}/servers/${server_id}`, { method:'DELETE', headers:{'Authorization':`Bearer ${token.value}`} })
       loadHosts()
     }
 
     async function deployHost(h) {
       deploying.value = h.name
       hostError.value = ''
-
-      // 先测试连接
-      hostSuccess.value = `🔌 测试 ${h.host} SSH 连接...`
-      const testR = await fetch(`${API}/hosts/test`, {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ name: h.name, host: h.host, port: h.port,
-                               username: h.username, password: h.password,
-                               ssh_key: h.ssh_key, deploy_dir: h.deploy_dir })
-      })
-      const testD = await testR.json()
-      if (!testD.ok) {
-        hostError.value = `SSH 连接失败: ${testD.error}`
-        hostSuccess.value = ''
-        deploying.value = ''
-        return
-      }
-      hostSuccess.value = `✅ 连接成功 (${testD.info})，正在部署 Agent...`
+      hostSuccess.value = `⏳ 正在部署 Agent 到 ${h.name}...`
 
       try {
         const r = await fetch(`${API}/agents/deploy`, {
           method: 'POST',
           headers: {'Content-Type':'application/json', 'Authorization': `Bearer ${token.value}`},
-          body: JSON.stringify({ name: h.name, host: h.host, port: h.port, username: h.username,
-                                 password: h.password, ssh_key: h.ssh_key, deploy_dir: h.deploy_dir })
+          body: JSON.stringify({ server_id: h.server_id, name: h.name })
         })
-        if (r.ok) {
-          const info = await r.json()
-          hostSuccess.value = `🎉 部署成功！Agent ID: ${info.agent_id}，系统: ${info.os_version}`
-          loadAgents()
-          setTimeout(() => hostSuccess.value = '', 6000)
-        } else {
+        if (!r.ok) {
           const e = await r.json()
           hostError.value = `部署失败: ${e.detail}`
           hostSuccess.value = ''
+          deploying.value = ''
+          return
         }
+        const { deploy_id } = await r.json()
+
+        // 打开日志 modal
+        agentDeployLog.value = { name: h.name, log: '', status: 'running', deploy_id }
+
+        // SSE 流式日志
+        const sse = new EventSource(`${API}/agents/deploy/${deploy_id}/stream`)
+        sse.onmessage = (e) => {
+          if (e.data.startsWith('__STATUS__')) {
+            const status = e.data.replace('__STATUS__', '')
+            if (agentDeployLog.value) agentDeployLog.value.status = status
+            sse.close()
+            deploying.value = ''
+            loadAgents()
+            hostSuccess.value = status === 'success' ? `🎉 ${h.name} 部署成功` : `⚠️ ${h.name} 部署完成（请检查日志）`
+            setTimeout(() => hostSuccess.value = '', 5000)
+            return
+          }
+          if (e.data.startsWith('__AGENT_ID__')) return
+          if (agentDeployLog.value) {
+            agentDeployLog.value.log = (agentDeployLog.value.log || '') + e.data + '\n'
+            const box = document.getElementById('agent-deploy-log-box')
+            if (box) box.scrollTop = box.scrollHeight
+          }
+        }
+        sse.onerror = () => { sse.close(); deploying.value = '' }
       } catch(e) {
         hostError.value = `部署失败: ${e.message}`
         hostSuccess.value = ''
+        deploying.value = ''
       }
-      deploying.value = ''
     }
+
+    const agentDeployLog = ref(null)
 
     // ── Users ──
     const userList = ref([])
@@ -1631,13 +1664,21 @@ createApp({
     async function scanApps() {
       if (!skillsAgent.value) return
       scanning.value = true
+      discoveredApps.value = []
       try {
         const r = await fetch(`${API}/deploy/scan/${skillsAgent.value.agent_id}`, {
+          method: 'POST',
           headers: { 'Authorization': `Bearer ${token.value}` }
         })
         if (r.ok) {
           const result = await r.json()
-          discoveredApps.value = result.discovered
+          discoveredApps.value = result.discovered || []
+          if (result.count === 0) {
+            alert('未发现任何应用。请确保 Agent 正在运行且监听端口 9000')
+          }
+        } else {
+          const e = await r.json()
+          alert('扫描失败: ' + (e.detail || '未知错误'))
         }
       } catch(e) {
         alert('扫描失败: ' + e.message)
@@ -1759,7 +1800,7 @@ createApp({
       const body = { ...editForm.value, port: Number(editForm.value.port) }
       if (!body.password) delete body.password
       if (!body.ssh_key) delete body.ssh_key
-      const r = await fetch(`${API}/hosts/test`, {
+      const r = await fetch(`${API}/servers/test`, {
         method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
       })
       const d = await r.json()
@@ -1773,8 +1814,8 @@ createApp({
       const body = { ...editForm.value, port: Number(editForm.value.port) }
       if (!body.password) delete body.password
       if (!body.ssh_key) delete body.ssh_key
-      const r = await fetch(`${API}/hosts/${editForm.value.name}`, {
-        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+      const r = await fetch(`${API}/servers/${editForm.value.server_id}`, {
+        method: 'PUT', headers: {'Content-Type':'application/json','Authorization':`Bearer ${token.value}`}, body: JSON.stringify(body)
       })
       if (r.ok) {
         editForm.value = null
@@ -1817,6 +1858,28 @@ createApp({
         method:'DELETE', headers: { 'Authorization': `Bearer ${token.value}` }
       })
       loadAgents()
+    }
+
+    async function updateAgent(id) {
+      if (!confirm(`确认更新 Agent ${id} 的代码？\n这将上传最新代码并重启 Agent 服务。`)) return
+      updatingAgent.value = id
+      try {
+        const r = await fetch(`${API}/agents/${id}/update`, {
+          method:'POST', headers: { 'Authorization': `Bearer ${token.value}` }
+        })
+        if (r.ok) {
+          const result = await r.json()
+          alert('✅ Agent 更新成功！')
+          // 等待 2 秒后刷新状态
+          setTimeout(() => loadAgents(), 2000)
+        } else {
+          const e = await r.json()
+          alert(`更新失败: ${e.detail}`)
+        }
+      } catch(e) {
+        alert('更新失败: ' + e.message)
+      }
+      updatingAgent.value = ''
     }
 
     // ── Tasks ──
@@ -1928,14 +1991,14 @@ createApp({
       doLogin, doRegister, doLogout, skipLogin,
       userList, loadUsers, togglePerm,
       hosts, showAddHost, hostError, hostSuccess, deploying, hostForm,
-      loadHosts, addHost, addHostOnly, addAndDeploy, deleteHost, deployHost,
+      loadHosts, addHost, addHostOnly, addAndDeploy, deleteHost, deployHost, agentDeployLog,
       editForm, editError, editSuccess, testing, editHost, testEdit, saveEdit,
       metricsData, metricsAgent, viewMetrics, refreshMetrics,
       skillsAgent, agentSkills, skillInstalling, skillForm,
       scanning, discoveredApps,
       openSkills, autoFillSkillDir, installSkill, scanApps, registerApp,
       startMonitor, refreshMonitor,
-      agents, loadAgents, pingAgent, removeAgent, agentFilter, filteredAgents,
+      agents, loadAgents, pingAgent, removeAgent, updateAgent, agentFilter, filteredAgents,
       tasks, currentTask, detailTask, submitting, historyFilter, taskForm,
       filteredTasks, loadTasks, submitTask, viewTask, agentName,
       chatInput, chatLoading, sendChat, renderMd,
