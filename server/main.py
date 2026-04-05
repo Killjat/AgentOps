@@ -279,16 +279,19 @@ async def ws_agent_endpoint(websocket: WebSocket, agent_id: str):
                             os_type = OSType.WINDOWS
                         elif "darwin" in os_name:
                             os_type = OSType.MACOS
+                        elif "android" in os_name:
+                            os_type = OSType.ANDROID
                         else:
                             os_type = OSType.LINUX
+                        device_type = DeviceType.MOBILE_ANDROID if os_type == OSType.ANDROID else DeviceType.DESKTOP
                         new_agent = AgentInfo(
                             agent_id=agent_id,
-                            server_id="",  # 主动接入，无 server_id
+                            server_id="",
                             name=os_info.get("hostname", agent_id),
                             owner="admin",
                             os_type=os_type,
                             os_version=os_info.get("os_version", ""),
-                            device_type=DeviceType.DESKTOP,
+                            device_type=device_type,
                             connection_type=ConnectionType.AGENT_PUSH,
                             agent_deploy_dir="",
                             status=AgentStatus.ONLINE,
@@ -826,6 +829,12 @@ async def get_metrics(agent_id: str):
 async def ping_agent(agent_id: str):
     """检查 Agent 是否在线"""
     info = _get_agent(agent_id)
+    # agent_push 类型（Android/Mac 主动接入）直接检查 WebSocket 连接
+    if info.connection_type == ConnectionType.AGENT_PUSH:
+        online = agent_id in _ws_connections
+        info.status = AgentStatus.ONLINE if online else AgentStatus.OFFLINE
+        _save_agents()
+        return {"online": online, "info": {"hostname": info.name, "os": info.os_type.value}}
     result = await _agent_get(info, "/ping")
     info.status = AgentStatus.ONLINE if result else AgentStatus.OFFLINE
     info.last_seen = datetime.now().isoformat()

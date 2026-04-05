@@ -4,12 +4,13 @@
 
 **用自然语言控制你的每一台机器**
 
-一个平台，管理全球任意数量的 Linux / Windows / macOS 服务器，AI 驱动，实时响应
+一个平台，管理全球任意数量的 Linux / Windows / macOS / Android 设备，AI 驱动，实时响应
 
 [![Python](https://img.shields.io/badge/Python-3.6+-blue?style=flat-square&logo=python)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com)
 [![Vue3](https://img.shields.io/badge/Vue-3.x-brightgreen?style=flat-square&logo=vue.js)](https://vuejs.org)
 [![WebSocket](https://img.shields.io/badge/WebSocket-实时通信-orange?style=flat-square)](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket)
+[![Android](https://img.shields.io/badge/Android-Agent-brightgreen?style=flat-square&logo=android)](https://developer.android.com)
 
 </div>
 
@@ -37,6 +38,31 @@ CyberAgentOps 是一个**分布式 AI 运维平台**。
 - 启动 Agent 进程，建立 WebSocket 连接
 
 支持 Python 3.6+，兼容 CentOS 7 这类老系统。
+
+---
+
+### Android 设备接入
+
+手机、平板也能作为 Agent 接入平台。
+
+安装 CyberAgent APK 后，填入控制端地址，APP 打开即连接，关闭即断开，无需后台常驻。
+
+- 自动采集设备信息：CPU、内存、磁盘、网络、硬件指纹
+- 支持屏幕常亮模式，适合长期驻守场景
+- 开机自启（可选）
+- 支持 Android 8.0+
+
+```
+agent/android/   ← Android 客户端源码（Kotlin）
+```
+
+构建方式：
+
+```bash
+cd agent/android
+./gradlew assembleDebug
+# APK 输出：app/build/outputs/apk/debug/cyberagent.apk
+```
 
 ---
 
@@ -139,12 +165,15 @@ CyberAgentOps 控制端
 
   ▲  Agent 主动连接，无需开放入站端口
   │
-目标机器（任意数量）
-  └── Agent（Python，~50KB，无外部依赖）
-       ├── WebSocket 客户端，断线自动重连
-       ├── 执行命令并返回结果
-       ├── 采集系统指标
-       └── 支持 Linux / Windows / macOS
+目标设备（任意数量）
+  ├── Linux / Windows / macOS Agent（Python，~50KB）
+  │    ├── WebSocket 客户端，断线自动重连
+  │    ├── 执行命令并返回结果
+  │    └── 采集系统指标
+  └── Android Agent（原生 APK，Kotlin）
+       ├── WebSocket 客户端
+       ├── 采集设备指标（CPU / 内存 / 磁盘 / 网络）
+       └── APP 前台时保持连接
 ```
 
 ---
@@ -181,6 +210,7 @@ cd server && python3 -m uvicorn main:app --host 0.0.0.0 --port 8000
 | CentOS / RHEL | 7+ | ✅ 完整支持（自动安装 Python3） |
 | Windows Server | 2016+ | ✅ 完整支持 |
 | macOS | 10.15+ | ✅ 完整支持 |
+| Android | 8.0+ | ✅ 完整支持（原生 APK） |
 | 内网机器 | 任意 | ✅ WebSocket 反向连接 |
 
 ---

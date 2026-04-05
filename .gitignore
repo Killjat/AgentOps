@@ -243,3 +243,15 @@ app_deploys.json
 node_modules/
 package.json
 package-lock.json
+
+# ============================================
+# Android
+# ============================================
+agent/android/.gradle/
+agent/android/build/
+agent/android/app/build/
+agent/android/local.properties
+agent/android/.idea/
+*.apk
+*.aab
+*.keystore
