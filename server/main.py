@@ -79,6 +79,26 @@ async def health_check():
     return {"status": "ok", "service": "CyberAgentOps"}
 
 
+@app.get("/download/agent/{platform}")
+async def download_agent(platform: str):
+    """下载对应平台的 Agent 二进制"""
+    from fastapi.responses import FileResponse
+    import os
+    dist_dir = Path(__file__).parent.parent / "agent" / "dist"
+    files = {
+        "linux":   dist_dir / "cyberagent-linux",
+        "macos":   dist_dir / "cyberagent-macos",
+        "windows": dist_dir / "cyberagent-windows.exe",
+        "android": Path(__file__).parent.parent / "agent" / "android" / "app" / "build" / "outputs" / "apk" / "debug" / "cyberagent.apk",
+    }
+    if platform not in files:
+        raise HTTPException(status_code=404, detail="不支持的平台")
+    f = files[platform]
+    if not f.exists():
+        raise HTTPException(status_code=404, detail=f"{platform} 版本尚未编译，请先运行 build_agent.sh")
+    return FileResponse(str(f), filename=f.name, media_type="application/octet-stream")
+
+
 # ── 静态文件 / Web 界面 ──────────────────────────────────────────
 if WEB_DIR.exists():
     @app.get("/", include_in_schema=False)

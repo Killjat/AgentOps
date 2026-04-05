@@ -1,0 +1,84 @@
+name: Build Agent Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux
+            output: cyberagent-linux
+          - os: macos-latest
+            name: macos
+            output: cyberagent-macos
+          - os: windows-latest
+            name: windows
+            output: cyberagent-windows.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller websockets
+
+      - name: Build (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd agent
+          pyinstaller \
+            --onefile \
+            --name ${{ matrix.output }} \
+            --add-data "*.py:." \
+            --hidden-import asyncio \
+            --hidden-import websockets \
+            --hidden-import websockets.legacy \
+            --hidden-import websockets.legacy.client \
+            agent.py
+
+      - name: Build (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cd agent
+          pyinstaller `
+            --onefile `
+            --name ${{ matrix.output }} `
+            --add-data "*.py;." `
+            --hidden-import asyncio `
+            --hidden-import websockets `
+            --hidden-import websockets.legacy `
+            --hidden-import websockets.legacy.client `
+            agent.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: agent/dist/${{ matrix.output }}*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+          generate_release_notes: true

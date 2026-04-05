@@ -114,8 +114,217 @@
 <body>
 <div id="app">
 
+  <!-- 介绍页 -->
+  <div v-if="showLanding" style="min-height:100vh;background:#0f1117;overflow-y:auto">
+
+    <!-- Hero -->
+    <div style="text-align:center;padding:80px 24px 60px;position:relative">
+      <div style="font-size:12px;color:#7c6af7;letter-spacing:3px;margin-bottom:20px;text-transform:uppercase">Distributed AI Automation Platform</div>
+      <h1 style="font-size:52px;font-weight:800;color:#e2e8f0;line-height:1.15;margin-bottom:24px">
+        用自然语言<br><span style="color:#7c6af7">控制你的每一台机器</span>
+      </h1>
+      <p style="font-size:17px;color:#64748b;max-width:520px;margin:0 auto 48px;line-height:1.7">
+        一个平台，管理全球任意数量的设备。AI 理解你的意图，自动生成命令，跨多台机器协同执行。
+      </p>
+      <div style="display:flex;gap:12px;justify-content:center">
+        <button class="btn btn-primary" style="padding:13px 36px;font-size:15px;border-radius:8px" @click="showLanding=false">
+          立即开始 →
+        </button>
+        <button class="btn btn-ghost" style="padding:13px 36px;font-size:15px;border-radius:8px" @click="landingDemo='nlp'">
+          查看演示
+        </button>
+      </div>
+      <!-- 平台标签 -->
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:40px;flex-wrap:wrap">
+        <span v-for="p in ['🐧 Linux','🪟 Windows','🍎 macOS','🤖 Android']" :key="p"
+              style="background:#1a1d27;border:1px solid #2d3148;border-radius:20px;padding:5px 14px;font-size:12px;color:#94a3b8">{{p}}</span>
+      </div>
+    </div>
+
+    <!-- 能力卡片 -->
+    <div style="max-width:1100px;margin:0 auto;padding:0 24px 40px">
+      <div style="text-align:center;font-size:12px;color:#475569;letter-spacing:2px;margin-bottom:32px;text-transform:uppercase">点击查看真实案例</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+
+        <div v-for="cap in landingCaps" :key="cap.id"
+             @click="landingDemo=cap.id"
+             :style="landingDemo===cap.id ? 'border-color:#7c6af7;background:#1e1a3e' : ''"
+             style="background:#1a1d27;border:1px solid #2d3148;border-radius:12px;padding:22px;cursor:pointer;transition:all .2s">
+          <div style="font-size:26px;margin-bottom:10px">{{cap.icon}}</div>
+          <div style="font-size:15px;font-weight:600;margin-bottom:6px;color:#e2e8f0">{{cap.title}}</div>
+          <div style="font-size:13px;color:#64748b;line-height:1.6">{{cap.desc}}</div>
+          <div style="margin-top:12px;font-size:11px;color:#7c6af7">点击查看案例 →</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 演示区 -->
+    <div v-if="landingDemo" style="max-width:900px;margin:0 auto;padding:0 24px 80px">
+      <div style="background:#1a1d27;border:1px solid #2d3148;border-radius:14px;overflow:hidden">
+
+        <!-- NLP 演示 -->
+        <div v-if="landingDemo==='nlp'">
+          <div style="padding:20px 24px;border-bottom:1px solid #2d3148;display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">⚡</span>
+            <span style="font-weight:600">自然语言执行任务 — 真实案例</span>
+          </div>
+          <div style="padding:24px">
+            <div v-for="demo in nlpDemos" :key="demo.task" style="margin-bottom:24px;padding-bottom:24px;border-bottom:1px solid #1e2240">
+              <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px">
+                <span style="background:#7c6af7;color:#fff;border-radius:6px;padding:3px 8px;font-size:11px;white-space:nowrap;margin-top:2px">用户输入</span>
+                <div style="font-size:14px;color:#e2e8f0;line-height:1.5">{{demo.task}}</div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+                <span style="background:#1e3a2e;color:#4ade80;border-radius:6px;padding:3px 8px;font-size:11px;white-space:nowrap;margin-top:2px">AI 生成</span>
+                <code style="font-size:12px;color:#38bdf8;background:#0f1117;padding:6px 10px;border-radius:6px;display:block;width:100%">{{demo.command}}</code>
+              </div>
+              <div v-if="demo.analysis" style="display:flex;align-items:flex-start;gap:10px">
+                <span style="background:#1a2a3e;color:#7c6af7;border-radius:6px;padding:3px 8px;font-size:11px;white-space:nowrap;margin-top:2px">AI 分析</span>
+                <div style="font-size:12px;color:#94a3b8;line-height:1.6">{{demo.analysis.slice(0,120)}}...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 多 Agent 演示 -->
+        <div v-if="landingDemo==='multi'">
+          <div style="padding:20px 24px;border-bottom:1px solid #2d3148;display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">🌐</span>
+            <span style="font-weight:600">多 Agent 并行协同 — 架构示意</span>
+          </div>
+          <div style="padding:24px">
+            <div style="text-align:center;margin-bottom:24px;font-size:13px;color:#64748b">同一任务，同时分发到多台机器，各自独立执行，结果汇总</div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+              <div style="background:#252840;border-radius:8px;padding:10px 24px;font-size:13px;color:#7c6af7;font-weight:600">控制端 → 下发任务</div>
+              <div style="color:#475569;font-size:20px">↓</div>
+              <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+                <div v-for="agent in ['🐧 香港 agent','🐧 阿里云 agent','🪟 Windows agent','🍎 Mac agent']" :key="agent"
+                     style="background:#1e2240;border:1px solid #2d3148;border-radius:8px;padding:8px 16px;font-size:12px;color:#94a3b8">
+                  {{agent}}<br><span style="color:#4ade80;font-size:11px">✓ 并行执行</span>
+                </div>
+              </div>
+              <div style="color:#475569;font-size:20px">↓</div>
+              <div style="background:#1e3a2e;border-radius:8px;padding:10px 24px;font-size:13px;color:#4ade80;font-weight:600">结果汇总 → AI 分析</div>
+            </div>
+            <div style="margin-top:24px;padding:16px;background:#0f1117;border-radius:8px;font-size:12px;color:#64748b;line-height:1.8">
+              <div style="color:#94a3b8;margin-bottom:8px">典型场景：</div>
+              <div>• 16 台机器同时爬取 16 个页面，每台真实 IP，完全规避封禁</div>
+              <div>• 批量部署应用到 100 台服务器，并行执行，分钟级完成</div>
+              <div>• 多地区同时压测，模拟真实用户分布</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 部署演示 -->
+        <div v-if="landingDemo==='deploy'">
+          <div style="padding:20px 24px;border-bottom:1px solid #2d3148;display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">🚀</span>
+            <span style="font-weight:600">智能应用部署 — 真实流程</span>
+          </div>
+          <div style="padding:24px">
+            <div v-for="(step, i) in deploySteps" :key="i"
+                 style="display:flex;gap:14px;margin-bottom:16px;align-items:flex-start">
+              <div style="background:#7c6af7;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;margin-top:2px">{{i+1}}</div>
+              <div>
+                <div style="font-size:13px;font-weight:500;color:#e2e8f0;margin-bottom:4px">{{step.title}}</div>
+                <div style="font-size:12px;color:#64748b">{{step.desc}}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 监控演示 -->
+        <div v-if="landingDemo==='monitor'">
+          <div style="padding:20px 24px;border-bottom:1px solid #2d3148;display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">📊</span>
+            <span style="font-weight:600">实时监控 — 当前在线设备</span>
+          </div>
+          <div style="padding:24px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+              <div v-for="device in monitorDevices" :key="device.name"
+                   style="background:#0f1117;border-radius:8px;padding:14px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                  <span style="font-size:13px;font-weight:500">{{device.name}}</span>
+                  <span style="width:8px;height:8px;border-radius:50%;background:#4ade80;display:inline-block"></span>
+                </div>
+                <div style="font-size:11px;color:#64748b">{{device.os}}</div>
+                <div style="font-size:11px;color:#64748b;margin-top:4px">CPU: {{device.cpu}}</div>
+                <div style="font-size:11px;color:#64748b">磁盘: {{device.disk}}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 反向连接演示 -->
+        <div v-if="landingDemo==='ws'">
+          <div style="padding:20px 24px;border-bottom:1px solid #2d3148;display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">🔗</span>
+            <span style="font-weight:600">WebSocket 反向连接 — 内网穿透原理</span>
+          </div>
+          <div style="padding:24px">
+            <div style="font-size:13px;color:#64748b;margin-bottom:20px;line-height:1.7">
+              传统工具需要目标机器开放端口，内网机器无法接入。<br>
+              CyberAgentOps 反过来——Agent 主动连控制端，只要能访问互联网就能接入。
+            </div>
+            <div style="display:flex;flex-direction:column;gap:16px">
+              <div style="display:flex;align-items:center;gap:12px;padding:14px;background:#0f1117;border-radius:8px">
+                <span style="font-size:20px">❌</span>
+                <div>
+                  <div style="font-size:13px;font-weight:500;color:#f87171">传统方式</div>
+                  <div style="font-size:12px;color:#64748b;margin-top:2px">控制端 → 需要目标机器开放端口 → 内网机器无法接入</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:14px;background:#1e3a2e;border-radius:8px">
+                <span style="font-size:20px">✅</span>
+                <div>
+                  <div style="font-size:13px;font-weight:500;color:#4ade80">CyberAgentOps</div>
+                  <div style="font-size:12px;color:#64748b;margin-top:2px">Agent 主动连控制端 → 无需开放端口 → 内网/公网/移动网络全支持</div>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:20px;padding:14px;background:#0f1117;border-radius:8px">
+              <div style="font-size:12px;color:#94a3b8;margin-bottom:8px">断线重连机制（指数退避）：</div>
+              <code style="font-size:11px;color:#38bdf8">1s → 2s → 4s → 8s → ... → 60s（最大间隔）</code>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 下载 Agent -->
+    <div style="max-width:700px;margin:0 auto;padding:0 24px 40px;text-align:center">
+      <div style="font-size:12px;color:#475569;letter-spacing:2px;margin-bottom:24px;text-transform:uppercase">下载 Agent</div>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+        <a href="/download/agent/linux" class="btn btn-ghost" style="padding:10px 20px;font-size:13px;text-decoration:none">
+          🐧 Linux
+        </a>
+        <a href="/download/agent/macos" class="btn btn-ghost" style="padding:10px 20px;font-size:13px;text-decoration:none">
+          🍎 macOS
+        </a>
+        <a href="/download/agent/windows" class="btn btn-ghost" style="padding:10px 20px;font-size:13px;text-decoration:none">
+          🪟 Windows .exe
+        </a>
+        <a href="/download/agent/android" class="btn btn-ghost" style="padding:10px 20px;font-size:13px;text-decoration:none">
+          🤖 Android APK
+        </a>
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:#475569">
+        下载后运行：<code style="color:#38bdf8;background:#1a1d27;padding:2px 8px;border-radius:4px">./cyberagent --server https://your-server:8000</code>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div style="text-align:center;padding:40px 24px 80px">
+      <button class="btn btn-primary" style="padding:14px 48px;font-size:16px;border-radius:8px" @click="showLanding=false">
+        开始使用 →
+      </button>
+    </div>
+  </div>
+
   <!-- 登录页 -->
-  <div class="login-wrap" v-if="!token">
+  <div class="login-wrap" v-else-if="!token">
     <div class="login-box">
       <div class="login-title">CyberAgentOps</div>
 
@@ -1148,6 +1357,49 @@ createApp({
 
     // ── Auth ──
     const token = ref(null)
+    const showLanding = ref(!localStorage.getItem('cyber_token'))
+
+    // ── Landing 数据 ──
+    const landingDemo = ref(null)
+    const landingCaps = [
+      { id: 'nlp',     icon: '⚡', title: '自然语言执行任务',   desc: '用中文描述需求，AI 自动生成命令并执行，支持连续对话和结果分析' },
+      { id: 'multi',   icon: '🌐', title: '多 Agent 并行协同', desc: '同时向多台机器下发任务，16 台机器 16 个真实 IP，结果自动汇总' },
+      { id: 'deploy',  icon: '🚀', title: '智能应用部署',       desc: '填入 GitHub 地址，AI 自动分析项目类型、安装依赖、启动并验证' },
+      { id: 'monitor', icon: '📊', title: '实时监控',           desc: 'CPU、内存、磁盘、网络实时采集，硬件指纹唯一标识设备' },
+      { id: 'ws',      icon: '🔗', title: 'WebSocket 反向连接', desc: 'Agent 主动连控制端，内网机器无需开放端口，断线自动重连' },
+    ]
+    const nlpDemos = [
+      {
+        task: '停止 cyberagentops 服务，清理 8000 端口，然后后台运行 deploy.sh',
+        command: 'systemctl stop cyberagentops && fuser -k 8000/tcp && nohup bash /opt/app/deploy.sh > /opt/app/deploy_run.log 2>&1 &',
+        analysis: '命令执行成功，输出"669049"是新启动的部署脚本进程PID，这是正常的关键信息。该序列依次完成了：停止指定服务、强制释放8000端口、后台启动部署脚本并将输出重定向至日志文件。'
+      },
+      {
+        task: '查看 nginx 错误日志最近 50 行',
+        command: 'tail -n 50 /var/log/nginx/error.log',
+        analysis: '成功获取 nginx 错误日志，发现 3 条 502 错误，后端服务可能未启动，建议检查 upstream 配置。'
+      },
+      {
+        task: '查一下磁盘使用情况，哪个目录占用最多',
+        command: 'df -h && du -sh /* 2>/dev/null | sort -rh | head -10',
+        analysis: '/var/log 目录占用 8.7G，建议清理旧日志文件。根分区使用率 87%，需要及时处理。'
+      },
+    ]
+    const deploySteps = [
+      { title: '填入 GitHub 仓库地址', desc: 'https://github.com/user/myapp' },
+      { title: 'AI 分析仓库结构', desc: '自动识别项目类型（Python/Node.js/Java/Docker），检测依赖文件' },
+      { title: '安装依赖', desc: 'pip install -r requirements.txt 或 npm install，自动处理环境问题' },
+      { title: '推断启动命令', desc: 'AI 根据项目结构生成启动命令，支持 systemd 服务注册' },
+      { title: '验证部署结果', desc: 'AI 检查进程状态、端口监听、应用日志，给出结论和修复建议' },
+    ]
+    const monitorDevices = [
+      { name: '香港', os: 'Ubuntu 22.04', cpu: '0.0%', disk: '10%' },
+      { name: '阿里云', os: 'Ubuntu 22.04', cpu: '11.2%', disk: '28%' },
+      { name: '美国', os: 'CentOS 7', cpu: '0.5%', disk: '4%' },
+      { name: 'Windows', os: 'Windows Server', cpu: '0.0%', disk: '37%' },
+      { name: 'Mac', os: 'macOS 26.3', cpu: '—', disk: '6%' },
+      { name: 'Android', os: 'Android 14', cpu: '—', disk: '—' },
+    ]
     const isAdmin = ref(false)
     const role = ref('')
     const perms = ref([])
@@ -2025,7 +2277,8 @@ createApp({
     onMounted(() => { loadHosts(); loadAgents(); })
 
     return {
-      page, token, isAdmin, role, perms, hasPerm, adminUser,
+      page, token, showLanding, isAdmin, role, perms, hasPerm, adminUser,
+      landingDemo, landingCaps, nlpDemos, deploySteps, monitorDevices,
       authTab, loginError, loginSuccess, loginLoading,
       doLogin, doRegister, doLogout, skipLogin,
       userList, loadUsers, togglePerm,
