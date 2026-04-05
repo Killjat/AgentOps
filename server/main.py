@@ -19,6 +19,7 @@ if _env_file.exists():
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "swarm"))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +29,7 @@ from fastapi.responses import HTMLResponse
 from core.storage import _load_persistent_data, _save_agents, _save_tasks, _save_app_deploys
 from routers import auth, servers, agents, tasks, deploy
 from routers.agents import ws_agent_endpoint
+import swarm.router as swarm_router
 
 WEB_DIR = Path(__file__).parent.parent / "web"
 
@@ -68,6 +70,7 @@ app.include_router(servers.router)
 app.include_router(agents.router)
 app.include_router(tasks.router)
 app.include_router(deploy.router)
+app.include_router(swarm_router.router)
 
 # ── WebSocket ────────────────────────────────────────────────────
 app.add_api_websocket_route("/ws/agent/{agent_id}", ws_agent_endpoint)
@@ -104,6 +107,14 @@ if WEB_DIR.exists():
     @app.get("/", include_in_schema=False)
     async def serve_index():
         content = (WEB_DIR / "index.html").read_text()
+        return HTMLResponse(content=content, headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache"
+        })
+
+    @app.get("/swarm", include_in_schema=False)
+    async def serve_swarm():
+        content = (WEB_DIR / "swarm.html").read_text()
         return HTMLResponse(content=content, headers={
             "Cache-Control": "no-store, no-cache, must-revalidate",
             "Pragma": "no-cache"

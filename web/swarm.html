@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Swarm 协作 — CyberAgentOps</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+       background: #0f1117; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px; height: 52px; background: #1a1d27;
+  border-bottom: 1px solid #2d3148; flex-shrink: 0;
+}
+.topbar-title { font-size: 16px; font-weight: 700; color: #7c6af7; display: flex; align-items: center; gap: 8px; }
+.topbar-back { font-size: 13px; color: #64748b; text-decoration: none; }
+.topbar-back:hover { color: #7c6af7; }
+
+.layout { display: flex; flex: 1; overflow: hidden; }
+
+/* 左侧 Agent 面板 */
+.agent-panel {
+  width: 260px; background: #1a1d27; border-right: 1px solid #2d3148;
+  display: flex; flex-direction: column; flex-shrink: 0;
+}
+.panel-header {
+  padding: 14px 16px; font-size: 12px; font-weight: 600; color: #64748b;
+  text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #2d3148;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.agent-list { flex: 1; overflow-y: auto; padding: 8px; }
+.agent-item {
+  padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid transparent; margin-bottom: 6px; transition: all .15s;
+  display: flex; align-items: center; gap: 10px;
+}
+.agent-item:hover { background: #252840; }
+.agent-item.selected { background: #1e1a3e; border-color: #7c6af7; }
+.agent-item.offline { opacity: .45; cursor: not-allowed; }
+.agent-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dot-online { background: #4ade80; }
+.dot-offline { background: #475569; }
+.agent-info { flex: 1; min-width: 0; }
+.agent-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent-meta { font-size: 11px; color: #64748b; margin-top: 2px; }
+.agent-check { color: #7c6af7; font-size: 14px; }
+
+.select-hint {
+  padding: 10px 16px; font-size: 12px; color: #475569;
+  border-top: 1px solid #2d3148; text-align: center;
+}
+
+/* 右侧对话区 */
+.chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+.chat-messages {
+  flex: 1; overflow-y: auto; padding: 24px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+
+/* 消息气泡 */
+.msg { display: flex; gap: 12px; max-width: 820px; }
+.msg.user { flex-direction: row-reverse; align-self: flex-end; }
+.msg-avatar {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 15px;
+}
+.avatar-user { background: #7c6af7; }
+.avatar-system { background: #1e2240; border: 1px solid #2d3148; }
+.msg-body { flex: 1; }
+.msg-bubble {
+  padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.7;
+}
+.bubble-user { background: #7c6af7; color: #fff; border-radius: 12px 2px 12px 12px; }
+.bubble-system { background: #1a1d27; border: 1px solid #2d3148; border-radius: 2px 12px 12px 12px; }
+.msg-time { font-size: 11px; color: #475569; margin-top: 4px; }
+.msg.user .msg-time { text-align: right; }
+
+/* 计划卡片 */
+.plan-card {
+  background: #0f1117; border: 1px solid #2d3148; border-radius: 8px;
+  padding: 14px; margin-top: 10px; font-size: 13px;
+}
+.plan-title { color: #7c6af7; font-weight: 600; margin-bottom: 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+.subtask-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid #1e2235;
+}
+.subtask-row:last-child { border-bottom: none; }
+.subtask-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+.subtask-agent { font-size: 11px; color: #7c6af7; font-family: monospace; white-space: nowrap; }
+.subtask-text { font-size: 13px; color: #cbd5e1; flex: 1; }
+.subtask-output {
+  font-size: 11px; color: #64748b; font-family: monospace;
+  background: #0a0c14; padding: 6px 8px; border-radius: 4px; margin-top: 4px;
+  white-space: pre-wrap; max-height: 120px; overflow-y: auto;
+}
+
+/* 状态 badge */
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+.badge-success { background: #14532d33; color: #4ade80; }
+.badge-failed  { background: #7f1d1d33; color: #f87171; }
+.badge-running { background: #1e3a5f33; color: #60a5fa; }
+.badge-partial { background: #78350f33; color: #fbbf24; }
+.badge-planning { background: #2d1f5e33; color: #a78bfa; }
+
+/* 打字动画 */
+.typing { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+.typing span { width: 6px; height: 6px; border-radius: 50%; background: #475569; animation: bounce .8s infinite; }
+.typing span:nth-child(2) { animation-delay: .15s; }
+.typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
+
+/* 输入区 */
+.input-area {
+  padding: 16px 24px; border-top: 1px solid #2d3148;
+  background: #1a1d27; flex-shrink: 0;
+}
+.input-row { display: flex; gap: 10px; align-items: flex-end; }
+.input-box {
+  flex: 1; background: #0f1117; border: 1px solid #2d3148; border-radius: 10px;
+  color: #e2e8f0; padding: 12px 16px; font-size: 14px; outline: none;
+  resize: none; font-family: inherit; line-height: 1.5; max-height: 120px;
+  transition: border-color .15s;
+}
+.input-box:focus { border-color: #7c6af7; }
+.send-btn {
+  width: 42px; height: 42px; border-radius: 10px; border: none;
+  background: #7c6af7; color: #fff; cursor: pointer; font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s; flex-shrink: 0;
+}
+.send-btn:hover { background: #6b5ce7; }
+.send-btn:disabled { background: #3d3a5c; cursor: not-allowed; }
+.input-hint { font-size: 12px; color: #475569; margin-top: 8px; }
+
+/* 空状态 */
+.empty-state {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 12px; color: #475569;
+}
+.empty-icon { font-size: 48px; }
+.empty-title { font-size: 16px; color: #64748b; }
+.empty-sub { font-size: 13px; text-align: center; max-width: 320px; line-height: 1.6; }
+
+.example-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
+.chip {
+  background: #1a1d27; border: 1px solid #2d3148; border-radius: 20px;
+  padding: 6px 14px; font-size: 12px; color: #94a3b8; cursor: pointer; transition: all .15s;
+}
+.chip:hover { border-color: #7c6af7; color: #7c6af7; }
+
+.refresh-btn {
+  background: none; border: none; color: #64748b; cursor: pointer; font-size: 13px; padding: 2px 6px;
+}
+.refresh-btn:hover { color: #7c6af7; }
+</style>
+</head>
+<body>
+<div id="app" style="height:100vh;display:flex;flex-direction:column">
+
+  <!-- 顶栏 -->
+  <div class="topbar">
+    <div class="topbar-title">
+      🐝 Swarm 多 Agent 协作
+    </div>
+    <a href="/" class="topbar-back">← 返回控制台</a>
+  </div>
+
+  <div class="layout">
+
+    <!-- 左侧：Agent 选择 -->
+    <div class="agent-panel">
+      <div class="panel-header">
+        在线 Agent
+        <button class="refresh-btn" @click="loadAgents" title="刷新">↻</button>
+      </div>
+
+      <div class="agent-list">
+        <div v-if="!agents.length" style="padding:20px;text-align:center;font-size:12px;color:#475569">
+          暂无 Agent 在线
+        </div>
+        <div
+          v-for="a in agents" :key="a.agent_id"
+          class="agent-item"
+          :class="{ selected: selectedIds.includes(a.agent_id), offline: a.status !== 'online' }"
+          @click="toggleAgent(a)"
+        >
+          <div class="agent-dot" :class="a.status === 'online' ? 'dot-online' : 'dot-offline'"></div>
+          <div class="agent-info">
+            <div class="agent-name">{{ a.name || a.agent_id }}</div>
+            <div class="agent-meta">{{ a.os_type }} · {{ a.agent_id }}</div>
+          </div>
+          <span v-if="selectedIds.includes(a.agent_id)" class="agent-check">✓</span>
+        </div>
+      </div>
+
+      <div class="select-hint">
+        已选 {{ selectedIds.length }} 个 Agent<br>
+        <span style="color:#7c6af7">点击选择参与协作的机器</span>
+      </div>
+    </div>
+
+    <!-- 右侧：对话区 -->
+    <div class="chat-area">
+
+      <!-- 空状态 -->
+      <div v-if="!messages.length" class="empty-state">
+        <div class="empty-icon">🐝</div>
+        <div class="empty-title">Swarm 多 Agent 协作</div>
+        <div class="empty-sub">
+          在左侧选择参与的 Agent，然后输入你的目标，AI 会自动拆解任务并分配给各个机器并行执行。
+        </div>
+        <div class="example-chips">
+          <div class="chip" v-for="ex in examples" :key="ex" @click="useExample(ex)">{{ ex }}</div>
+        </div>
+      </div>
+
+      <!-- 消息列表 -->
+      <div v-else class="chat-messages" ref="msgList">
+        <div v-for="(msg, i) in messages" :key="i" class="msg" :class="msg.role === 'user' ? 'user' : ''">
+          <div class="msg-avatar" :class="msg.role === 'user' ? 'avatar-user' : 'avatar-system'">
+            {{ msg.role === 'user' ? '👤' : '🐝' }}
+          </div>
+          <div class="msg-body">
+            <!-- 普通文本 -->
+            <div v-if="msg.type === 'text'" class="msg-bubble" :class="msg.role === 'user' ? 'bubble-user' : 'bubble-system'">
+              {{ msg.content }}
+            </div>
+
+            <!-- 执行计划 + 结果 -->
+            <div v-else-if="msg.type === 'plan'" class="msg-bubble bubble-system">
+              <div style="margin-bottom:8px">
+                <span class="badge" :class="'badge-' + msg.status">{{ statusLabel(msg.status) }}</span>
+                <span style="font-size:13px;color:#94a3b8;margin-left:8px">{{ msg.plan }}</span>
+              </div>
+              <div class="plan-card">
+                <div class="plan-title">执行计划 · {{ msg.subtasks.length }} 个子任务</div>
+                <div v-for="st in msg.subtasks" :key="st.subtask_id" class="subtask-row">
+                  <div class="subtask-icon">{{ subtaskIcon(st.status) }}</div>
+                  <div style="flex:1">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                      <span class="subtask-agent">{{ st.agent_id }}</span>
+                      <span style="font-size:11px;color:#475569">{{ st.instruction }}</span>
+                    </div>
+                    <div v-if="st.output" class="subtask-output">{{ st.output }}</div>
+                    <div v-if="st.error" style="font-size:11px;color:#f87171;margin-top:4px">{{ st.error }}</div>
+                  </div>
+                </div>
+              </div>
+              <!-- 汇总 -->
+              <div v-if="msg.summary" style="margin-top:10px;font-size:13px;color:#94a3b8;white-space:pre-wrap;line-height:1.7">{{ msg.summary }}</div>
+            </div>
+
+            <!-- 打字中 -->
+            <div v-else-if="msg.type === 'typing'" class="msg-bubble bubble-system">
+              <div class="typing"><span></span><span></span><span></span></div>
+              <div style="font-size:12px;color:#475569;margin-top:4px">{{ msg.content }}</div>
+            </div>
+
+            <div class="msg-time">{{ msg.time }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 输入区 -->
+      <div class="input-area">
+        <div v-if="selectedIds.length === 0" style="font-size:12px;color:#f87171;margin-bottom:8px">
+          ⚠️ 请先在左侧选择至少一个在线 Agent
+        </div>
+        <div class="input-row">
+          <textarea
+            class="input-box"
+            v-model="input"
+            placeholder="描述你的目标，例如：检查所有机器的磁盘使用情况，找出使用率超过80%的..."
+            rows="1"
+            @keydown.enter.exact.prevent="send"
+            @input="autoResize"
+            ref="inputEl"
+            :disabled="loading"
+          ></textarea>
+          <button class="send-btn" @click="send" :disabled="loading || !input.trim() || selectedIds.length === 0">
+            {{ loading ? '⏳' : '↑' }}
+          </button>
+        </div>
+        <div class="input-hint">Enter 发送 · Shift+Enter 换行 · 已选 {{ selectedIds.length }} 个 Agent</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const { createApp, ref, nextTick, onMounted } = Vue
+
+createApp({
+  setup() {
+    const API = ''
+    const agents = ref([])
+    const selectedIds = ref([])
+    const messages = ref([])
+    const input = ref('')
+    const loading = ref(false)
+    const msgList = ref(null)
+    const inputEl = ref(null)
+
+    const examples = [
+      '检查所有机器的磁盘使用情况',
+      '查看各机器的内存和 CPU 负载',
+      '在所有机器上检查 80/443 端口是否开放',
+      '获取所有机器的系统版本信息',
+    ]
+
+    async function loadAgents() {
+      try {
+        const r = await fetch(`${API}/agents`)
+        if (r.ok) agents.value = await r.json()
+      } catch(e) {}
+    }
+
+    function toggleAgent(a) {
+      if (a.status !== 'online') return
+      const idx = selectedIds.value.indexOf(a.agent_id)
+      if (idx === -1) selectedIds.value.push(a.agent_id)
+      else selectedIds.value.splice(idx, 1)
+    }
+
+    function now() {
+      return new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    }
+
+    function statusLabel(s) {
+      return { success: '✅ 全部完成', failed: '❌ 执行失败', partial: '⚠️ 部分完成',
+               running: '⏳ 执行中', planning: '🧠 规划中' }[s] || s
+    }
+
+    function subtaskIcon(s) {
+      return { success: '✅', failed: '❌', skipped: '⏭️', running: '⏳', pending: '⏸️' }[s] || '•'
+    }
+
+    async function scrollBottom() {
+      await nextTick()
+      if (msgList.value) msgList.value.scrollTop = msgList.value.scrollHeight
+    }
+
+    function autoResize(e) {
+      e.target.style.height = 'auto'
+      e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
+    }
+
+    function useExample(ex) {
+      input.value = ex
+      inputEl.value?.focus()
+    }
+
+    async function send() {
+      const goal = input.value.trim()
+      if (!goal || loading.value || selectedIds.value.length === 0) return
+
+      // 用户消息
+      messages.value.push({ role: 'user', type: 'text', content: goal, time: now() })
+      input.value = ''
+      if (inputEl.value) { inputEl.value.style.height = 'auto' }
+      await scrollBottom()
+
+      loading.value = true
+
+      // 显示 Agent 列表
+      const agentNames = selectedIds.value.map(id => {
+        const a = agents.value.find(x => x.agent_id === id)
+        return a ? (a.name || id) : id
+      })
+      messages.value.push({
+        role: 'system', type: 'text',
+        content: `已选择 ${selectedIds.value.length} 个 Agent：${agentNames.join('、')}\n正在让 AI 规划任务...`,
+        time: now()
+      })
+      await scrollBottom()
+
+      // 打字动画
+      const typingIdx = messages.value.length
+      messages.value.push({ role: 'system', type: 'typing', content: 'AI 正在拆解任务并分配给各 Agent...', time: now() })
+      await scrollBottom()
+
+      try {
+        const r = await fetch(`${API}/swarm/tasks`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ goal, agent_ids: selectedIds.value, timeout: 300 })
+        })
+
+        // 移除打字动画
+        messages.value.splice(typingIdx, 1)
+
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}))
+          messages.value.push({
+            role: 'system', type: 'text',
+            content: `❌ 请求失败：${err.detail || r.statusText}`,
+            time: now()
+          })
+        } else {
+          const task = await r.json()
+          messages.value.push({
+            role: 'system', type: 'plan',
+            status: task.status,
+            plan: task.plan || '',
+            subtasks: task.subtasks || [],
+            summary: task.summary || '',
+            time: now()
+          })
+        }
+      } catch(e) {
+        messages.value.splice(typingIdx, 1)
+        messages.value.push({
+          role: 'system', type: 'text',
+          content: `❌ 网络错误：${e.message}`,
+          time: now()
+        })
+      }
+
+      loading.value = false
+      await scrollBottom()
+    }
+
+    onMounted(() => {
+      loadAgents()
+      setInterval(loadAgents, 15000)
+    })
+
+    return {
+      agents, selectedIds, messages, input, loading, msgList, inputEl,
+      examples, loadAgents, toggleAgent, send, autoResize, useExample,
+      statusLabel, subtaskIcon,
+    }
+  }
+}).mount('#app')
+</script>
+</body>
+</html>

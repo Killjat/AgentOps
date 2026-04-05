@@ -297,16 +297,16 @@
     <div style="max-width:700px;margin:0 auto;padding:0 24px 40px;text-align:center">
       <div style="font-size:12px;color:#475569;letter-spacing:2px;margin-bottom:24px;text-transform:uppercase">下载 Agent</div>
       <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-        <a href="/download/agent/linux" class="btn btn-ghost" style="padding:10px 20px;font-size:13px;text-decoration:none">
+        <a href="https://github.com/Killjat/AgentOps/releases/latest/download/cyberagent-linux" class="btn btn-ghost" style="padding:10px 20px;font-size:13px;text-decoration:none">
           🐧 Linux
         </a>
-        <a href="/download/agent/macos" class="btn btn-ghost" style="padding:10px 20px;font-size:13px;text-decoration:none">
+        <a href="https://github.com/Killjat/AgentOps/releases/latest/download/cyberagent-macos" class="btn btn-ghost" style="padding:10px 20px;font-size:13px;text-decoration:none">
           🍎 macOS
         </a>
-        <a href="/download/agent/windows" class="btn btn-ghost" style="padding:10px 20px;font-size:13px;text-decoration:none">
+        <a href="https://github.com/Killjat/AgentOps/releases/latest/download/cyberagent-windows.exe" class="btn btn-ghost" style="padding:10px 20px;font-size:13px;text-decoration:none">
           🪟 Windows .exe
         </a>
-        <a href="/download/agent/android" class="btn btn-ghost" style="padding:10px 20px;font-size:13px;text-decoration:none">
+        <a href="https://github.com/Killjat/AgentOps/releases/latest/download/cyberagent.apk" class="btn btn-ghost" style="padding:10px 20px;font-size:13px;text-decoration:none">
           🤖 Android APK
         </a>
       </div>
@@ -402,6 +402,9 @@
         </div>
         <div class="nav-item" :class="{active: page==='appdeploy'}" @click="page='appdeploy'; loadAppDeploys()">
           <span class="nav-icon">🚀</span> 应用部署
+        </div>
+        <div class="nav-item" :class="{active: page==='swarm'}" @click="page='swarm'; loadAgents()">
+          <span class="nav-icon">🐝</span> Swarm 协作
         </div>
       </nav>
       <!-- 用户状态 -->
