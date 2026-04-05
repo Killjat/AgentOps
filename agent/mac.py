@@ -212,4 +212,5 @@ class MacAgent(BaseAgent):
             port_results = list(executor.map(check_port, common_ports))
         result["ports"] = [r for r in port_results if r is not None]
 
+        result["tools"] = self.discover_tools()
         return result

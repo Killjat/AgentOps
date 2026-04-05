@@ -267,4 +267,10 @@ class LinuxAgent(BaseAgent):
         result["ports"] = [r for r in port_results if r is not None]
 
         print(f"[Agent] discover_apps 完成，共发现 {len(result['services'])} 个服务, {len(result['containers'])} 个容器, {len(result['ports'])} 个端口")
+
+        # 4. 检测系统工具
+        print(f"[Agent] 检测系统工具...")
+        tools = self.discover_tools()
+        result["tools"] = tools
+        print(f"[Agent] 检测到 {len(tools)} 个工具")
         return result

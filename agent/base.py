@@ -33,6 +33,18 @@ class BaseAgent(abc.ABC):
 
     def __init__(self, agent_id: str = "", server_url: str = "",
                  port: int = 9000, host: str = "0.0.0.0"):
+        if not agent_id:
+            # 基于主机名 + MAC 地址生成稳定的 agent_id，同一台机器永远相同
+            import hashlib, uuid
+            try:
+                mac = hex(uuid.getnode())[2:]
+            except Exception:
+                mac = ""
+            raw = f"{socket.gethostname()}-{mac}"
+            short = hashlib.md5(raw.encode()).hexdigest()[:8]
+            os_name = __import__('platform').system().lower()
+            prefix = "win" if "windows" in os_name else ("mac" if "darwin" in os_name else "linux")
+            agent_id = f"{prefix}-{short}"
         self.agent_id = agent_id
         self.server_url = server_url.rstrip("/")
         self.port = port
@@ -64,6 +76,48 @@ class BaseAgent(abc.ABC):
 
     @abc.abstractmethod
     def discover_apps(self) -> Dict[str, Any]: ...
+
+    def discover_tools(self) -> List[Dict[str, Any]]:
+        """检测系统已安装的工具，所有平台通用"""
+        TOOLS = {
+            "curl": "HTTP 请求", "wget": "文件下载", "nmap": "端口扫描",
+            "netcat": "网络调试", "tcpdump": "抓包分析", "iperf3": "网络测速",
+            "dig": "DNS 查询", "traceroute": "路由追踪", "ssh": "SSH 客户端",
+            "jq": "JSON 处理", "python3": "Python 脚本", "node": "Node.js 脚本",
+            "ruby": "Ruby 脚本", "perl": "Perl 脚本", "awk": "文本处理",
+            "sed": "流编辑器", "htop": "进程监控", "iotop": "IO 监控",
+            "strace": "系统调用追踪", "lsof": "文件句柄查看", "ps": "进程查看",
+            "top": "系统监控", "docker": "容器管理", "kubectl": "K8s 管理",
+            "git": "版本控制", "ansible": "自动化运维", "mysql": "MySQL 客户端",
+            "psql": "PostgreSQL 客户端", "redis-cli": "Redis 客户端",
+            "mongo": "MongoDB 客户端",
+        }
+
+        def check_tool(item):
+            tool, desc = item
+            import platform
+            which_cmd = "where" if platform.system().lower() == "windows" else "which"
+            try:
+                path = subprocess.check_output(
+                    f"{which_cmd} {tool}", shell=True, stderr=subprocess.DEVNULL, timeout=3
+                ).decode().strip().splitlines()[0]  # where 可能返回多行
+            except Exception:
+                return None
+            if not path:
+                return None
+            try:
+                version = subprocess.check_output(
+                    f"{tool} --version 2>/dev/null | head -1",
+                    shell=True, stderr=subprocess.DEVNULL, timeout=3
+                ).decode().strip()
+            except Exception:
+                version = ""
+            return {"name": tool, "description": desc, "path": path, "version": version[:80]}
+
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            results = list(executor.map(check_tool, TOOLS.items()))
+        return [r for r in results if r is not None]
 
     # ── 通用指标采集 ──────────────────────────────────────────
 

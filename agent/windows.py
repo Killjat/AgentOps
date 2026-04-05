@@ -235,4 +235,5 @@ class WindowsAgent(BaseAgent):
         except Exception:
             pass
 
+        result["tools"] = self.discover_tools()
         return result

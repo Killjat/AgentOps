@@ -826,7 +826,7 @@
         </button>
       </div>
 
-      <!-- 扫描结果 -->
+      <!-- 扫描结果 - 应用 -->
       <div v-if="discoveredApps.length" style="margin-bottom:16px">
         <div class="card-title">发现的应用 ({{ discoveredApps.length }})</div>
         <div v-for="app in discoveredApps" :key="app.name"
@@ -840,14 +840,27 @@
         </div>
       </div>
 
+      <!-- 扫描结果 - 系统工具 -->
+      <div v-if="discoveredTools.length" style="margin-bottom:16px">
+        <div class="card-title">系统工具 ({{ discoveredTools.length }})</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <div v-for="tool in discoveredTools" :key="tool.name"
+               style="padding:6px 12px;background:#1a1e3e;border-radius:6px;display:flex;flex-direction:column;min-width:120px">
+            <div style="font-size:13px;font-weight:500;color:#e2e8f0">{{ tool.name }}</div>
+            <div style="font-size:11px;color:#64748b">{{ tool.description }}</div>
+            <div v-if="tool.version" style="font-size:10px;color:#475569;margin-top:2px">{{ (tool.version || '').slice(0,30) }}</div>
+          </div>
+        </div>
+      </div>
+
       <!-- 已安装的技能 -->
       <div class="card-title">已安装</div>
       <div v-if="agentSkills.length" style="margin-bottom:16px">
         <div v-for="s in agentSkills" :key="s.deploy_id"
              style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #2d3148">
           <div>
-            <div style="font-size:13px;font-weight:500">{{ s.repo_url.replace('https://github.com/','') }}</div>
-            <div style="font-size:11px;color:#64748b;margin-top:2px">{{ s.deploy_dir }} · {{ s.created_at.slice(0,10) }}</div>
+            <div style="font-size:13px;font-weight:500">{{ (s.repo_url||'').replace('https://github.com/','') }}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:2px">{{ s.deploy_dir }} · {{ (s.created_at||'').slice(0,10) }}</div>
           </div>
           <div style="display:flex;gap:6px;align-items:center">
             <span class="badge" :class="s.status==='success'?'badge-success':s.status==='failed'?'badge-failed':'badge-running'">{{ s.status }}</span>
@@ -1664,19 +1677,24 @@ createApp({
                              service_name: '', use_systemd: false, configFiles: [] })
     const scanning = ref(false)
     const discoveredApps = ref([])
+    const discoveredTools = ref([])
 
     async function openSkills(a) {
       skillsAgent.value = a
       skillForm.value = { repo_url: '', branch: 'main', deploy_dir: '/opt/app',
                           service_name: '', use_systemd: false, configFiles: [] }
       discoveredApps.value = []
-      // 加载该 Agent 的已安装技能
-      const r = await fetch(`${API}/deploy/app`, {
-        headers: { 'Authorization': `Bearer ${token.value}` }
-      })
-      if (r.ok) {
-        const all = await r.json()
-        agentSkills.value = all.filter(d => d.agent_id === a.agent_id)
+      discoveredTools.value = []
+      try {
+        const r = await fetch(`${API}/deploy/app`, {
+          headers: { 'Authorization': `Bearer ${token.value}` }
+        })
+        if (r.ok) {
+          const all = await r.json()
+          agentSkills.value = all.filter(d => d.agent_id === a.agent_id)
+        }
+      } catch(e) {
+        console.error('加载技能失败:', e)
       }
     }
 
@@ -1684,6 +1702,7 @@ createApp({
       if (!skillsAgent.value) return
       scanning.value = true
       discoveredApps.value = []
+      discoveredTools.value = []
       try {
         const r = await fetch(`${API}/deploy/scan/${skillsAgent.value.agent_id}`, {
           method: 'POST',
@@ -1692,7 +1711,8 @@ createApp({
         if (r.ok) {
           const result = await r.json()
           discoveredApps.value = result.discovered || []
-          if (result.count === 0) {
+          discoveredTools.value = result.tools || []
+          if (result.count === 0 && discoveredTools.value.length === 0) {
             alert('未发现任何应用。请确保 Agent 正在运行且监听端口 9000')
           }
         } else {
@@ -2014,7 +2034,7 @@ createApp({
       editForm, editError, editSuccess, testing, editHost, testEdit, saveEdit,
       metricsData, metricsAgent, viewMetrics, refreshMetrics,
       skillsAgent, agentSkills, skillInstalling, skillForm,
-      scanning, discoveredApps,
+      scanning, discoveredApps, discoveredTools,
       openSkills, autoFillSkillDir, installSkill, scanApps, registerApp,
       startMonitor, refreshMonitor,
       agents, loadAgents, pingAgent, removeAgent, updateAgent, agentFilter, filteredAgents,
