@@ -14,6 +14,7 @@ import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 
 class MainActivity : AppCompatActivity() {
 
@@ -84,16 +85,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(statusReceiver, IntentFilter("com.cyberagent.STATUS_UPDATE"), Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(statusReceiver, IntentFilter("com.cyberagent.STATUS_UPDATE"))
-        }
-    }
+        LocalBroadcastManager.getInstance(this)
+            .registerReceiver(statusReceiver, IntentFilter("com.cyberagent.STATUS_UPDATE"))    }
 
     override fun onResume() {
         super.onResume()
-        // APP 进入前台，重置状态并自动重连
         tvStatus.text = "CONNECTING..."
         tvStatus.setTextColor(Color.parseColor("#7C6AF7"))
         statusDot.setBackgroundColor(Color.parseColor("#7C6AF7"))
@@ -110,7 +106,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        try { unregisterReceiver(statusReceiver) } catch (e: Exception) {}
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(statusReceiver)
         super.onDestroy()
     }
 

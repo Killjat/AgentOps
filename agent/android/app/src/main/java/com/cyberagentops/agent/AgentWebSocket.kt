@@ -13,7 +13,7 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import java.security.cert.X509Certificate
 
-class AgentWebSocket(private val context: Context) {
+class AgentWebSocket(private val context: Context, private val onStatus: (String) -> Unit) {
 
     private val TAG = "AgentWebSocket"
     private var webSocket: WebSocket? = null
@@ -21,6 +21,7 @@ class AgentWebSocket(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var reconnectDelay = 2000L
     @Volatile private var isConnecting = false
+    @Volatile private var isStopped = false
 
     private val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
         override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
@@ -40,14 +41,11 @@ class AgentWebSocket(private val context: Context) {
     }
 
     private fun updateStatus(status: String) {
-        val intent = Intent("com.cyberagent.STATUS_UPDATE").apply {
-            putExtra("status", status)
-            setPackage(context.packageName)
-        }
-        context.sendBroadcast(intent)
+        onStatus(status)
     }
 
     fun connect() {
+        isStopped = false
         if (isConnecting) return
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
@@ -88,12 +86,13 @@ class AgentWebSocket(private val context: Context) {
 
                     override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
                         Log.w(TAG, "连接失败: ${t.message}")
+                        if (isStopped) return
                         updateStatus("重连中...")
                         scheduleReconnect()
                     }
 
                     override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-                        updateStatus("已断开")
+                        if (isStopped) return
                         scheduleReconnect()
                     }
                 })
