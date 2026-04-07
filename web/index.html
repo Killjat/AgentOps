@@ -528,88 +528,155 @@
 
       <!-- ── 实时监控 ── -->
       <div v-if="page==='monitor'">
-        <div class="section-header">
-          <div class="page-title">实时监控</div>
+
+        <!-- 顶部 Summary -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+          <div style="background:#1a1d27;border:1px solid #2d3148;border-radius:12px;padding:16px 20px">
+            <div style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">总节点</div>
+            <div style="font-size:28px;font-weight:700;color:#e2e8f0">{{ agents.length }}</div>
+          </div>
+          <div style="background:#1a1d27;border:1px solid #2d3148;border-radius:12px;padding:16px 20px">
+            <div style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">在线</div>
+            <div style="font-size:28px;font-weight:700;color:#4ade80">{{ agents.filter(a=>a.status==='online').length }}</div>
+          </div>
+          <div style="background:#1a1d27;border:1px solid #2d3148;border-radius:12px;padding:16px 20px">
+            <div style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">离线</div>
+            <div style="font-size:28px;font-weight:700;color:#f87171">{{ agents.filter(a=>a.status==='offline').length }}</div>
+          </div>
+          <div style="background:#1a1d27;border:1px solid #2d3148;border-radius:12px;padding:16px 20px">
+            <div style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">平均 CPU</div>
+            <div style="font-size:28px;font-weight:700;color:#7c6af7">
+              {{ agents.filter(a=>a.metrics?.cpu_usage>=0).length ? (agents.filter(a=>a.metrics?.cpu_usage>=0).reduce((s,a)=>s+a.metrics.cpu_usage,0)/agents.filter(a=>a.metrics?.cpu_usage>=0).length).toFixed(1) : '-' }}%
+            </div>
+          </div>
+        </div>
+
+        <!-- 标题栏 -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div style="font-size:13px;color:#475569">{{ agents.filter(a=>a.status==='online').length }} / {{ agents.length }} 节点在线</div>
           <div style="display:flex;align-items:center;gap:10px">
-            <span style="font-size:12px;color:#64748b">每30秒自动刷新</span>
-            <span class="dot dot-green" style="animation:pulse 1.5s infinite"></span>
-            <button class="btn btn-ghost" @click="refreshMonitor">刷新</button>
+            <span style="font-size:12px;color:#475569">每30秒自动刷新</span>
+            <span style="width:7px;height:7px;border-radius:50%;background:#4ade80;display:inline-block;animation:pulse 1.5s infinite"></span>
+            <button class="btn btn-ghost" @click="refreshMonitor" style="padding:5px 12px;font-size:12px">↻ 刷新</button>
           </div>
         </div>
 
         <div v-if="!agents.length" class="empty card">暂无 Agent，请先部署</div>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px">
-          <div v-for="a in agents" :key="a.agent_id" class="card" style="padding:0;overflow:hidden">
+        <!-- 节点卡片网格 -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px">
+          <div v-for="a in agents" :key="a.agent_id"
+               style="background:#1a1d27;border:1px solid #2d3148;border-radius:12px;overflow:hidden;transition:border-color .2s"
+               :style="a.status==='online'?'border-color:#2d3148':'border-color:#3d1f1f'">
+
             <!-- 卡片头 -->
-            <div style="padding:14px 16px;border-bottom:1px solid #2d3148;display:flex;justify-content:space-between;align-items:center">
-              <div>
-                <div style="font-weight:600;font-size:15px">{{ a.name || a.agent_id }}</div>
-                <div style="font-size:12px;color:#64748b;margin-top:2px">{{ a.host }} · {{ a.os_version }}</div>
+            <div style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e2240">
+              <div style="display:flex;align-items:center;gap:10px">
+                <!-- OS 图标 -->
+                <div style="width:34px;height:34px;border-radius:8px;background:#0f1117;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">
+                  {{ a.os_type==='windows'?'🪟': a.os_type==='macos'?'🍎': a.os_type==='android'?'🤖': a.os_type==='linux'?'🐧':'💻' }}
+                </div>
+                <div>
+                  <div style="font-weight:600;font-size:14px;color:#e2e8f0">{{ a.name || a.agent_id }}</div>
+                  <div style="font-size:11px;color:#475569;margin-top:1px">
+                    {{ a.metrics?.network?.public || a.metrics?.network?.eth || a.agent_id }}
+                  </div>
+                </div>
               </div>
-              <span class="badge" :class="'badge-'+a.status">
-                <span class="dot" :class="a.status==='online'?'dot-green':a.status==='busy'?'dot-yellow':'dot-red'"></span>
-                {{ a.status }}
-              </span>
+              <!-- 状态 -->
+              <div style="display:flex;align-items:center;gap:6px">
+                <span :style="{width:'8px',height:'8px',borderRadius:'50%',display:'inline-block',
+                  background: a.status==='online'?'#4ade80':'#ef4444',
+                  boxShadow: a.status==='online'?'0 0 6px #4ade80':'none',
+                  animation: a.status==='online'?'pulse 2s infinite':'none'}"></span>
+                <span style="font-size:12px" :style="{color: a.status==='online'?'#4ade80':'#ef4444'}">
+                  {{ a.status==='online'?'在线':'离线' }}
+                </span>
+              </div>
             </div>
 
             <!-- 无数据 -->
-            <div v-if="!a.metrics" style="padding:20px;text-align:center;color:#475569;font-size:13px">
-              等待上报数据...
-              <div style="font-size:11px;margin-top:4px">Agent 启动后10分钟内上报</div>
+            <div v-if="!a.metrics" style="padding:24px;text-align:center;color:#334155;font-size:13px">
+              <div style="font-size:24px;margin-bottom:8px">⏳</div>
+              等待数据上报...
             </div>
 
             <!-- 有数据 -->
             <div v-else style="padding:14px 16px">
-              <!-- CPU -->
-              <div style="margin-bottom:12px">
-                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-                  <span style="color:#94a3b8">CPU 使用率</span>
-                  <span :style="{color: a.metrics.cpu_usage>80?'#f87171':'#4ade80'}">
-                    {{ a.metrics.cpu_usage }}%
-                  </span>
+
+              <!-- CPU + 内存 并排 -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+                <!-- CPU -->
+                <div>
+                  <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:5px">
+                    <span>CPU</span>
+                    <span :style="{color: a.metrics.cpu_usage>80?'#f87171':a.metrics.cpu_usage>60?'#fbbf24':'#4ade80',fontWeight:600}">
+                      {{ a.metrics.cpu_usage >= 0 ? a.metrics.cpu_usage + '%' : 'N/A' }}
+                    </span>
+                  </div>
+                  <div style="background:#0f1117;border-radius:6px;height:5px;overflow:hidden">
+                    <div :style="{
+                      width: (a.metrics.cpu_usage>=0 ? a.metrics.cpu_usage : 0)+'%',
+                      height:'100%', borderRadius:'6px', transition:'width .6s ease',
+                      background: a.metrics.cpu_usage>80?'#ef4444':a.metrics.cpu_usage>60?'#f59e0b':'#4ade80'
+                    }"></div>
+                  </div>
                 </div>
-                <div style="background:#0f1117;border-radius:4px;height:6px">
-                  <div :style="{width: a.metrics.cpu_usage+'%', height:'100%', borderRadius:'4px',
-                    background: a.metrics.cpu_usage>80?'#ef4444':a.metrics.cpu_usage>60?'#f59e0b':'#4ade80',
-                    transition:'width .5s'}"></div>
+                <!-- 内存 -->
+                <div>
+                  <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:5px">
+                    <span>内存</span>
+                    <span style="color:#94a3b8;font-weight:600">
+                      {{ a.metrics.hardware?.memory_mb ? Math.round(a.metrics.hardware.memory_mb/1024*10)/10 + 'G' : 'N/A' }}
+                    </span>
+                  </div>
+                  <div style="background:#0f1117;border-radius:6px;height:5px;overflow:hidden">
+                    <div style="width:40%;height:100%;border-radius:6px;background:#7c6af7;opacity:.6"></div>
+                  </div>
                 </div>
               </div>
 
               <!-- 磁盘 -->
               <div v-if="a.metrics.disk?.length" style="margin-bottom:12px">
-                <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">磁盘</div>
-                <div v-for="d in a.metrics.disk.slice(0,2)" :key="d.mount"
-                     style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px">
-                  <span style="color:#64748b;font-family:monospace">{{ d.mount }}</span>
-                  <span :style="{color: parseInt(d.use_pct)>85?'#f87171':'#94a3b8'}">
-                    {{ d.used }} / {{ d.size }} ({{ d.use_pct }})
-                  </span>
+                <div style="font-size:11px;color:#64748b;margin-bottom:6px">磁盘</div>
+                <div v-for="d in a.metrics.disk.slice(0,2)" :key="d.mount" style="margin-bottom:5px">
+                  <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+                    <span style="color:#475569;font-family:monospace">{{ d.mount }}</span>
+                    <span :style="{color: parseInt(d.use_pct)>85?'#f87171':parseInt(d.use_pct)>70?'#fbbf24':'#64748b'}">
+                      {{ d.used }} / {{ d.size }}
+                    </span>
+                  </div>
+                  <div style="background:#0f1117;border-radius:4px;height:4px;overflow:hidden">
+                    <div :style="{
+                      width: d.use_pct, height:'100%', borderRadius:'4px',
+                      background: parseInt(d.use_pct)>85?'#ef4444':parseInt(d.use_pct)>70?'#f59e0b':'#3b82f6'
+                    }"></div>
+                  </div>
                 </div>
               </div>
 
               <!-- 网络 IO -->
-              <div v-if="a.metrics.network_io" style="margin-bottom:12px">
-                <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">网络 IO</div>
+              <div v-if="Object.keys(a.metrics.network_io||{}).length" style="margin-bottom:12px">
+                <div style="font-size:11px;color:#64748b;margin-bottom:6px">网络</div>
                 <div v-for="(io, iface) in a.metrics.network_io" :key="iface"
-                     style="display:flex;justify-content:space-between;font-size:12px">
-                  <span style="color:#64748b">{{ iface }}</span>
+                     style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">
+                  <span style="color:#334155">{{ iface }}</span>
                   <span>
-                    <span style="color:#4ade80">↓ {{ io.rx_kbps }} KB/s</span>
-                    <span style="color:#60a5fa;margin-left:8px">↑ {{ io.tx_kbps }} KB/s</span>
+                    <span style="color:#4ade80">↓ {{ io.rx_kbps }}</span>
+                    <span style="color:#64748b"> / </span>
+                    <span style="color:#60a5fa">↑ {{ io.tx_kbps }} KB/s</span>
                   </span>
                 </div>
               </div>
 
-              <!-- 公网 IP + 硬件指纹 -->
-              <div style="display:flex;justify-content:space-between;font-size:11px;color:#475569;border-top:1px solid #2d3148;padding-top:8px;margin-top:4px">
-                <span>🌐 {{ a.metrics.network?.public || a.metrics.network?.eth || '-' }}</span>
-                <span>🔑 {{ a.metrics.hardware?.hw_fingerprint || '-' }}</span>
-              </div>
-
-              <!-- 上报时间 -->
-              <div style="font-size:11px;color:#334155;margin-top:6px;text-align:right">
-                上报: {{ a.metrics.timestamp ? new Date(a.metrics.timestamp).toLocaleString('zh-CN') : '' }}
+              <!-- 底部：IP + 更新时间 -->
+              <div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid #1e2240">
+                <span style="font-size:11px;color:#334155">
+                  {{ a.metrics.hardware?.cpu_model?.split(' ').slice(0,3).join(' ') || a.os_type }}
+                </span>
+                <span style="font-size:10px;color:#2d3a4a">
+                  {{ a.metrics.timestamp ? new Date(a.metrics.timestamp).toLocaleTimeString('zh-CN') : '' }}
+                </span>
               </div>
             </div>
           </div>
