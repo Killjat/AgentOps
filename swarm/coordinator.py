@@ -62,6 +62,16 @@ async def run_swarm(req: SwarmTaskRequest, owner: str = "") -> SwarmTask:
                 cmd = await generate_command(subtask.instruction, os_type=os_type)
                 subtask.command = cmd
 
+            # 检测命令是否被截断（末尾有未闭合的引号、反斜杠或管道）
+            cmd_stripped = cmd.strip()
+            if cmd_stripped.endswith(('\\', '|', '&&', '||', ';', '"', "'")):
+                logger.warning(f"[swarm] 命令疑似截断，重新生成: {cmd_stripped[-50:]}")
+                from llm import generate_command
+                agent = state.agents.get(agent_id)
+                os_type = str(agent.os_type) if agent else "Linux"
+                cmd = await generate_command(subtask.instruction, os_type=os_type)
+                subtask.command = cmd
+
             result = await _ws_call(agent_id, {
                 "type": "exec",
                 "task_id": subtask.subtask_id,
@@ -94,15 +104,15 @@ def _get_agents_info(agent_ids: List[str], state) -> List[dict]:
     result = []
     for aid in agent_ids:
         agent = state.agents.get(aid)
-        if agent:
+        if agent and agent.status == "online":
             result.append({
                 "agent_id": aid,
                 "os_type": agent.os_type,
                 "hostname": (agent.metrics or {}).get("os_info", {}).get("hostname", ""),
                 "status": agent.status,
             })
-        else:
-            result.append({"agent_id": aid, "os_type": "unknown", "status": "unknown"})
+        elif agent:
+            logger.info(f"[swarm] 跳过离线 Agent: {aid} (status={agent.status})")
     return result
 
 

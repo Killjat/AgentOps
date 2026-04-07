@@ -38,6 +38,9 @@ PLAN_PROMPT = """你是一个多 Agent 任务调度专家。
 - 重要：每个子任务必须是独立完整的，不能依赖其他子任务的输出结果
 - 每个子任务的 instruction 必须是可以一步完成的操作，例如"用curl抓取URL并用grep提取标题"而不是分成"抓取"和"解析"两步
 - 如果任务需要抓取并解析数据，必须在一条指令中完成，例如：curl抓取后用grep/sed/awk直接提取所需内容
+- 只能给 status 为 online 的 Agent 分配任务，offline 的 Agent 不得出现在 subtasks 中
+- Android 设备只能执行 shell 命令（如 curl、ping、nslookup），不能执行任何 UI 操作（如打开浏览器、点击按钮）
+- 生成的 shell 命令必须完整，不能截断，命令长度没有限制
 """
 
 
@@ -59,7 +62,7 @@ async def plan_swarm_task(task: SwarmTask, agents_info: List[Dict], context: str
         ) + context_section}
     ]
 
-    raw = await chat(messages, max_tokens=1000)
+    raw = await chat(messages, max_tokens=2000)
 
     # 提取 JSON
     try:
