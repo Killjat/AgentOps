@@ -78,6 +78,7 @@ class AgentWebSocket(private val context: Context, private val onStatus: (String
                         updateStatus("已连接")
                         reconnectDelay = 2000L
                         sendRegisterInfo(ws, agentId)
+                        startMetricsPush(ws)
                     }
 
                     override fun onMessage(ws: WebSocket, text: String) {
@@ -201,8 +202,32 @@ class AgentWebSocket(private val context: Context, private val onStatus: (String
     fun disconnect() {
         isConnecting = false
         reconnectJob?.cancel()
+        metricsJob?.cancel()
         webSocket?.close(1000, "manual")
         webSocket = null
+    }
+
+    private var metricsJob: Job? = null
+
+    private fun startMetricsPush(ws: WebSocket) {
+        metricsJob?.cancel()
+        metricsJob = scope.launch(Dispatchers.Default) {
+            val agentId = AgentConfig.getAgentId(context)
+            while (true) {
+                delay(30_000L)
+                try {
+                    val metrics = DeviceInfo.getMetrics(context)
+                    ws.send(JSONObject().apply {
+                        put("type", "metrics_push")
+                        put("agent_id", agentId)
+                        put("metrics", metrics)
+                    }.toString())
+                } catch (e: Exception) {
+                    Log.w(TAG, "metrics push failed: ${e.message}")
+                    break
+                }
+            }
+        }
     }
 
     private fun discoverTools(): org.json.JSONArray {
