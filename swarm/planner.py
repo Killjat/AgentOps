@@ -39,7 +39,7 @@ PLAN_PROMPT = """你是一个多 Agent 任务调度专家。
 - 每个子任务的 instruction 必须是可以一步完成的操作，例如"用curl抓取URL并用grep提取标题"而不是分成"抓取"和"解析"两步
 - 如果任务需要抓取并解析数据，必须在一条指令中完成，例如：curl抓取后用grep/sed/awk直接提取所需内容
 - 只能给 status 为 online 的 Agent 分配任务，offline 的 Agent 不得出现在 subtasks 中
-- Android 设备只能执行 shell 命令（如 curl、ping、nslookup），不能执行任何 UI 操作（如打开浏览器、点击按钮）
+- Android 设备运行在 Termux 环境，只能执行 shell 命令，可用工具包括：curl、wget、ping、nslookup、traceroute、getprop、cat /proc/*、df、ps、ss、ip addr 等；不能执行任何 UI 操作，不能打开浏览器，不能访问需要 root 权限的路径
 - 生成的 shell 命令必须完整，不能截断，命令长度没有限制
 """
 
