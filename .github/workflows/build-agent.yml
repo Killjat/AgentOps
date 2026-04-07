@@ -16,7 +16,7 @@ jobs:
             output: cyberagent-linux
           - os: macos-latest
             name: macos
-            output: cyberagent-macos
+            output: cyberagent-mac
           - os: windows-latest
             name: windows
             output: cyberagent-windows.exe
@@ -31,8 +31,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install pyinstaller websockets
+        run: pip install pyinstaller websockets
 
       - name: Build (Linux/macOS)
         if: matrix.os != 'windows-latest'
@@ -90,8 +89,48 @@ jobs:
           name: cyberagent-android
           path: agent/android/app/build/outputs/apk/release/cyberagent.apk
 
+  package-usb:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Assemble USB package
+        run: |
+          mkdir -p usb_package/bin
+
+          # 复制启动脚本
+          cp usb_agent/launch.sh usb_package/
+          cp usb_agent/launch.bat usb_package/
+          cp usb_agent/README.md usb_package/
+          chmod +x usb_package/launch.sh
+
+          # 复制各平台二进制
+          [ -f dist/cyberagent-linux/cyberagent-linux ]       && cp dist/cyberagent-linux/cyberagent-linux       usb_package/bin/
+          [ -f dist/cyberagent-mac/cyberagent-mac ]           && cp dist/cyberagent-mac/cyberagent-mac           usb_package/bin/
+          [ -f "dist/cyberagent-windows.exe/cyberagent-windows.exe" ] && cp "dist/cyberagent-windows.exe/cyberagent-windows.exe" usb_package/bin/
+
+          chmod +x usb_package/bin/cyberagent-linux usb_package/bin/cyberagent-mac 2>/dev/null || true
+
+          echo "📦 USB package contents:"
+          find usb_package -type f | sort
+
+          # 打包 zip
+          zip -r usb_agent.zip usb_package/
+
+      - name: Upload USB package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: usb_agent
+          path: usb_agent.zip
+
   release:
-    needs: [build, build-android]
+    needs: [build, build-android, package-usb]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -104,5 +143,6 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/**/*
+          files: |
+            dist/**/*
           generate_release_notes: true
