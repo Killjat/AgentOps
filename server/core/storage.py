@@ -140,8 +140,12 @@ def _load_persistent_data():
         try:
             if "host" in data:
                 logger.warning(f"[加载] Agent {agent_id} 使用旧数据格式，需要迁移")
-            from models import AgentInfo
-            agents[agent_id] = AgentInfo(**data)
+            from models import AgentInfo, ConnectionType, AgentStatus
+            agent = AgentInfo(**data)
+            # 服务器重启后，WebSocket 连接全部断开，agent_push 类型必须重置为 offline
+            if agent.connection_type == ConnectionType.AGENT_PUSH:
+                agent.status = AgentStatus.OFFLINE
+            agents[agent_id] = agent
             logger.info(f"[加载] 成功加载 agent: {agent_id}")
         except Exception as e:
             logger.error(f"[加载] 加载 agent {agent_id} 失败: {e}")
