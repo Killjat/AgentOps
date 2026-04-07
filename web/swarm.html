@@ -299,6 +299,9 @@ const { createApp, ref, nextTick, onMounted } = Vue
 createApp({
   setup() {
     const API = ''
+    const token = localStorage.getItem('cyber_token') || ''
+    const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {}
+
     const agents = ref([])
     const selectedIds = ref([])
     const messages = ref([])
@@ -316,8 +319,12 @@ createApp({
 
     async function loadAgents() {
       try {
-        const r = await fetch(`${API}/agents`)
-        if (r.ok) agents.value = await r.json()
+        const r = await fetch(`${API}/agents`, { headers: authHeader })
+        if (r.status === 401) { location.href = '/?redirect=/swarm-ui'; return }
+        if (r.ok) {
+          const all = await r.json()
+          agents.value = all.filter(a => a.status === 'online')
+        }
       } catch(e) {}
     }
 
@@ -388,7 +395,7 @@ createApp({
       try {
         const r = await fetch(`${API}/swarm/tasks`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeader },
           body: JSON.stringify({ goal, agent_ids: selectedIds.value, timeout: 300 })
         })
 
@@ -427,6 +434,7 @@ createApp({
     }
 
     onMounted(() => {
+      if (!token) { location.href = '/?redirect=/swarm-ui'; return }
       loadAgents()
       setInterval(loadAgents, 15000)
     })

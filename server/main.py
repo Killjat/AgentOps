@@ -20,6 +20,7 @@ if _env_file.exists():
 import sys
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "swarm"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -112,7 +113,7 @@ if WEB_DIR.exists():
             "Pragma": "no-cache"
         })
 
-    @app.get("/swarm", include_in_schema=False)
+    @app.get("/swarm-ui", include_in_schema=False)
     async def serve_swarm():
         content = (WEB_DIR / "swarm.html").read_text()
         return HTMLResponse(content=content, headers={

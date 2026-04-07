@@ -53,10 +53,19 @@ async def run_swarm(req: SwarmTaskRequest, owner: str = "") -> SwarmTask:
     # 3. 执行
     async def dispatch(agent_id: str, subtask: SubTask) -> tuple:
         try:
+            # 如果没有预生成的命令，用 LLM 把自然语言指令转成 shell 命令
+            cmd = subtask.command
+            if not cmd:
+                from llm import generate_command
+                agent = state.agents.get(agent_id)
+                os_type = str(agent.os_type) if agent else "Linux"
+                cmd = await generate_command(subtask.instruction, os_type=os_type)
+                subtask.command = cmd
+
             result = await _ws_call(agent_id, {
                 "type": "exec",
                 "task_id": subtask.subtask_id,
-                "command": subtask.command or subtask.instruction,
+                "command": cmd,
                 "timeout": 120,
             }, timeout=180)
             return result.get("success", False), result.get("output", ""), result.get("error", "")
@@ -66,8 +75,8 @@ async def run_swarm(req: SwarmTaskRequest, owner: str = "") -> SwarmTask:
     executor = SwarmExecutor(dispatch_fn=dispatch)
     task = await executor.run(task)
 
-    # 4. 生成摘要
-    task.summary = _summarize(task)
+    # 4. 生成 AI 汇报
+    task.summary = await _ai_report(task)
     task.completed_at = datetime.now().isoformat()
     logger.info(f"[swarm:{swarm_task_id}] 完成，状态: {task.status}")
     return task
@@ -108,3 +117,44 @@ def _summarize(task: SwarmTask) -> str:
             preview = (st.output or "")[:100]
             lines.append(f"   输出: {preview}{'...' if len(st.output or '') > 100 else ''}")
     return "\n".join(lines)
+
+
+async def _ai_report(task: SwarmTask) -> str:
+    """用 LLM 生成任务执行汇报"""
+    from llm import chat
+
+    # 构建执行结果摘要给 LLM
+    results = []
+    for st in task.subtasks:
+        status_str = {"success": "成功", "failed": "失败", "skipped": "跳过"}.get(st.status, st.status)
+        result_str = f"- Agent: {st.agent_id}\n  指令: {st.instruction}"
+        if st.command and st.command != st.instruction:
+            result_str += f"\n  执行命令: {st.command}"
+        result_str += f"\n  状态: {status_str}"
+        if st.output:
+            result_str += f"\n  输出:\n{st.output[:2000]}"
+        if st.error:
+            result_str += f"\n  错误: {st.error}"
+        results.append(result_str)
+
+    prompt = f"""你是一个运维专家，请对以下多 Agent 协作任务的执行结果进行汇报分析。
+
+用户目标：{task.goal}
+整体状态：{task.status}
+
+各子任务执行结果：
+{chr(10).join(results)}
+
+请用简洁清晰的中文生成一份执行汇报，要求：
+1. 首先直接列出用户想要的核心数据/结果（如新闻标题列表、IP地址、端口列表等），不要省略
+2. 简要说明任务完成情况
+3. 如有失败，分析原因
+4. 如有必要，给出后续建议
+
+重要：用户最关心的是实际结果数据，请优先完整展示，不要用"输出内容符合预期"等模糊描述代替真实数据。"""
+
+    try:
+        return await chat([{"role": "user", "content": prompt}], max_tokens=800)
+    except Exception as e:
+        logger.error(f"AI 汇报生成失败: {e}")
+        return _summarize(task)
