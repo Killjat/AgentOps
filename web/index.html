@@ -228,9 +228,102 @@
           </div>
         </div>
 
-        <!-- 部署演示 -->
-        <div v-if="landingDemo==='deploy'">
+        <!-- Android Ping 演示 -->
+        <div v-if="landingDemo==='android_ping'">
           <div style="padding:20px 24px;border-bottom:1px solid #2d3148;display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">📱</span>
+            <span style="font-weight:600">Android 移动端测速 — 真实案例</span>
+            <span style="margin-left:auto;font-size:11px;color:#4ade80;background:#14532d33;padding:2px 8px;border-radius:10px">✅ 实测成功</span>
+          </div>
+          <div style="padding:24px">
+            <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:16px">
+              <span style="background:#7c6af7;color:#fff;border-radius:6px;padding:3px 8px;font-size:11px;white-space:nowrap;margin-top:2px">用户目标</span>
+              <div style="font-size:14px;color:#e2e8f0;line-height:1.5">两台 Android 手机同时 ping www.baidu.com，对比移动端真实网络延迟</div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:16px">
+              <span style="background:#1a2a3e;color:#7c6af7;border-radius:6px;padding:3px 8px;font-size:11px;white-space:nowrap;margin-top:2px">AI 规划</span>
+              <div style="font-size:12px;color:#94a3b8;line-height:1.6">两台手机并行执行 <code style="color:#38bdf8;background:#0f1117;padding:1px 5px;border-radius:3px">ping -c 5 www.baidu.com</code>，从真实用户网络采集延迟数据</div>
+            </div>
+            <div style="background:#0f1117;border-radius:8px;padding:14px;margin-bottom:16px">
+              <div style="font-size:11px;color:#475569;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">并行执行结果</div>
+              <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #1e2235">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                  <span style="font-size:14px">📱</span>
+                  <span style="font-size:12px;font-weight:500;color:#e2e8f0">华为 NAM-AL00（家庭 WiFi）</span>
+                  <span style="font-size:11px;color:#4ade80">✅ 成功</span>
+                </div>
+                <code style="font-size:11px;color:#38bdf8;display:block;line-height:1.8">5 packets transmitted, 5 received, 0% packet loss<br>rtt min/avg/max = 11.9/30.2/38.7 ms</code>
+              </div>
+              <div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                  <span style="font-size:14px">📱</span>
+                  <span style="font-size:12px;font-weight:500;color:#e2e8f0">荣耀 ALI-AN00（公司网络）</span>
+                  <span style="font-size:11px;color:#4ade80">✅ 成功</span>
+                </div>
+                <code style="font-size:11px;color:#38bdf8;display:block;line-height:1.8">5 packets transmitted, 5 received, 0% packet loss<br>rtt min/avg/max = 12.0/21.8/34.0 ms</code>
+              </div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:10px">
+              <span style="background:#1a2a3e;color:#7c6af7;border-radius:6px;padding:3px 8px;font-size:11px;white-space:nowrap;margin-top:2px">价值洞察</span>
+              <div style="font-size:12px;color:#94a3b8;line-height:1.7">两台手机均 0% 丢包，但公司网络平均延迟 <span style="color:#4ade80">21.8ms</span> 优于家庭 WiFi 的 <span style="color:#fbbf24">30.2ms</span>。这是服务器节点无法模拟的真实用户体验数据——移动端 Agent 天然具备真实 IP、真实运营商、真实网络路径，是网络质量众测的理想节点。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Android DNS 演示 -->
+        <div v-if="landingDemo==='android_dns'">
+          <div style="padding:20px 24px;border-bottom:1px solid #2d3148;display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">🔍</span>
+            <span style="font-weight:600">CDN 调度差异分析 — 真实案例</span>
+            <span style="margin-left:auto;font-size:11px;color:#4ade80;background:#14532d33;padding:2px 8px;border-radius:10px">✅ 实测成功</span>
+          </div>
+          <div style="padding:24px">
+            <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:16px">
+              <span style="background:#7c6af7;color:#fff;border-radius:6px;padding:3px 8px;font-size:11px;white-space:nowrap;margin-top:2px">用户目标</span>
+              <div style="font-size:14px;color:#e2e8f0;line-height:1.5">两台手机分别查询 baidu.com、taobao.com、douyin.com 解析到的 IP，对比不同网络下 CDN 调度差异</div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:16px">
+              <span style="background:#1a2a3e;color:#7c6af7;border-radius:6px;padding:3px 8px;font-size:11px;white-space:nowrap;margin-top:2px">AI 规划</span>
+              <div style="font-size:12px;color:#94a3b8;line-height:1.6">两台手机并行执行 curl 探测，获取各域名实际连接的 CDN 边缘节点 IP</div>
+            </div>
+            <div style="background:#0f1117;border-radius:8px;padding:14px;margin-bottom:16px">
+              <div style="font-size:11px;color:#475569;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px">DNS 解析对比结果</div>
+              <table style="width:100%;border-collapse:collapse;font-size:12px">
+                <tr style="color:#475569;border-bottom:1px solid #1e2235">
+                  <td style="padding:6px 8px">域名</td>
+                  <td style="padding:6px 8px">📱 华为（家庭WiFi）</td>
+                  <td style="padding:6px 8px">📱 荣耀（公司网络）</td>
+                  <td style="padding:6px 8px">差异</td>
+                </tr>
+                <tr style="border-bottom:1px solid #1e2235">
+                  <td style="padding:6px 8px;color:#e2e8f0">baidu.com</td>
+                  <td style="padding:6px 8px;color:#38bdf8">111.63.65.247</td>
+                  <td style="padding:6px 8px;color:#38bdf8">111.63.65.247</td>
+                  <td style="padding:6px 8px;color:#94a3b8">相同</td>
+                </tr>
+                <tr style="border-bottom:1px solid #1e2235">
+                  <td style="padding:6px 8px;color:#e2e8f0">taobao.com</td>
+                  <td style="padding:6px 8px;color:#38bdf8">2408:4001:f00::87</td>
+                  <td style="padding:6px 8px;color:#fbbf24">2408:4001:f10::6f</td>
+                  <td style="padding:6px 8px;color:#f87171">不同节点 ⚡</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 8px;color:#e2e8f0">douyin.com</td>
+                  <td style="padding:6px 8px;color:#38bdf8">122.14.229.58</td>
+                  <td style="padding:6px 8px;color:#38bdf8">122.14.229.58</td>
+                  <td style="padding:6px 8px;color:#94a3b8">相同</td>
+                </tr>
+              </table>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:10px">
+              <span style="background:#1a2a3e;color:#7c6af7;border-radius:6px;padding:3px 8px;font-size:11px;white-space:nowrap;margin-top:2px">价值洞察</span>
+              <div style="font-size:12px;color:#94a3b8;line-height:1.7">淘宝 CDN 对两个网络调度到了不同的 IPv6 节点（<span style="color:#fbbf24">f00::87 vs f10::6f</span>），这正是大型 CDN 的精细化调度策略。传统监控从固定服务器发探针，永远看不到这种差异。多台移动端 Agent 分布在真实用户网络，才能还原 CDN 的真实调度行为，为网络优化提供第一手数据。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 部署演示 -->
+        <div v-if="landingDemo==='deploy'">          <div style="padding:20px 24px;border-bottom:1px solid #2d3148;display:flex;align-items:center;gap:10px">
             <span style="font-size:18px">🚀</span>
             <span style="font-weight:600">智能应用部署 — 真实流程</span>
           </div>
@@ -1380,6 +1473,8 @@ createApp({
     const landingCaps = [
       { id: 'nlp',     icon: '⚡', title: '自然语言执行任务',   desc: '用中文描述需求，AI 自动生成命令并执行，支持连续对话和结果分析' },
       { id: 'multi',   icon: '🌐', title: '多 Agent 并行协同', desc: '同时向多台机器下发任务，16 台机器 16 个真实 IP，结果自动汇总' },
+      { id: 'android_ping', icon: '📱', title: 'Android 移动端测速', desc: '两台手机从真实用户网络并行 ping 目标，获取移动端真实延迟，服务器节点无法替代' },
+      { id: 'android_dns',  icon: '🔍', title: 'CDN 调度差异分析',   desc: '不同网络的手机查询同一域名，揭示 CDN 对不同运营商的差异化调度策略' },
       { id: 'deploy',  icon: '🚀', title: '智能应用部署',       desc: '填入 GitHub 地址，AI 自动分析项目类型、安装依赖、启动并验证' },
       { id: 'monitor', icon: '📊', title: '实时监控',           desc: 'CPU、内存、磁盘、网络实时采集，硬件指纹唯一标识设备' },
       { id: 'ws',      icon: '🔗', title: 'WebSocket 反向连接', desc: 'Agent 主动连控制端，内网机器无需开放端口，断线自动重连' },
