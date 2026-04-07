@@ -72,7 +72,14 @@ async def plan_swarm_task(task: SwarmTask, agents_info: List[Dict], context: str
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
-        data = json.loads(raw.strip())
+        raw = raw.strip()
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            # LLM 有时在 JSON 字符串里生成未转义的反斜杠，尝试修复
+            import re
+            fixed = re.sub(r'(?<!\\)\\(?!["\\/bfnrtu])', r'\\\\', raw)
+            data = json.loads(fixed)
     except Exception as e:
         task.plan = f"计划解析失败: {e}\n原始输出: {raw[:200]}"
         return task
