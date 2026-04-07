@@ -231,6 +231,14 @@ async def ws_agent_endpoint(websocket: WebSocket, agent_id: str):
                     if agent_id in agents:
                         agents[agent_id].last_seen = datetime.now().isoformat()
 
+                elif msg_type == "metrics_push":
+                    metrics = msg.get("metrics", {})
+                    if metrics and agent_id in agents:
+                        agents[agent_id].metrics = metrics
+                        agents[agent_id].last_seen = datetime.now().isoformat()
+                        agents[agent_id].status = AgentStatus.ONLINE
+                        _save_agents()
+
                 elif task_id and task_id in _ws_pending.get(agent_id, {}):
                     fut = _ws_pending[agent_id].pop(task_id)
                     if not fut.done():

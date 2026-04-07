@@ -205,6 +205,24 @@ class BaseAgent(abc.ABC):
                         "os_info": self.get_os_info(),
                     }))
 
+                    # 定时上报指标（每 30 秒）
+                    async def metrics_loop():
+                        while True:
+                            await asyncio.sleep(30)
+                            try:
+                                metrics = await asyncio.get_event_loop().run_in_executor(
+                                    None, self.collect_metrics
+                                )
+                                await ws.send(json.dumps({
+                                    "type": "metrics_push",
+                                    "agent_id": self.agent_id,
+                                    "metrics": metrics,
+                                }))
+                            except Exception:
+                                break  # ws 断了就退出，外层会重连
+
+                    asyncio.ensure_future(metrics_loop())
+
                     # 消息循环 — 每条消息独立 task，不阻塞后续消息
                     async for raw in ws:
                         try:
