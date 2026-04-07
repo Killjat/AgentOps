@@ -70,7 +70,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnStop.setOnClickListener {
-            stopService(Intent(this, AgentService::class.java))
+            // 发送主动断开指令，Service 收到后停止重连
+            val intent = Intent(this, AgentService::class.java).apply {
+                action = AgentService.ACTION_DISCONNECT
+            }
+            startService(intent)
             setStatus(false)
         }
 
@@ -101,8 +105,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        // APP 退到后台，静默断开，不更新 UI 状态
-        stopService(Intent(this, AgentService::class.java))
+        // APP 退到后台，Service 继续运行，不停止
     }
 
     override fun onDestroy() {
