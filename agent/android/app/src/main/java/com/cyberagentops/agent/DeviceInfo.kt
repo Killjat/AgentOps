@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
-import android.os.Debug
 import android.os.StatFs
 import android.os.SystemClock
 import android.provider.Settings
@@ -61,25 +60,31 @@ object DeviceInfo {
     }
 
     private fun getCpuUsage(): Double {
-        // Android 9+ 限制普通 app 读取 /proc/stat，改用进程级 CPU 时间估算
+        // 优先用 top 命令获取系统级 CPU 使用率
         return try {
-            val t1 = Debug.threadCpuTimeNanos()
-            val r1 = SystemClock.elapsedRealtimeNanos()
-            SystemClock.sleep(300)
-            val t2 = Debug.threadCpuTimeNanos()
-            val r2 = SystemClock.elapsedRealtimeNanos()
-            val cpuTime = t2 - t1
-            val realTime = r2 - r1
-            if (realTime <= 0) return -1.0
-            // 用 /proc/stat 尝试，失败则返回进程级估算
-            val stat = readCpuStat()
-            if (stat.size >= 4) {
-                val idle = stat[3]
-                val total = stat.sum()
-                if (total > 0) return Math.round(100.0 * (1 - idle.toDouble() / total) * 10) / 10.0
+            val result = CommandExecutor.exec("top -n 1 -b 2>/dev/null | grep -E '^[0-9]+%cpu'", 5)
+            if (result.success && result.output.isNotBlank()) {
+                // 格式: 800%cpu  20%user  720%idle ...
+                val idleMatch = Regex("(\\d+)%idle").find(result.output)
+                val totalMatch = Regex("(\\d+)%cpu").find(result.output)
+                if (idleMatch != null && totalMatch != null) {
+                    val idle = idleMatch.groupValues[1].toDouble()
+                    val total = totalMatch.groupValues[1].toDouble()
+                    if (total > 0) return Math.round((100.0 - idle / total * 100) * 10) / 10.0
+                }
             }
-            // fallback: 进程 CPU 占用率（仅本进程，不代表全局）
-            Math.round(cpuTime.toDouble() / realTime * 100 * 10) / 10.0
+            // fallback: /proc/stat
+            val stat1 = readCpuStat()
+            if (stat1.size >= 4) {
+                SystemClock.sleep(300)
+                val stat2 = readCpuStat()
+                if (stat2.size >= 4) {
+                    val idle = stat2[3] - stat1[3]
+                    val total = stat2.sum() - stat1.sum()
+                    if (total > 0) return Math.round(100.0 * (1 - idle.toDouble() / total) * 10) / 10.0
+                }
+            }
+            -1.0
         } catch (e: Exception) { -1.0 }
     }
 
