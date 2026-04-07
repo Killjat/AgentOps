@@ -1,14 +1,18 @@
 package com.cyberagentops.agent
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.view.WindowManager
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
@@ -90,7 +94,11 @@ class MainActivity : AppCompatActivity() {
         }
         
         LocalBroadcastManager.getInstance(this)
-            .registerReceiver(statusReceiver, IntentFilter("com.cyberagent.STATUS_UPDATE"))    }
+            .registerReceiver(statusReceiver, IntentFilter("com.cyberagent.STATUS_UPDATE"))
+
+        // 首次启动引导：请求忽略电池优化
+        checkBatteryOptimization()
+    }
 
     override fun onResume() {
         super.onResume()
@@ -156,6 +164,38 @@ class MainActivity : AppCompatActivity() {
             tvStatus.text = "OFFLINE"
             tvStatus.setTextColor(Color.parseColor("#475569"))
             statusDot.setBackgroundColor(Color.parseColor("#475569"))
+        }
+    }
+
+    private fun checkBatteryOptimization() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val prefs = getSharedPreferences("cyberagent", Context.MODE_PRIVATE)
+        val shown = prefs.getBoolean("battery_guide_shown", false)
+        if (shown && pm.isIgnoringBatteryOptimizations(packageName)) return
+
+        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+            AlertDialog.Builder(this)
+                .setTitle("⚡ 需要后台运行权限")
+                .setMessage("为确保息屏后保持连接，请允许 CyberAgent 忽略电池优化。\n\n点击「去设置」→ 找到 CyberAgent → 选择「不受限制」")
+                .setPositiveButton("去设置") { _, _ ->
+                    prefs.edit().putBoolean("battery_guide_shown", true).apply()
+                    try {
+                        // 直接请求忽略电池优化
+                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        // 部分厂商不支持，跳转到通用电池设置
+                        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    }
+                }
+                .setNegativeButton("稍后") { _, _ ->
+                    prefs.edit().putBoolean("battery_guide_shown", true).apply()
+                }
+                .setCancelable(false)
+                .show()
         }
     }
 }
