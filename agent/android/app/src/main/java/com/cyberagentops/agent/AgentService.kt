@@ -10,6 +10,7 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import kotlinx.coroutines.*
 
 class AgentService : Service() {
 
@@ -17,6 +18,8 @@ class AgentService : Service() {
     private val CHANNEL_ID = "agent_channel"
     private val NOTIF_ID = 1
     private var wakeLock: PowerManager.WakeLock? = null
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var isStopped = false
 
     override fun onCreate() {
         super.onCreate()
@@ -53,10 +56,21 @@ class AgentService : Service() {
         }
         agentWs?.disconnect()
         agentWs?.connect()
+
+        // 每60秒检查一次连接状态，断了就重连
+        scope.launch {
+            while (true) {
+                delay(60_000L)
+                if (!isStopped) agentWs?.reconnectIfNeeded()
+            }
+        }
+
         return START_STICKY  // 系统杀死后自动重启
     }
 
     override fun onDestroy() {
+        isStopped = true
+        scope.cancel()
         agentWs?.disconnect()
         wakeLock?.release()
         super.onDestroy()

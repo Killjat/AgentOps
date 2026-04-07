@@ -75,6 +75,7 @@ class AgentWebSocket(private val context: Context, private val onStatus: (String
                 webSocket = client.newWebSocket(request, object : WebSocketListener() {
                     override fun onOpen(ws: WebSocket, response: Response) {
                         Log.i(TAG, "WS Open, sending register...")
+                        webSocket = ws
                         updateStatus("已连接")
                         reconnectDelay = 2000L
                         sendRegisterInfo(ws, agentId)
@@ -87,12 +88,14 @@ class AgentWebSocket(private val context: Context, private val onStatus: (String
 
                     override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
                         Log.w(TAG, "连接失败: ${t.message}")
+                        webSocket = null
                         if (isStopped) return
                         updateStatus("重连中...")
                         scheduleReconnect()
                     }
 
                     override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                        webSocket = null
                         if (isStopped) return
                         scheduleReconnect()
                     }
@@ -133,6 +136,7 @@ class AgentWebSocket(private val context: Context, private val onStatus: (String
     }
 
     private fun scheduleReconnect() {
+        isConnecting = false  // 重置状态，确保 connect() 不被跳过
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             delay(reconnectDelay)
@@ -200,11 +204,20 @@ class AgentWebSocket(private val context: Context, private val onStatus: (String
     }
 
     fun disconnect() {
+        isStopped = true
         isConnecting = false
         reconnectJob?.cancel()
         metricsJob?.cancel()
         webSocket?.close(1000, "manual")
         webSocket = null
+    }
+
+    fun reconnectIfNeeded() {
+        if (!isStopped && !isConnecting && webSocket == null) {
+            Log.i(TAG, "检测到断线，强制重连")
+            reconnectDelay = 2000L
+            connect()
+        }
     }
 
     private var metricsJob: Job? = null
