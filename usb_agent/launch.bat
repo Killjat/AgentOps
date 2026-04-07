@@ -2,8 +2,17 @@
 :: CyberAgentOps USB Launcher - Windows
 :: 插入 U 盘后双击运行，自动连接到控制服务器
 
-set SERVER_URL=https://april-outermost-undefeatedly.ngrok-free.dev
 set SCRIPT_DIR=%~dp0
+
+:: 从 config.txt 读取服务器地址
+set SERVER_URL=
+for /f "tokens=2 delims==" %%A in ('findstr /b "SERVER_URL=" "%SCRIPT_DIR%config.txt" 2^>nul') do set SERVER_URL=%%A
+
+if "%SERVER_URL%"=="" (
+    echo 未配置服务器地址，请编辑 config.txt
+    pause
+    exit /b 1
+)
 
 echo CyberAgentOps Agent 启动中...
 echo 服务器: %SERVER_URL%

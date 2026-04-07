@@ -1,0 +1,4 @@
+# CyberAgentOps 配置文件
+# 修改下面的地址为你的控制服务器地址
+
+SERVER_URL=https://april-outermost-undefeatedly.ngrok-free.dev
