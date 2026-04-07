@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from models import AppDeployRequest, AppDeployResult, AppDeployStatus, ChatRequest
 from core.state import agents, app_deploys, servers
-from core.storage import _append_deploy_log, _save_app_deploys
+from core.storage import _append_deploy_log, _save_app_deploys, _save_agents
 from routers.auth import _check_owner, _check_perm, _get_caller, _is_admin
 from routers.agents import _agent_exec, _get_agent, _ssh_kwargs, _ws_call
 import llm as LLM
@@ -219,6 +219,11 @@ async def scan_agent_apps(agent_id: str, authorization: str = Header(default="")
                                 "port": port_info["port"], "status": "listening"})
 
         tools = agent_data.get("tools", [])
+
+        # 持久化 tools 到 agent metrics
+        if tools and info.metrics:
+            info.metrics["tools"] = tools
+            _save_agents()
 
         return {"agent_id": agent_id, "hostname": agent_data.get("hostname", ""),
                 "discovered": discovered, "count": len(discovered),
