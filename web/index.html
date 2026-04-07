@@ -147,7 +147,7 @@
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
 
         <div v-for="cap in landingCaps" :key="cap.id"
-             @click="landingDemo=cap.id"
+             @click="landingDemo=cap.id; $nextTick(()=>{ const el=document.getElementById('landing-demo'); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}) })"
              :style="landingDemo===cap.id ? 'border-color:#7c6af7;background:#1e1a3e' : ''"
              style="background:#1a1d27;border:1px solid #2d3148;border-radius:12px;padding:22px;cursor:pointer;transition:all .2s">
           <div style="font-size:26px;margin-bottom:10px">{{cap.icon}}</div>
@@ -160,7 +160,7 @@
     </div>
 
     <!-- 演示区 -->
-    <div v-if="landingDemo" style="max-width:900px;margin:0 auto;padding:0 24px 80px">
+    <div v-if="landingDemo" id="landing-demo" style="max-width:900px;margin:0 auto;padding:0 24px 80px">
       <div style="background:#1a1d27;border:1px solid #2d3148;border-radius:14px;overflow:hidden">
 
         <!-- NLP 演示 -->
