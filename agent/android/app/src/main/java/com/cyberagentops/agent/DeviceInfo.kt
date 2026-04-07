@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.Debug
 import android.os.StatFs
 import android.os.SystemClock
 import android.provider.Settings
@@ -60,16 +61,25 @@ object DeviceInfo {
     }
 
     private fun getCpuUsage(): Double {
+        // Android 9+ 限制普通 app 读取 /proc/stat，改用进程级 CPU 时间估算
         return try {
-            val stat1 = readCpuStat()
-            if (stat1.isEmpty()) return -1.0
-            SystemClock.sleep(200)
-            val stat2 = readCpuStat()
-            if (stat2.isEmpty()) return -1.0
-            val idle = stat2[3] - stat1[3]
-            val total = stat2.sum() - stat1.sum()
-            if (total <= 0L) -1.0
-            else Math.round(100.0 * (1 - idle.toDouble() / total) * 10) / 10.0
+            val t1 = Debug.threadCpuTimeNanos()
+            val r1 = SystemClock.elapsedRealtimeNanos()
+            SystemClock.sleep(300)
+            val t2 = Debug.threadCpuTimeNanos()
+            val r2 = SystemClock.elapsedRealtimeNanos()
+            val cpuTime = t2 - t1
+            val realTime = r2 - r1
+            if (realTime <= 0) return -1.0
+            // 用 /proc/stat 尝试，失败则返回进程级估算
+            val stat = readCpuStat()
+            if (stat.size >= 4) {
+                val idle = stat[3]
+                val total = stat.sum()
+                if (total > 0) return Math.round(100.0 * (1 - idle.toDouble() / total) * 10) / 10.0
+            }
+            // fallback: 进程 CPU 占用率（仅本进程，不代表全局）
+            Math.round(cpuTime.toDouble() / realTime * 100 * 10) / 10.0
         } catch (e: Exception) { -1.0 }
     }
 
