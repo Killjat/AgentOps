@@ -148,6 +148,23 @@ class AgentWebSocket(private val context: Context, private val onStatus: (String
 
             when (type) {
                 "ping" -> ws.send(JSONObject().apply { put("type", "pong") }.toString())
+
+                "exec" -> {
+                    val command = json.optString("command")
+                    val timeout = json.optInt("timeout", 60)
+                    scope.launch(Dispatchers.Default) {
+                        val result = CommandExecutor.exec(command, timeout)
+                        ws.send(JSONObject().apply {
+                            put("type", "result")
+                            put("task_id", taskId)
+                            put("success", result.success)
+                            put("output", result.output)
+                            put("error", result.error)
+                            put("done", true)
+                        }.toString())
+                    }
+                }
+
                 "metrics" -> {
                     scope.launch(Dispatchers.Default) {
                         val metrics = DeviceInfo.getMetrics(context)
