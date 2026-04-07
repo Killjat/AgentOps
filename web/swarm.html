@@ -253,6 +253,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
               </div>
               <!-- 汇总 -->
               <div v-if="msg.summary" style="margin-top:10px;font-size:13px;color:#94a3b8;white-space:pre-wrap;line-height:1.7">{{ msg.summary }}</div>
+              <!-- 导出按钮 -->
+              <div v-if="msg.summary" style="display:flex;gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid #2d3148">
+                <span style="font-size:11px;color:#475569;align-self:center">导出报告：</span>
+                <button @click="exportReport(msg, 'md')" style="background:#1e2240;border:1px solid #2d3148;color:#94a3b8;border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer">📄 MD</button>
+                <button @click="exportReport(msg, 'pdf')" style="background:#1e2240;border:1px solid #2d3148;color:#94a3b8;border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer">📑 PDF</button>
+                <button @click="exportReport(msg, 'doc')" style="background:#1e2240;border:1px solid #2d3148;color:#94a3b8;border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer">📝 DOC</button>
+              </div>
             </div>
 
             <!-- 打字中 -->
@@ -286,7 +293,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             {{ loading ? '⏳' : '↑' }}
           </button>
         </div>
-        <div class="input-hint">Enter 发送 · Shift+Enter 换行 · 已选 {{ selectedIds.length }} 个 Agent</div>
+        <div class="input-hint">Enter 发送 · Shift+Enter 换行 · 已选 {{ selectedIds.length }} 个 Agent
+          <span v-if="lastTaskSummary" style="margin-left:12px;color:#7c6af7;cursor:pointer" @click="lastTaskSummary='';messages=[]">✕ 清除上下文，开始新任务</span>
+          <span v-if="lastTaskSummary" style="margin-left:8px;font-size:11px;color:#475569">（当前为追问模式）</span>
+        </div>
       </div>
 
     </div>
@@ -309,6 +319,7 @@ createApp({
     const loading = ref(false)
     const msgList = ref(null)
     const inputEl = ref(null)
+    const lastTaskSummary = ref('')  // 上一次任务的 AI 汇报，用于追问
 
     const examples = [
       '检查所有机器的磁盘使用情况',
@@ -396,7 +407,12 @@ createApp({
         const r = await fetch(`${API}/swarm/tasks`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeader },
-          body: JSON.stringify({ goal, agent_ids: selectedIds.value, timeout: 300 })
+          body: JSON.stringify({
+            goal,
+            agent_ids: selectedIds.value,
+            timeout: 300,
+            context: lastTaskSummary.value || undefined  // 有上一次结果就带上
+          })
         })
 
         // 移除打字动画
@@ -411,6 +427,8 @@ createApp({
           })
         } else {
           const task = await r.json()
+          // 保存本次结果供追问使用
+          if (task.summary) lastTaskSummary.value = task.summary
           messages.value.push({
             role: 'system', type: 'plan',
             status: task.status,
@@ -433,6 +451,69 @@ createApp({
       await scrollBottom()
     }
 
+    function exportReport(msg, format) {
+      const title = `Swarm任务报告_${new Date().toLocaleDateString('zh-CN').replace(/\//g,'-')}`
+      const date = new Date().toLocaleString('zh-CN')
+
+      // 构建 Markdown 内容
+      let md = `# Swarm 多 Agent 任务报告\n\n`
+      md += `**生成时间：** ${date}\n\n`
+      md += `## 任务目标\n\n${msg.plan || ''}\n\n`
+      md += `## 执行计划\n\n`
+      if (msg.subtasks?.length) {
+        msg.subtasks.forEach(st => {
+          const icon = {success:'✅',failed:'❌',skipped:'⏭️',pending:'⏳'}[st.status] || '•'
+          md += `### ${icon} ${st.agent_id}\n\n`
+          md += `**指令：** ${st.instruction}\n\n`
+          if (st.command && st.command !== st.instruction) md += `**命令：** \`${st.command}\`\n\n`
+          if (st.output) md += `**输出：**\n\`\`\`\n${st.output}\n\`\`\`\n\n`
+          if (st.error) md += `**错误：** ${st.error}\n\n`
+        })
+      }
+      md += `## AI 分析报告\n\n${msg.summary || ''}\n`
+
+      if (format === 'md') {
+        const blob = new Blob([md], { type: 'text/markdown' })
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = `${title}.md`
+        a.click()
+
+      } else if (format === 'pdf') {
+        const win = window.open('', '_blank')
+        win.document.write(`<!DOCTYPE html><html><head>
+          <meta charset="UTF-8">
+          <title>${title}</title>
+          <style>
+            body{font-family:Arial,sans-serif;max-width:800px;margin:40px auto;color:#333;line-height:1.7}
+            h1{color:#5b4fcf}h2{color:#444;border-bottom:1px solid #eee;padding-bottom:6px}
+            h3{color:#555}pre{background:#f5f5f5;padding:12px;border-radius:4px;overflow-x:auto;font-size:12px}
+            code{background:#f0f0f0;padding:2px 5px;border-radius:3px}
+          </style>
+        </head><body>
+          <h1>Swarm 多 Agent 任务报告</h1>
+          <p><strong>生成时间：</strong>${date}</p>
+          <div>${md.replace(/\n/g,'<br>').replace(/```([\s\S]*?)```/g,'<pre>$1</pre>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/^## (.+)/gm,'<h2>$1</h2>').replace(/^### (.+)/gm,'<h3>$1</h3>').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')}</div>
+        </body></html>`)
+        win.document.close()
+        setTimeout(() => { win.print(); win.close() }, 500)
+
+      } else if (format === 'doc') {
+        const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">
+          <head><meta charset="UTF-8"><title>${title}</title></head>
+          <body style="font-family:Arial;font-size:12pt">
+            <h1 style="color:#5b4fcf">Swarm 多 Agent 任务报告</h1>
+            <p><b>生成时间：</b>${date}</p>
+            ${md.replace(/\n/g,'<br>').replace(/```([\s\S]*?)```/g,'<pre style="background:#f5f5f5;padding:8px">$1</pre>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/^## (.+)/gm,'<h2>$1</h2>').replace(/^### (.+)/gm,'<h3>$1</h3>').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')}
+          </body></html>`
+        const blob = new Blob([html], { type: 'application/msword' })
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = `${title}.doc`
+        a.click()
+      }
+    }
+
     onMounted(() => {
       if (!token) { location.href = '/?redirect=/swarm-ui'; return }
       loadAgents()
@@ -442,7 +523,7 @@ createApp({
     return {
       agents, selectedIds, messages, input, loading, msgList, inputEl,
       examples, loadAgents, toggleAgent, send, autoResize, useExample,
-      statusLabel, subtaskIcon,
+      statusLabel, subtaskIcon, lastTaskSummary, exportReport,
     }
   }
 }).mount('#app')

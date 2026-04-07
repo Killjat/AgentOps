@@ -41,7 +41,7 @@ async def run_swarm(req: SwarmTaskRequest, owner: str = "") -> SwarmTask:
 
     # 2. LLM 规划
     logger.info(f"[swarm:{swarm_task_id}] 开始规划，目标: {req.goal}")
-    task = await plan_swarm_task(task, agents_info)
+    task = await plan_swarm_task(task, agents_info, context=req.context or "")
 
     if not task.subtasks:
         task.status = SwarmTaskStatus.FAILED

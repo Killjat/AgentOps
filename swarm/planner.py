@@ -41,18 +41,22 @@ PLAN_PROMPT = """你是一个多 Agent 任务调度专家。
 """
 
 
-async def plan_swarm_task(task: SwarmTask, agents_info: List[Dict]) -> SwarmTask:
+async def plan_swarm_task(task: SwarmTask, agents_info: List[Dict], context: str = "") -> SwarmTask:
     """调用 LLM 生成执行计划，填充 subtasks"""
     agents_desc = "\n".join(
         f"- {a['agent_id']}: {a.get('os_type', 'unknown')} | {a.get('hostname', '')} | {a.get('status', 'online')}"
         for a in agents_info
     )
 
+    context_section = ""
+    if context:
+        context_section = f"\n\n上一次任务的执行结果（供参考）：\n{context}\n"
+
     messages = [
         {"role": "user", "content": PLAN_PROMPT.format(
             goal=task.goal,
             agents_info=agents_desc,
-        )}
+        ) + context_section}
     ]
 
     raw = await chat(messages, max_tokens=1000)

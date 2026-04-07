@@ -55,6 +55,7 @@ class SwarmTaskRequest(BaseModel):
     agent_ids: List[str]       # 指定参与的 Agent
     auto_confirm: bool = True
     timeout: int = 300
+    context: Optional[str] = None  # 追问时带上上一次任务的摘要
 
 
 class SwarmTaskResponse(BaseModel):
