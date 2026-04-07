@@ -40,11 +40,16 @@ jobs:
           pyinstaller \
             --onefile \
             --name ${{ matrix.output }} \
-            --add-data "*.py:." \
+            --paths . \
             --hidden-import asyncio \
             --hidden-import websockets \
             --hidden-import websockets.legacy \
             --hidden-import websockets.legacy.client \
+            --hidden-import mac \
+            --hidden-import linux \
+            --hidden-import windows \
+            --hidden-import android \
+            --hidden-import base \
             agent.py
 
       - name: Build (Windows)
@@ -54,11 +59,16 @@ jobs:
           pyinstaller `
             --onefile `
             --name ${{ matrix.output }} `
-            --add-data "*.py;." `
+            --paths . `
             --hidden-import asyncio `
             --hidden-import websockets `
             --hidden-import websockets.legacy `
             --hidden-import websockets.legacy.client `
+            --hidden-import mac `
+            --hidden-import linux `
+            --hidden-import windows `
+            --hidden-import android `
+            --hidden-import base `
             agent.py
 
       - name: Upload artifact
