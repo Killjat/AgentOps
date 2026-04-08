@@ -32,6 +32,7 @@ from routers import auth, servers, agents, tasks, deploy
 from routers.agents import ws_agent_endpoint
 from routers import sync as sync_router
 import swarm.router as swarm_router
+import netcheck.router as netcheck_router
 
 WEB_DIR = Path(__file__).parent.parent / "web"
 
@@ -80,6 +81,7 @@ app.include_router(tasks.router)
 app.include_router(deploy.router)
 app.include_router(swarm_router.router)
 app.include_router(sync_router.router)
+app.include_router(netcheck_router.router)
 
 # ── WebSocket ────────────────────────────────────────────────────
 app.add_api_websocket_route("/ws/agent/{agent_id}", ws_agent_endpoint)
@@ -124,6 +126,14 @@ if WEB_DIR.exists():
     @app.get("/swarm-ui", include_in_schema=False)
     async def serve_swarm():
         content = (WEB_DIR / "swarm.html").read_text()
+        return HTMLResponse(content=content, headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache"
+        })
+
+    @app.get("/netcheck-ui", include_in_schema=False)
+    async def serve_netcheck():
+        content = (WEB_DIR / "netcheck.html").read_text()
         return HTMLResponse(content=content, headers={
             "Cache-Control": "no-store, no-cache, must-revalidate",
             "Pragma": "no-cache"
