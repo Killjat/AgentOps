@@ -8,11 +8,16 @@ object AgentConfig {
     private const val KEY_SERVER_URL = "server_url"
     private const val KEY_AGENT_ID = "agent_id"
 
+    // 服务器地址内置，用户无需配置
+    private const val DEFAULT_SERVER_URL = "https://47.111.28.162:8443"
+
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun getServerUrl(context: Context): String =
-        prefs(context).getString(KEY_SERVER_URL, "") ?: ""
+    fun getServerUrl(context: Context): String {
+        val saved = prefs(context).getString(KEY_SERVER_URL, "") ?: ""
+        return if (saved.isEmpty()) DEFAULT_SERVER_URL else saved
+    }
 
     fun getAgentId(context: Context): String {
         val prefs = prefs(context)
