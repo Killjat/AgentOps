@@ -4,16 +4,23 @@ import sqlite3
 import logging
 from pathlib import Path
 from typing import List, Optional
+from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
 DB_FILE = Path(__file__).parent.parent.parent / "cyberagentops.db"
 
 
-def get_conn() -> sqlite3.Connection:
+@contextmanager
+def get_conn():
+    """上下文管理器，确保连接自动关闭"""
     conn = sqlite3.connect(str(DB_FILE))
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def init_db():
@@ -27,12 +34,11 @@ def init_db():
             plan          TEXT,
             status        TEXT,
             summary       TEXT,
-            agent_ids     TEXT,  -- JSON array
-            subtasks      TEXT,  -- JSON array
+            agent_ids     TEXT,
+            subtasks      TEXT,
             created_at    TEXT,
             completed_at  TEXT
         );
-
         CREATE INDEX IF NOT EXISTS idx_swarm_created ON swarm_tasks(created_at DESC);
         """)
     logger.info(f"[DB] 初始化完成: {DB_FILE}")
