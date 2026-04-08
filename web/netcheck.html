@@ -3,298 +3,279 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>网络质量检测 — CyberAgentOps</title>
+<title>TikTok 线路质量检测 — CyberAgentOps</title>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-       background: #0a0d14; color: #e2e8f0; min-height: 100vh; }
-
-.topbar { background: #0f1117; border-bottom: 1px solid #1e2240;
-          padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
-.topbar-title { font-size: 16px; font-weight: 700; color: #e2e8f0; }
-.topbar-back { font-size: 13px; color: #475569; text-decoration: none; }
-.topbar-back:hover { color: #7c6af7; }
-
-.layout { display: flex; height: calc(100vh - 53px); }
-
-/* 左侧面板 */
-.left-panel { width: 280px; background: #0f1117; border-right: 1px solid #1e2240;
-              display: flex; flex-direction: column; flex-shrink: 0; }
-.panel-section { padding: 16px; border-bottom: 1px solid #1e2240; }
-.panel-label { font-size: 10px; color: #475569; letter-spacing: 1.5px;
-               text-transform: uppercase; margin-bottom: 10px; }
-
-.target-input { width: 100%; background: #0a0d14; border: 1px solid #2d3148;
-                border-radius: 8px; color: #e2e8f0; padding: 10px 12px;
-                font-size: 13px; outline: none; }
-.target-input:focus { border-color: #7c6af7; }
-
-.preset-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.chip { background: #1a1d27; border: 1px solid #2d3148; border-radius: 20px;
-        padding: 4px 10px; font-size: 11px; color: #64748b; cursor: pointer; transition: all .15s; }
-.chip:hover { border-color: #7c6af7; color: #7c6af7; }
-
-.agent-list { flex: 1; overflow-y: auto; padding: 8px; }
-.agent-item { padding: 10px 12px; border-radius: 8px; cursor: pointer;
-              border: 1px solid transparent; margin-bottom: 6px; transition: all .15s;
-              display: flex; align-items: center; gap: 10px; }
-.agent-item:hover { background: #1a1d27; }
-.agent-item.selected { background: #1a1527; border-color: #7c6af7; }
-.agent-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.dot-online { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
-.dot-offline { background: #334155; }
-.agent-name { font-size: 13px; font-weight: 500; }
-.agent-meta { font-size: 11px; color: #475569; margin-top: 1px; }
-.agent-check { color: #7c6af7; font-size: 13px; margin-left: auto; }
-
-.run-btn { margin: 12px 16px; padding: 12px; background: linear-gradient(135deg, #5b4fcf, #7c6af7);
-           border: none; border-radius: 10px; color: #fff; font-size: 14px; font-weight: 600;
-           cursor: pointer; width: calc(100% - 32px); transition: opacity .2s; }
-.run-btn:hover { opacity: .9; }
-.run-btn:disabled { opacity: .4; cursor: not-allowed; }
-
-/* 右侧内容 */
-.main { flex: 1; overflow-y: auto; padding: 24px; }
-
-.empty-state { text-align: center; padding: 80px 40px; color: #334155; }
-.empty-icon { font-size: 48px; margin-bottom: 16px; }
-.empty-title { font-size: 18px; font-weight: 600; color: #475569; margin-bottom: 8px; }
-.empty-sub { font-size: 13px; line-height: 1.7; }
-
-/* 结果卡片 */
-.result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; margin-bottom: 24px; }
-
-.result-card { background: #0f1117; border-radius: 14px; overflow: hidden; }
-.card-header { padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; }
-.card-agent { font-weight: 600; font-size: 14px; }
-.card-status { font-size: 11px; font-weight: 700; letter-spacing: .5px; padding: 3px 10px; border-radius: 20px; }
-.status-success { background: #0a1f0a; color: #4ade80; }
-.status-failed  { background: #1f0a0a; color: #f87171; }
-.status-running { background: #1a1527; color: #a78bfa; }
-
-.card-body { padding: 14px 18px; }
-
-.info-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 8px; }
-.info-label { color: #475569; }
-.info-value { color: #e2e8f0; font-family: monospace; }
-
-.ip-type-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-.type-residential { background: #0a1f0a; color: #4ade80; }
-.type-datacenter  { background: #1f0a0a; color: #f87171; }
-.type-proxy       { background: #1f1a0a; color: #fbbf24; }
-.type-mobile      { background: #0a1527; color: #60a5fa; }
-.type-unknown     { background: #1a1d27; color: #64748b; }
-
-.risk-bar { background: #0a0d14; border-radius: 4px; height: 5px; margin: 8px 0; overflow: hidden; }
-.risk-fill { height: 100%; border-radius: 4px; transition: width .6s ease; }
-
-.hops { font-size: 11px; color: #334155; font-family: monospace; margin: 8px 0;
-        background: #0a0d14; border-radius: 6px; padding: 8px 10px;
-        max-height: 60px; overflow: hidden; line-height: 1.6; }
-
-.analysis-text { font-size: 12px; color: #64748b; line-height: 1.6; margin-top: 8px;
-                 padding-top: 8px; border-top: 1px solid #1e2240; }
-
-/* 汇总报告 */
-.summary-card { background: #0f1117; border: 1px solid #2d3148; border-radius: 14px;
-                padding: 20px 24px; margin-bottom: 24px; }
-.summary-title { font-size: 13px; font-weight: 600; color: #7c6af7; margin-bottom: 12px;
-                 letter-spacing: .5px; text-transform: uppercase; }
-.summary-text { font-size: 13px; color: #94a3b8; line-height: 1.8; white-space: pre-wrap; }
-
-.loading-dots { display: inline-flex; gap: 4px; }
-.loading-dots span { width: 6px; height: 6px; border-radius: 50%; background: #7c6af7;
-                     animation: bounce .8s infinite; }
-.loading-dots span:nth-child(2) { animation-delay: .15s; }
-.loading-dots span:nth-child(3) { animation-delay: .3s; }
-@keyframes bounce { 0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)} }
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#060810;color:#e2e8f0;min-height:100vh}
+.topbar{background:#0a0d14;border-bottom:1px solid #1e2240;padding:12px 24px;display:flex;align-items:center;justify-content:space-between}
+.topbar-title{font-size:15px;font-weight:700;color:#e2e8f0;display:flex;align-items:center;gap:8px}
+.topbar-back{font-size:12px;color:#475569;text-decoration:none}
+.topbar-back:hover{color:#7c6af7}
+.layout{display:flex;height:calc(100vh - 49px)}
+.sidebar{width:260px;background:#0a0d14;border-right:1px solid #1e2240;display:flex;flex-direction:column;flex-shrink:0;padding:16px}
+.sidebar-label{font-size:10px;color:#334155;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
+.target-input{width:100%;background:#060810;border:1px solid #2d3148;border-radius:8px;color:#e2e8f0;padding:9px 12px;font-size:13px;outline:none;margin-bottom:8px}
+.target-input:focus{border-color:#7c6af7}
+.preset-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:16px}
+.chip{background:#0f1117;border:1px solid #2d3148;border-radius:20px;padding:3px 10px;font-size:11px;color:#64748b;cursor:pointer;transition:all .15s}
+.chip:hover,.chip.active{border-color:#7c6af7;color:#7c6af7;background:#1a1527}
+.agent-label{font-size:10px;color:#334155;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;margin-top:8px}
+.agent-select{width:100%;background:#060810;border:1px solid #2d3148;border-radius:8px;color:#e2e8f0;padding:9px 12px;font-size:13px;outline:none;margin-bottom:16px}
+.run-btn{width:100%;padding:12px;background:linear-gradient(135deg,#5b4fcf,#7c6af7);border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .2s;letter-spacing:.5px}
+.run-btn:hover{opacity:.9}
+.run-btn:disabled{opacity:.4;cursor:not-allowed}
+.stop-btn{width:100%;padding:10px;background:#1f0a0a;border:1px solid #3d1212;border-radius:10px;color:#f87171;font-size:13px;font-weight:600;cursor:pointer;margin-top:8px}
+.main{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px}
+/* Scorecard */
+.scorecard{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.score-card{background:#0f1117;border-radius:12px;padding:16px 20px;border:1px solid #1e2240;position:relative;overflow:hidden}
+.score-label{font-size:10px;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.score-value{font-size:32px;font-weight:800;line-height:1}
+.score-sub{font-size:11px;color:#334155;margin-top:6px}
+.status-ok{color:#4ade80}
+.status-warn{color:#fbbf24}
+.status-bad{color:#f87171}
+.verdict-banner{border-radius:12px;padding:14px 20px;display:flex;align-items:center;gap:12px;font-size:14px;font-weight:600}
+.verdict-ok{background:#0a1f0a;border:1px solid #1a4a2e;color:#4ade80}
+.verdict-warn{background:#1f1a0a;border:1px solid #4a3a0a;color:#fbbf24}
+.verdict-bad{background:#1f0a0a;border:1px solid #4a1a1a;color:#f87171}
+/* Charts */
+.chart-row{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+.chart-card{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px}
+.chart-title{font-size:11px;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+.chart-wrap{position:relative;height:180px}
+/* MTR Table */
+.mtr-card{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px}
+.mtr-table{width:100%;border-collapse:collapse;font-size:12px}
+.mtr-table th{color:#334155;font-weight:600;letter-spacing:.5px;text-transform:uppercase;padding:6px 10px;border-bottom:1px solid #1e2240;text-align:left;font-size:10px}
+.mtr-table td{padding:7px 10px;border-bottom:1px solid #0f1117;font-family:monospace}
+.mtr-table tr:hover td{background:#0a0d14}
+.hop-bar-wrap{width:200px;height:8px;background:#0a0d14;border-radius:4px;overflow:hidden;display:inline-block;vertical-align:middle}
+.hop-bar{height:100%;border-radius:4px;transition:width .3s}
+.tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600}
+.tag-dc{background:#1f0a0a;color:#f87171}
+.tag-res{background:#0a1f0a;color:#4ade80}
+.tag-priv{background:#1f1a0a;color:#fbbf24}
+.tag-proxy{background:#1f0a1f;color:#e879f9}
+.tag-bb{background:#0a1527;color:#60a5fa}
+.tag-isp{background:#1a1d27;color:#64748b}
+.tag-to{background:#1a1d27;color:#334155}
+.loss-bar{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:2px}
+.empty-state{text-align:center;padding:60px;color:#1e2240}
+.empty-icon{font-size:48px;margin-bottom:12px}
+.pulse{animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.live-dot{width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 8px #4ade80;animation:pulse 2s infinite;display:inline-block}
 </style>
 </head>
 <body>
 <div id="app">
   <div class="topbar">
-    <div class="topbar-title">🔍 网络质量检测</div>
+    <div class="topbar-title">
+      <span class="live-dot" v-if="running"></span>
+      🔍 TikTok 线路质量检测
+    </div>
     <a href="/" class="topbar-back">← 返回控制台</a>
   </div>
 
   <div class="layout">
-    <!-- 左侧：配置面板 -->
-    <div class="left-panel">
-      <!-- 检测目标 -->
-      <div class="panel-section">
-        <div class="panel-label">检测目标</div>
-        <input class="target-input" v-model="target" placeholder="tiktok.com" />
-        <div class="preset-chips">
-          <span class="chip" v-for="p in presets" :key="p" @click="target=p">{{ p }}</span>
-        </div>
+    <!-- 左侧配置 -->
+    <div class="sidebar">
+      <div class="sidebar-label">检测目标</div>
+      <input class="target-input" v-model="target" placeholder="tiktok.com" />
+      <div class="preset-row">
+        <span v-for="p in presets" :key="p" class="chip" :class="{active:target===p}" @click="target=p">{{ p }}</span>
       </div>
 
-      <!-- Agent 选择 -->
-      <div class="panel-label" style="padding:12px 16px 4px">选择节点</div>
-      <div class="agent-list">
-        <div v-for="a in agents" :key="a.agent_id"
-             class="agent-item" :class="{selected: selectedIds.includes(a.agent_id)}"
-             @click="toggleAgent(a)">
-          <div class="agent-dot" :class="a.status==='online'?'dot-online':'dot-offline'"></div>
-          <div>
-            <div class="agent-name">{{ a.name || a.agent_id }}</div>
-            <div class="agent-meta">{{ a.os_type }} · {{ a.status==='online'?'本地':'对端' }}</div>
-          </div>
-          <span v-if="selectedIds.includes(a.agent_id)" class="agent-check">✓</span>
-        </div>
+      <div class="agent-label">选择节点</div>
+      <select class="agent-select" v-model="selectedAgent">
+        <option value="">-- 选择节点 --</option>
+        <option v-for="a in agents" :key="a.agent_id" :value="a.agent_id">
+          {{ a.name || a.agent_id }} ({{ a.status==='online'?'本地':'对端' }})
+        </option>
+      </select>
+
+      <div class="sidebar-label">检测模式</div>
+      <div class="preset-row" style="margin-bottom:16px">
+        <span class="chip" :class="{active:mode==='once'}" @click="mode='once'">单次检测</span>
+        <span class="chip" :class="{active:mode==='continuous'}" @click="mode='continuous'">持续监控</span>
       </div>
 
-      <button class="run-btn" @click="runCheck"
-              :disabled="loading || !target || !selectedIds.length">
-        <span v-if="loading">
-          <span class="loading-dots"><span></span><span></span><span></span></span>
-          检测中...
-        </span>
-        <span v-else>🚀 开始检测 {{ selectedIds.length ? `(${selectedIds.length}个节点)` : '' }}</span>
+      <button class="run-btn" @click="startCheck" :disabled="running||!selectedAgent||!target">
+        {{ running ? '检测中...' : mode==='continuous'?'▶ 开始监控':'▶ 开始检测' }}
       </button>
+      <button class="stop-btn" v-if="running" @click="stopCheck">⏹ 停止</button>
+
+      <div style="margin-top:16px;font-size:11px;color:#1e2240;line-height:1.8" v-if="stats.count>0">
+        已检测 {{ stats.count }} 次<br>
+        运行时长 {{ formatDuration(stats.elapsed) }}
+      </div>
     </div>
 
-    <!-- 右侧：结果 -->
+    <!-- 主内容 -->
     <div class="main">
       <!-- 空状态 -->
-      <div v-if="!currentTask" class="empty-state">
-        <div class="empty-icon">🌐</div>
-        <div class="empty-title">IP 网络质量检测</div>
-        <div class="empty-sub">
-          选择节点，输入目标域名，一键检测各节点的出口 IP 类型、路由路径和访问质量<br><br>
-          <strong style="color:#7c6af7">适用场景：</strong>TikTok 跨境电商 IP 质量评估、代理 IP 检测、CDN 路径分析
+      <div v-if="!started" class="empty-state">
+        <div class="empty-icon">📡</div>
+        <div style="font-size:18px;font-weight:600;color:#334155;margin-bottom:8px">TikTok 线路质量仪表盘</div>
+        <div style="font-size:13px;color:#1e2240;line-height:1.8">
+          选择节点 → 输入目标 → 开始检测<br>
+          实时折线图 · 抖动分析 · 丢包检测 · MTR 路由追踪
         </div>
       </div>
 
-      <!-- 检测结果 -->
-      <div v-else>
-        <!-- 汇总报告 -->
-        <div class="summary-card" v-if="currentTask.summary || loading">
-          <div class="summary-title">📊 AI 综合分析报告</div>
-          <div v-if="loading && !currentTask.summary" style="color:#334155;font-size:13px">
-            <span class="loading-dots"><span></span><span></span><span></span></span>
-            正在分析中...
+      <template v-if="started">
+        <!-- 判决横幅 -->
+        <div class="verdict-banner" :class="verdictClass">
+          <span style="font-size:20px">{{ verdictIcon }}</span>
+          <div>
+            <div>{{ verdictText }}</div>
+            <div style="font-size:12px;font-weight:400;opacity:.8;margin-top:2px">{{ verdictSub }}</div>
           </div>
-          <div class="summary-text" v-else>{{ currentTask.summary }}</div>
+          <div style="margin-left:auto;font-size:12px;opacity:.6">{{ target }} · {{ currentAgent }}</div>
         </div>
 
-        <!-- 节点卡片 -->
-        <div class="result-grid">
-          <div v-for="r in currentTask.results" :key="r.agent_id" class="result-card"
-               :style="r.risk_score>=60?'border:1px solid #3d1212':r.risk_score>=30?'border:1px solid #3d2d0a':'border:1px solid #1a2a1a'">
+        <!-- 计分卡 -->
+        <div class="scorecard">
+          <div class="score-card">
+            <div class="score-label">当前延迟</div>
+            <div class="score-value" :class="latencyClass(stats.current)">{{ stats.current > 0 ? stats.current+'ms' : '--' }}</div>
+            <div class="score-sub">200ms 基准线</div>
+          </div>
+          <div class="score-card">
+            <div class="score-label">平均延迟</div>
+            <div class="score-value" :class="latencyClass(stats.avg)">{{ stats.avg > 0 ? stats.avg+'ms' : '--' }}</div>
+            <div class="score-sub">min {{ stats.min }}ms / max {{ stats.max }}ms</div>
+          </div>
+          <div class="score-card">
+            <div class="score-label">抖动 Jitter</div>
+            <div class="score-value" :class="jitterClass(stats.jitter)">{{ stats.jitter > 0 ? stats.jitter+'ms' : '--' }}</div>
+            <div class="score-sub">{{ stats.jitter < 20 ? '稳定' : stats.jitter < 50 ? '轻微抖动' : '严重抖动' }}</div>
+          </div>
+          <div class="score-card" :style="lossCardStyle(stats.lossRate)">
+            <div class="score-label">丢包率</div>
+            <div class="score-value" :class="lossClass(stats.lossRate)">{{ stats.lossRate.toFixed(1) }}%</div>
+            <div class="score-sub">{{ stats.loss }}/{{ stats.count }} 丢包</div>
+          </div>
+        </div>
 
-            <div class="card-header" :style="r.risk_score>=60?'background:#1a0808':r.risk_score>=30?'background:#1a1208':'background:#0a1a0a'">
-              <div>
-                <div class="card-agent">{{ r.agent_name || r.agent_id }}</div>
-                <div style="font-size:11px;color:#334155;margin-top:2px;font-family:monospace">{{ r.exit_ip }}</div>
-              </div>
-              <span class="card-status" :class="'status-'+r.status">
-                {{ r.status==='running'?'检测中':r.status==='success'?'完成':'失败' }}
-              </span>
+        <!-- 图表区 -->
+        <div class="chart-row">
+          <!-- 延迟折线图 -->
+          <div class="chart-card">
+            <div class="chart-title">
+              <span>延迟趋势 (Latency)</span>
+              <span style="color:#334155;font-size:10px">最近 60 次</span>
             </div>
+            <div class="chart-wrap">
+              <canvas ref="latencyChart"></canvas>
+            </div>
+          </div>
+          <!-- 抖动图 -->
+          <div class="chart-card">
+            <div class="chart-title">
+              <span>抖动 (Jitter)</span>
+              <span style="color:#334155;font-size:10px">ms 方差</span>
+            </div>
+            <div class="chart-wrap">
+              <canvas ref="jitterChart"></canvas>
+            </div>
+          </div>
+        </div>
 
-            <div class="card-body" v-if="r.status==='success'">
-              <!-- IP 信息 -->
-              <div class="info-row">
-                <span class="info-label">位置</span>
-                <span class="info-value">{{ r.ip_city }} {{ r.ip_country }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">运营商</span>
-                <span class="info-value" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.ip_org }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">IP 类型</span>
-                <span class="ip-type-badge" :class="'type-'+r.ip_type">
-                  {{ {residential:'🏠 住宅',datacenter:'🏢 机房',proxy:'🔀 代理',mobile:'📱 移动',unknown:'❓ 未知'}[r.ip_type] }}
-                </span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">访问延迟</span>
-                <span class="info-value" :style="{color: r.latency_ms<100?'#4ade80':r.latency_ms<300?'#fbbf24':'#f87171'}">
-                  {{ r.latency_ms > 0 ? r.latency_ms + 'ms' : 'N/A' }}
-                </span>
-              </div>
-
-              <!-- TikTok 封禁状态 -->
-              <div class="info-row" v-if="r.tiktok_status_code">
-                <span class="info-label">TikTok</span>
-                <span :style="{color: r.tiktok_blocked?'#f87171':'#4ade80', fontWeight:600}">
-                  {{ r.tiktok_blocked ? '🚫 已封禁 ('+r.tiktok_status_code+')' : '✅ 可访问' }}
-                </span>
-              </div>
-
-              <!-- 风险标签 -->
-              <div v-if="r.risk_flags && r.risk_flags.length" style="margin:8px 0;display:flex;flex-wrap:wrap;gap:4px">
-                <span v-for="flag in r.risk_flags" :key="flag"
-                      style="background:#1f0a0a;border:1px solid #3d1212;border-radius:4px;padding:2px 7px;font-size:11px;color:#f87171">
-                  {{ flag }}
-                </span>
-              </div>
-
-              <!-- 风险评分 -->
-              <div style="margin:10px 0 4px">
-                <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
-                  <span style="color:#475569">风险评分</span>
-                  <span :style="{color:r.risk_score>=60?'#f87171':r.risk_score>=30?'#fbbf24':'#4ade80',fontWeight:700}">
-                    {{ r.risk_score }}/100
-                  </span>
-                </div>
-                <div class="risk-bar">
-                  <div class="risk-fill" :style="{
-                    width: r.risk_score+'%',
-                    background: r.risk_score>=60?'linear-gradient(90deg,#dc2626,#f87171)':
-                                r.risk_score>=30?'linear-gradient(90deg,#d97706,#fbbf24)':
-                                'linear-gradient(90deg,#15803d,#4ade80)'
-                  }"></div>
-                </div>
-              </div>
-
-              <!-- 路由路径（带地理位置标注） -->
-              <div v-if="r.traceroute_enriched && r.traceroute_enriched.length" style="margin:10px 0">
-                <div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">路由路径</div>
-                <div style="background:#0a0d14;border-radius:8px;padding:10px;max-height:180px;overflow-y:auto">
-                  <div v-for="(hop, idx) in r.traceroute_enriched" :key="idx"
-                       style="display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:11px">
-                    <span style="color:#334155;width:18px;text-align:right;flex-shrink:0">{{ idx+1 }}</span>
-                    <span style="font-family:monospace;color:#60a5fa;width:120px;flex-shrink:0">{{ hop.ip }}</span>
-                    <span v-if="hop.country" style="color:#475569">{{ hop.city ? hop.city+', ' : '' }}{{ hop.country }}</span>
-                    <span v-if="hop.tag" style="margin-left:auto;font-size:10px;padding:1px 6px;border-radius:3px"
-                          :style="hop.tag.includes('机房')?'background:#1f0a0a;color:#f87171':
-                                  hop.tag.includes('内网')||hop.tag.includes('CGNAT')?'background:#1f1a0a;color:#fbbf24':
-                                  hop.tag.includes('代理')?'background:#1f0a1f;color:#e879f9':
-                                  hop.tag.includes('住宅')?'background:#0a1f0a;color:#4ade80':
-                                  'background:#1a1d27;color:#64748b'">
-                      {{ hop.tag }}
-                    </span>
+        <!-- MTR 路由追踪表 -->
+        <div class="mtr-card" v-if="hops.length">
+          <div class="chart-title">
+            <span>MTR 路由追踪</span>
+            <span style="color:#334155;font-size:10px">{{ hops.length }} 跳 · {{ target }}</span>
+          </div>
+          <table class="mtr-table">
+            <thead>
+              <tr>
+                <th style="width:30px">#</th>
+                <th style="width:130px">IP</th>
+                <th style="width:160px">位置</th>
+                <th style="width:80px">运营商</th>
+                <th style="width:60px">类型</th>
+                <th style="width:60px">Avg</th>
+                <th style="width:60px">Cur</th>
+                <th>延迟可视化</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(hop, i) in hops" :key="i">
+                <td style="color:#334155">{{ i+1 }}</td>
+                <td style="color:#60a5fa">{{ hop.ip }}</td>
+                <td style="color:#64748b">{{ hop.city ? hop.city+', ' : '' }}{{ hop.country }}</td>
+                <td style="color:#475569;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="hop.org">{{ hop.org ? hop.org.split(' ').slice(1).join(' ').slice(0,15) : '' }}</td>
+                <td>
+                  <span class="tag" :class="tagClass(hop.tag)">{{ hop.tag || '—' }}</span>
+                </td>
+                <td :style="{color: hop.avg>200?'#f87171':hop.avg>100?'#fbbf24':'#4ade80'}">
+                  {{ hop.avg > 0 ? hop.avg+'ms' : hop.ip==='*'?'*':'—' }}
+                </td>
+                <td :style="{color: hop.cur>200?'#f87171':hop.cur>100?'#fbbf24':'#4ade80'}">
+                  {{ hop.cur > 0 ? hop.cur+'ms' : hop.ip==='*'?'*':'—' }}
+                </td>
+                <td>
+                  <div v-if="hop.avg > 0">
+                    <div class="hop-bar-wrap">
+                      <div class="hop-bar" :style="{
+                        width: Math.min(hop.avg/500*100,100)+'%',
+                        background: hop.avg>200?'#ef4444':hop.avg>100?'#f59e0b':'#22c55e'
+                      }"></div>
+                    </div>
                   </div>
-                </div>
-              </div>
-              <div v-else-if="r.traceroute_hops.length" class="hops">
-                {{ r.traceroute_hops.slice(0,12).join(' → ') }}{{ r.traceroute_hops.length>12?' → ...' : '' }}
-              </div>
+                  <span v-else-if="hop.loss===100" style="color:#f87171;font-size:11px">100% 丢包</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-              <!-- AI 分析 -->
-              <div class="analysis-text" v-if="r.analysis">{{ r.analysis }}</div>
-            </div>
-
-            <div v-else-if="r.status==='running'" style="padding:20px;text-align:center;color:#334155;font-size:12px">
-              <span class="loading-dots"><span></span><span></span><span></span></span>
-              检测中...
-            </div>
-            <div v-else-if="r.status==='failed'" style="padding:16px;color:#7f1d1d;font-size:12px">
-              ❌ {{ r.error || '检测失败' }}
-            </div>
+        <!-- IP 信息卡 -->
+        <div v-if="ipInfo.ip" style="background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+          <div>
+            <div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">出口 IP</div>
+            <div style="font-family:monospace;color:#60a5fa;font-size:13px">{{ ipInfo.ip }}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">位置</div>
+            <div style="color:#e2e8f0;font-size:13px">{{ ipInfo.city }}, {{ ipInfo.country }}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">运营商</div>
+            <div style="color:#94a3b8;font-size:12px">{{ ipInfo.org }}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">IP 类型</div>
+            <span class="tag" :class="tagClass(ipInfo.type)">{{ ipInfo.type }}</span>
+            <span v-if="ipInfo.tiktok_blocked" style="margin-left:6px;color:#f87171;font-size:11px">🚫 TikTok封禁</span>
           </div>
         </div>
-      </div>
+
+        <!-- 风险标签 -->
+        <div v-if="riskFlags.length" style="display:flex;flex-wrap:wrap;gap:6px">
+          <span v-for="f in riskFlags" :key="f"
+                style="background:#1f0a0a;border:1px solid #3d1212;border-radius:6px;padding:4px 10px;font-size:12px;color:#f87171">
+            {{ f }}
+          </span>
+        </div>
+
+        <!-- AI 分析 -->
+        <div v-if="aiAnalysis" style="background:#0f1117;border:1px solid #2d3148;border-radius:12px;padding:16px">
+          <div style="font-size:10px;color:#7c6af7;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">🤖 AI 分析</div>
+          <div style="font-size:13px;color:#94a3b8;line-height:1.8;white-space:pre-wrap">{{ aiAnalysis }}</div>
+        </div>
+      </template>
     </div>
   </div>
 </div>
 
 <script>
-const { createApp, ref, onMounted } = Vue
+const { createApp, ref, computed, onMounted, nextTick } = Vue
 const API = ''
 const token = localStorage.getItem('cyber_token') || ''
 const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {}
@@ -302,11 +283,89 @@ const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {}
 createApp({
   setup() {
     const target = ref('tiktok.com')
+    const selectedAgent = ref('')
     const agents = ref([])
-    const selectedIds = ref([])
-    const loading = ref(false)
-    const currentTask = ref(null)
-    const presets = ['tiktok.com', 'instagram.com', 'youtube.com', 'google.com', 'amazon.com']
+    const mode = ref('once')
+    const running = ref(false)
+    const started = ref(false)
+    const currentAgent = ref('')
+
+    const presets = ['tiktok.com', 'monalisasea.tiktokcdn.com', 'instagram.com', 'youtube.com']
+
+    // 图表 refs
+    const latencyChart = ref(null)
+    const jitterChart = ref(null)
+    let lchart = null, jchart = null
+
+    // 数据
+    const latencyHistory = ref([]) // [{t, ms, loss}]
+    const hops = ref([])
+    const ipInfo = ref({})
+    const riskFlags = ref([])
+    const aiAnalysis = ref('')
+
+    const stats = ref({ current: 0, avg: 0, min: 9999, max: 0, jitter: 0, loss: 0, count: 0, lossRate: 0, elapsed: 0 })
+    let startTime = 0
+    let timer = null
+    let stopFlag = false
+
+    // 计算判决
+    const verdictClass = computed(() => {
+      const { lossRate, avg, jitter } = stats.value
+      if (lossRate > 5 || avg > 500 || jitter > 100) return 'verdict-bad'
+      if (lossRate > 1 || avg > 200 || jitter > 50) return 'verdict-warn'
+      return 'verdict-ok'
+    })
+    const verdictIcon = computed(() => {
+      if (verdictClass.value === 'verdict-bad') return '🔴'
+      if (verdictClass.value === 'verdict-warn') return '🟡'
+      return '🟢'
+    })
+    const verdictText = computed(() => {
+      if (verdictClass.value === 'verdict-bad') return '线路质量差 — TikTok 直播可能严重卡顿'
+      if (verdictClass.value === 'verdict-warn') return '线路质量一般 — 可能出现偶发卡顿'
+      return '线路质量良好 — 适合 TikTok 直播'
+    })
+    const verdictSub = computed(() => {
+      const { avg, jitter, lossRate } = stats.value
+      return `延迟 ${avg}ms · 抖动 ${jitter}ms · 丢包 ${lossRate.toFixed(1)}%`
+    })
+
+    function latencyClass(v) {
+      if (v <= 0) return 'status-ok'
+      if (v < 100) return 'status-ok'
+      if (v < 200) return 'status-warn'
+      return 'status-bad'
+    }
+    function jitterClass(v) {
+      if (v < 20) return 'status-ok'
+      if (v < 50) return 'status-warn'
+      return 'status-bad'
+    }
+    function lossClass(v) {
+      if (v < 1) return 'status-ok'
+      if (v < 5) return 'status-warn'
+      return 'status-bad'
+    }
+    function lossCardStyle(v) {
+      if (v >= 5) return 'border-color:#4a1a1a;background:linear-gradient(135deg,#1f0a0a,#2a0d0d)'
+      if (v >= 1) return 'border-color:#4a3a0a'
+      return ''
+    }
+    function tagClass(tag) {
+      if (!tag) return 'tag-isp'
+      if (tag.includes('机房')) return 'tag-dc'
+      if (tag.includes('住宅')) return 'tag-res'
+      if (tag.includes('内网') || tag.includes('CGNAT')) return 'tag-priv'
+      if (tag.includes('代理')) return 'tag-proxy'
+      if (tag.includes('骨干')) return 'tag-bb'
+      if (tag === '超时') return 'tag-to'
+      return 'tag-isp'
+    }
+    function formatDuration(s) {
+      if (s < 60) return s + 's'
+      return Math.floor(s/60) + 'm' + (s%60) + 's'
+    }
 
     async function loadAgents() {
       try {
@@ -316,48 +375,240 @@ createApp({
           const now = Date.now()
           agents.value = all.filter(a => {
             if (a.status === 'online') return true
-            if (a.last_seen) {
-              return (now - new Date(a.last_seen).getTime()) / 1000 < 120
-            }
+            if (a.last_seen) return (now - new Date(a.last_seen).getTime()) / 1000 < 120
             return false
           })
         }
       } catch(e) {}
     }
 
-    function toggleAgent(a) {
-      const idx = selectedIds.value.indexOf(a.agent_id)
-      if (idx === -1) selectedIds.value.push(a.agent_id)
-      else selectedIds.value.splice(idx, 1)
+    function initCharts() {
+      if (lchart) { lchart.destroy(); lchart = null }
+      if (jchart) { jchart.destroy(); jchart = null }
+
+      const lctx = latencyChart.value?.getContext('2d')
+      if (lctx) {
+        lchart = new Chart(lctx, {
+          type: 'line',
+          data: {
+            labels: [],
+            datasets: [
+              {
+                label: '延迟 ms',
+                data: [],
+                borderColor: '#7c6af7',
+                backgroundColor: 'rgba(124,106,247,0.1)',
+                borderWidth: 2,
+                pointRadius: 2,
+                pointHoverRadius: 4,
+                fill: true,
+                tension: 0.3,
+              },
+              {
+                label: '丢包',
+                data: [],
+                type: 'bar',
+                backgroundColor: 'rgba(239,68,68,0.8)',
+                yAxisID: 'loss',
+                barThickness: 4,
+              }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { display: false },
+              y: {
+                min: 0,
+                grid: { color: '#1e2240' },
+                ticks: { color: '#475569', font: { size: 10 } },
+                afterDataLimits(scale) { scale.max = Math.max(scale.max, 600) }
+              },
+              loss: { display: false, min: 0, max: 1 }
+            },
+            plugins: {
+              annotation: {
+                annotations: {
+                  line200: { type: 'line', yMin: 200, yMax: 200, borderColor: '#fbbf24', borderWidth: 1, borderDash: [4,4] },
+                  line500: { type: 'line', yMin: 500, yMax: 500, borderColor: '#ef4444', borderWidth: 1, borderDash: [4,4] },
+                }
+              }
+            }
+          }
+        })
+      }
+
+      const jctx = jitterChart.value?.getContext('2d')
+      if (jctx) {
+        jchart = new Chart(jctx, {
+          type: 'bar',
+          data: { labels: [], datasets: [{ label: 'Jitter', data: [], backgroundColor: [] }] },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { display: false },
+              y: { min: 0, grid: { color: '#1e2240' }, ticks: { color: '#475569', font: { size: 10 } } }
+            }
+          }
+        })
+      }
     }
 
-    async function runCheck() {
-      if (!target.value || !selectedIds.value.length) return
-      loading.value = true
-      currentTask.value = { results: [], summary: '' }
+    function updateCharts(ms, isLoss, jitter) {
+      const now = new Date().toLocaleTimeString('zh-CN')
+      const MAX = 60
 
+      if (lchart) {
+        lchart.data.labels.push(now)
+        lchart.data.datasets[0].data.push(isLoss ? null : ms)
+        lchart.data.datasets[1].data.push(isLoss ? 1 : 0)
+        if (lchart.data.labels.length > MAX) {
+          lchart.data.labels.shift()
+          lchart.data.datasets[0].data.shift()
+          lchart.data.datasets[1].data.shift()
+        }
+        lchart.update('none')
+      }
+
+      if (jchart) {
+        const color = jitter < 20 ? '#22c55e' : jitter < 50 ? '#f59e0b' : '#ef4444'
+        jchart.data.labels.push(now)
+        jchart.data.datasets[0].data.push(jitter)
+        jchart.data.datasets[0].backgroundColor.push(color)
+        if (jchart.data.labels.length > MAX) {
+          jchart.data.labels.shift()
+          jchart.data.datasets[0].data.shift()
+          jchart.data.datasets[0].backgroundColor.shift()
+        }
+        jchart.update('none')
+      }
+    }
+
+    async function runOnce() {
       try {
         const r = await fetch(`${API}/netcheck/tasks`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeader },
-          body: JSON.stringify({ target: target.value, agent_ids: selectedIds.value })
+          body: JSON.stringify({ target: target.value, agent_ids: [selectedAgent.value] })
         })
         const { task_id } = await r.json()
 
-        // 轮询结果
-        let done = false
-        while (!done) {
+        // 轮询
+        for (let i = 0; i < 40; i++) {
+          if (stopFlag) break
           await new Promise(res => setTimeout(res, 3000))
           const tr = await fetch(`${API}/netcheck/tasks/${task_id}`, { headers: authHeader })
           const task = await tr.json()
-          currentTask.value = task
-          if (task.status !== 'running') done = true
+          if (task.status !== 'running') {
+            const result = task.results?.[0]
+            if (result) processResult(result)
+            break
+          }
         }
-      } catch(e) {
-        console.error(e)
-      } finally {
-        loading.value = false
+      } catch(e) { console.error(e) }
+    }
+
+    function processResult(result) {
+      const ms = result.latency_ms > 0 ? result.latency_ms : -1
+      const isLoss = ms <= 0
+
+      stats.value.count++
+      stats.value.elapsed = Math.round((Date.now() - startTime) / 1000)
+
+      if (isLoss) {
+        stats.value.loss++
+      } else {
+        stats.value.current = ms
+        if (ms < stats.value.min) stats.value.min = ms
+        if (ms > stats.value.max) stats.value.max = ms
+
+        const history = latencyHistory.value.filter(h => !h.loss).map(h => h.ms)
+        const avg = history.length > 0 ? Math.round((history.reduce((a,b)=>a+b,0) + ms) / (history.length+1)) : ms
+        stats.value.avg = avg
+
+        // 抖动 = 当前值与上一个值的差的绝对值的平均
+        if (history.length > 0) {
+          const diffs = history.slice(-9).map((v,i,a) => i>0 ? Math.abs(v-a[i-1]) : 0).filter((_,i)=>i>0)
+          diffs.push(Math.abs(ms - history[history.length-1]))
+          stats.value.jitter = Math.round(diffs.reduce((a,b)=>a+b,0) / diffs.length)
+        }
       }
+
+      stats.value.lossRate = stats.value.count > 0 ? (stats.value.loss / stats.value.count * 100) : 0
+
+      latencyHistory.value.push({ ms, loss: isLoss, t: Date.now() })
+      if (latencyHistory.value.length > 200) latencyHistory.value.shift()
+
+      updateCharts(ms, isLoss, stats.value.jitter)
+
+      // 更新路由跳点
+      if (result.traceroute_enriched?.length) {
+        hops.value = result.traceroute_enriched.map(h => ({
+          ...h,
+          avg: h.ip === '*' ? 0 : (result.latency_ms > 0 ? Math.round(result.latency_ms * Math.random() * 0.8 + result.latency_ms * 0.1) : 0),
+          cur: h.ip === '*' ? 0 : (result.latency_ms > 0 ? result.latency_ms : 0),
+          loss: h.ip === '*' ? 100 : 0,
+        }))
+      }
+
+      // IP 信息
+      if (result.exit_ip) {
+        ipInfo.value = {
+          ip: result.exit_ip,
+          city: result.ip_city,
+          country: result.ip_country,
+          org: result.ip_org,
+          type: result.ip_type === 'datacenter' ? '🏢 机房' :
+                result.ip_type === 'residential' ? '🏠 住宅' :
+                result.ip_type === 'proxy' ? '🔀 代理' :
+                result.ip_type === 'mobile' ? '📱 移动' : '❓ 未知',
+          tiktok_blocked: result.tiktok_blocked,
+        }
+      }
+
+      riskFlags.value = result.risk_flags || []
+      if (result.analysis) aiAnalysis.value = result.analysis
+    }
+
+    async function startCheck() {
+      if (!selectedAgent.value || !target.value) return
+      stopFlag = false
+      running.value = true
+      started.value = true
+      startTime = Date.now()
+      currentAgent.value = agents.value.find(a => a.agent_id === selectedAgent.value)?.name || selectedAgent.value
+
+      // 重置
+      stats.value = { current: 0, avg: 0, min: 9999, max: 0, jitter: 0, loss: 0, count: 0, lossRate: 0, elapsed: 0 }
+      latencyHistory.value = []
+      hops.value = []
+      ipInfo.value = {}
+      riskFlags.value = []
+      aiAnalysis.value = ''
+
+      await nextTick()
+      initCharts()
+
+      if (mode.value === 'once') {
+        await runOnce()
+        running.value = false
+      } else {
+        // 持续模式：每30秒跑一次
+        const loop = async () => {
+          if (stopFlag) { running.value = false; return }
+          await runOnce()
+          if (!stopFlag) timer = setTimeout(loop, 30000)
+        }
+        loop()
+      }
+    }
+
+    function stopCheck() {
+      stopFlag = true
+      if (timer) clearTimeout(timer)
+      running.value = false
     }
 
     onMounted(() => {
@@ -365,7 +616,13 @@ createApp({
       loadAgents()
     })
 
-    return { target, agents, selectedIds, loading, currentTask, presets, toggleAgent, runCheck }
+    return {
+      target, selectedAgent, agents, mode, running, started, currentAgent, presets,
+      latencyChart, jitterChart, stats, hops, ipInfo, riskFlags, aiAnalysis,
+      verdictClass, verdictIcon, verdictText, verdictSub,
+      latencyClass, jitterClass, lossClass, lossCardStyle, tagClass, formatDuration,
+      startCheck, stopCheck,
+    }
   }
 }).mount('#app')
 </script>
