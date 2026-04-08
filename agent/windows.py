@@ -156,13 +156,22 @@ class WindowsAgent(BaseAgent):
             if any(kw in command for kw in ["Get-", "Set-", "New-", "Remove-", "$"]):
                 cmd = ["powershell", "-Command", command]
             else:
-                cmd = ["cmd", "/c", command]
+                cmd = ["cmd", "/c", "chcp 65001 >nul 2>&1 &&", command]
 
             result = subprocess.run(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                timeout=timeout, encoding="utf-8", errors="replace"
+                timeout=timeout
             )
-            output = result.stdout or result.stderr
+            # 优先 utf-8，失败则 gbk，再失败用 replace
+            raw = result.stdout or result.stderr
+            for enc in ("utf-8", "gbk", "latin-1"):
+                try:
+                    output = raw.decode(enc)
+                    break
+                except Exception:
+                    continue
+            else:
+                output = raw.decode("utf-8", errors="replace")
             return {"success": result.returncode == 0, "output": output, "error": ""}
         except subprocess.TimeoutExpired:
             return {"success": False, "output": "", "error": f"超时（{timeout}s）"}
