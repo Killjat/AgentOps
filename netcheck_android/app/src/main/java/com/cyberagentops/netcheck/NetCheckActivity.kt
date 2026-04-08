@@ -113,7 +113,7 @@ class NetCheckActivity : AppCompatActivity() {
 
     private fun classifyOrg(org: String): String {
         val o = org.lowercase()
-        val dcKeywords = listOf("amazon","aws","google","microsoft","azure","alibaba","vultr","linode","digitalocean","arosscloud")
+        val dcKeywords = listOf("amazon","aws","google","microsoft","azure","alibaba","vultr","linode","digitalocean","arosscloud","cognetcloud","cognet","choopa","quadranet","psychz","hostwinds","buyvm","datacamp","m247","serverius","hetzner","ovh")
         val resKeywords = listOf("comcast","at&t","verizon","spectrum","china telecom","china unicom","china mobile","residential")
         return when {
             dcKeywords.any { o.contains(it) } -> "🏢 机房 IP（TikTok 高风险）"
@@ -123,11 +123,21 @@ class NetCheckActivity : AppCompatActivity() {
     }
 
     private fun runTraceroute(target: String): String {
-        return try {
-            val result = CommandExecutor.exec("traceroute -n -m 15 -w 2 $target 2>/dev/null", 40)
-            if (result.success && result.output.isNotBlank()) result.output.take(1500)
-            else "traceroute 不可用，尝试 ping 路径...\n" + CommandExecutor.exec("ping -c 3 $target", 15).output
-        } catch (e: Exception) { "路由追踪失败: ${e.message}" }
+        // Android 没有 traceroute，用多跳 ping 模拟路径
+        val sb = StringBuilder()
+        sb.append("路由追踪（TTL 递增 ping 模拟）:\n")
+        for (ttl in listOf(1, 2, 3, 5, 8, 10, 15)) {
+            val result = CommandExecutor.exec(
+                "ping -c 1 -t $ttl -W 2 $target 2>&1 | grep -E 'From|time='", 5
+            )
+            if (result.output.isNotBlank()) {
+                sb.append("TTL=$ttl: ${result.output.trim().take(80)}\n")
+            }
+        }
+        // 最终目标延迟
+        val final = CommandExecutor.exec("ping -c 2 -W 3 $target 2>&1 | tail -3", 10)
+        sb.append("\n目标: $final.output.trim().take(200)")
+        return sb.toString()
     }
 
     private fun measureLatency(target: String): Double {
