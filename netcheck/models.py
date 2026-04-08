@@ -27,24 +27,30 @@ class NodeResult(BaseModel):
     ip_city: str = ""
     ip_region: str = ""
     ip_country: str = ""
-    ip_org: str = ""       # ASN + 组织名
+    ip_org: str = ""
     ip_type: IPType = IPType.UNKNOWN
 
     # 路由路径
     traceroute_hops: List[str] = []
     traceroute_raw: str = ""
+    traceroute_enriched: List[Dict[str, Any]] = []  # 带地理位置和标签的跳点
 
     # 延迟
     latency_ms: float = -1
 
+    # 新增检测结果
+    risk_flags: List[str] = []          # 风险标签列表
+    tiktok_status_code: str = ""        # TikTok HTTP 状态码
+    tiktok_blocked: bool = False        # 是否被 TikTok 封禁
+
     # AI 分析
     path_quality: PathQuality = PathQuality.CLEAN
-    risk_score: int = 0        # 0-100，越高越危险
-    analysis: str = ""         # AI 分析结论
-    recommendation: str = ""   # 建议
+    risk_score: int = 0
+    analysis: str = ""
+    recommendation: str = ""
 
     error: str = ""
-    status: str = "pending"    # pending / running / success / failed
+    status: str = "pending"
 
 
 class CheckTask(BaseModel):

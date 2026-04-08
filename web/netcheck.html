@@ -217,6 +217,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                 </span>
               </div>
 
+              <!-- TikTok 封禁状态 -->
+              <div class="info-row" v-if="r.tiktok_status_code">
+                <span class="info-label">TikTok</span>
+                <span :style="{color: r.tiktok_blocked?'#f87171':'#4ade80', fontWeight:600}">
+                  {{ r.tiktok_blocked ? '🚫 已封禁 ('+r.tiktok_status_code+')' : '✅ 可访问' }}
+                </span>
+              </div>
+
+              <!-- 风险标签 -->
+              <div v-if="r.risk_flags && r.risk_flags.length" style="margin:8px 0;display:flex;flex-wrap:wrap;gap:4px">
+                <span v-for="flag in r.risk_flags" :key="flag"
+                      style="background:#1f0a0a;border:1px solid #3d1212;border-radius:4px;padding:2px 7px;font-size:11px;color:#f87171">
+                  {{ flag }}
+                </span>
+              </div>
+
               <!-- 风险评分 -->
               <div style="margin:10px 0 4px">
                 <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">
@@ -235,8 +251,27 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                 </div>
               </div>
 
-              <!-- 路由路径 -->
-              <div v-if="r.traceroute_hops.length" class="hops">
+              <!-- 路由路径（带地理位置标注） -->
+              <div v-if="r.traceroute_enriched && r.traceroute_enriched.length" style="margin:10px 0">
+                <div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">路由路径</div>
+                <div style="background:#0a0d14;border-radius:8px;padding:10px;max-height:180px;overflow-y:auto">
+                  <div v-for="(hop, idx) in r.traceroute_enriched" :key="idx"
+                       style="display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:11px">
+                    <span style="color:#334155;width:18px;text-align:right;flex-shrink:0">{{ idx+1 }}</span>
+                    <span style="font-family:monospace;color:#60a5fa;width:120px;flex-shrink:0">{{ hop.ip }}</span>
+                    <span v-if="hop.country" style="color:#475569">{{ hop.city ? hop.city+', ' : '' }}{{ hop.country }}</span>
+                    <span v-if="hop.tag" style="margin-left:auto;font-size:10px;padding:1px 6px;border-radius:3px"
+                          :style="hop.tag.includes('机房')?'background:#1f0a0a;color:#f87171':
+                                  hop.tag.includes('内网')||hop.tag.includes('CGNAT')?'background:#1f1a0a;color:#fbbf24':
+                                  hop.tag.includes('代理')?'background:#1f0a1f;color:#e879f9':
+                                  hop.tag.includes('住宅')?'background:#0a1f0a;color:#4ade80':
+                                  'background:#1a1d27;color:#64748b'">
+                      {{ hop.tag }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div v-else-if="r.traceroute_hops.length" class="hops">
                 {{ r.traceroute_hops.slice(0,12).join(' → ') }}{{ r.traceroute_hops.length>12?' → ...' : '' }}
               </div>
 

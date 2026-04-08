@@ -9,35 +9,46 @@ async def ai_analyze_node(result: NodeResult, target: str) -> NodeResult:
     """用 AI 分析单个节点的检测结果"""
     from llm import chat
 
-    prompt = f"""你是一个网络质量分析专家，专注于跨境电商 IP 质量检测。
+    # TikTok 封禁判断
+    if result.tiktok_status_code in ("403", "451", "000"):
+        result.tiktok_blocked = True
+
+    flags_str = "\n".join(f"  - {f}" for f in result.risk_flags) if result.risk_flags else "  无"
+
+    tiktok_str = ""
+    if result.tiktok_status_code:
+        blocked = result.tiktok_status_code in ("403", "451", "000")
+        tiktok_str = f"\nTikTok 访问状态码：{result.tiktok_status_code}（{'🚫 已封禁' if blocked else '✅ 可访问'}）"
+
+    prompt = f"""你是一个专注于跨境电商 IP 质量检测的网络专家。
 
 检测目标：{target}
 节点：{result.agent_id}
 
-出口 IP 信息：
-- IP: {result.exit_ip}
-- 位置: {result.ip_city}, {result.ip_region}, {result.ip_country}
-- ASN/组织: {result.ip_org}
-- IP 类型判断: {result.ip_type}
+出口 IP：{result.exit_ip}
+位置：{result.ip_city}, {result.ip_region}, {result.ip_country}
+ASN/运营商：{result.ip_org}
+IP 类型：{result.ip_type}
+访问延迟：{result.latency_ms}ms{tiktok_str}
 
 路由路径（{len(result.traceroute_hops)} 跳）：
 {' → '.join(result.traceroute_hops[:15]) if result.traceroute_hops else '无数据'}
 
-访问延迟：{result.latency_ms}ms
+自动检测到的风险标签：
+{flags_str}
 
-请分析：
-1. 这个 IP 是住宅 IP、机房 IP 还是代理 IP？判断依据是什么？
-2. 路由路径是否干净？有无可疑的代理节点？
-3. 对于 TikTok 跨境电商使用，这个 IP 质量如何？风险等级？
-4. 一句话建议
+风险评分：{result.risk_score}/100
 
-请用简洁的中文回答，重点突出风险点。"""
+请用简洁中文分析：
+1. 综合判断：这个 IP 适合用于 TikTok 跨境电商吗？
+2. 主要风险点是什么？
+3. 一句话建议
+
+不超过150字。"""
 
     try:
-        analysis = await chat([{"role": "user", "content": prompt}], max_tokens=300)
+        analysis = await chat([{"role": "user", "content": prompt}], max_tokens=250)
         result.analysis = analysis
-
-        # 提取建议（最后一句）
         lines = [l.strip() for l in analysis.splitlines() if l.strip()]
         if lines:
             result.recommendation = lines[-1]
