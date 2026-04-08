@@ -224,8 +224,12 @@ if command -v nginx &>/dev/null; then
         echo "✅ 自签证书已生成"
     fi
 
-    # 生成 Nginx 配置文件
-    cat > $NGINX_CONF_FILE << NGINX
+    # 生成 Nginx 配置文件（从仓库模板复制，保证 WebSocket 支持）
+    if [ -f "$APP_DIR/deploy/nginx.conf" ]; then
+        cp "$APP_DIR/deploy/nginx.conf" $NGINX_CONF_FILE
+        echo "  ✅ 使用仓库 nginx 配置"
+    else
+        cat > $NGINX_CONF_FILE << NGINX
 server {
     listen 80;
     return 301 https://\$host:8443\$request_uri;
@@ -241,10 +245,15 @@ server {
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-Proto https;
-        proxy_read_timeout 120s;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
     }
 }
 NGINX
+    fi
 
     # 启用配置
     eval $ENABLE_CMD
