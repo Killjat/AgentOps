@@ -137,20 +137,17 @@ async def _ws_call(agent_id: str, msg: dict, timeout: int = 60) -> dict:
         peer_url = os.getenv("PEER_URL", "").strip()
         if peer_url:
             try:
-                ssl_ctx = ssl.create_default_context()
-                ssl_ctx.check_hostname = False
-                ssl_ctx.verify_mode = ssl.CERT_NONE
-                connector = aiohttp.TCPConnector(ssl=ssl_ctx)
-                async with aiohttp.ClientSession(connector=connector) as session:
-                    async with session.post(
-                        f"{peer_url}/sync/proxy",
-                        json={"agent_id": agent_id, "msg": msg, "timeout": timeout},
-                        timeout=aiohttp.ClientTimeout(total=timeout + 10)
-                    ) as resp:
-                        if resp.status == 200:
-                            return await resp.json()
-                        text = await resp.text()
-                        raise HTTPException(status_code=resp.status, detail=f"对端代理失败: {text[:100]}")
+                from sync import _get_session
+                session = _get_session()
+                async with session.post(
+                    f"{peer_url}/sync/proxy",
+                    json={"agent_id": agent_id, "msg": msg, "timeout": timeout},
+                    timeout=aiohttp.ClientTimeout(total=timeout + 10)
+                ) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+                    text = await resp.text()
+                    raise HTTPException(status_code=resp.status, detail=f"对端代理失败: {text[:100]}")
             except HTTPException:
                 raise
             except Exception as e:

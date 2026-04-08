@@ -33,17 +33,27 @@ def _ssl_ctx():
     return ctx
 
 
+# 复用单例 session，避免 fd 泄漏
+_session: Optional[aiohttp.ClientSession] = None
+
+def _get_session() -> aiohttp.ClientSession:
+    global _session
+    if _session is None or _session.closed:
+        connector = aiohttp.TCPConnector(ssl=_ssl_ctx(), limit=10)
+        _session = aiohttp.ClientSession(connector=connector)
+    return _session
+
+
 async def pull_from_peer(peer_url: str) -> dict:
     """从对端拉取数据"""
     try:
-        connector = aiohttp.TCPConnector(ssl=_ssl_ctx())
-        async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.get(
-                f"{peer_url}/sync/pull",
-                timeout=aiohttp.ClientTimeout(total=15)
-            ) as resp:
-                if resp.status == 200:
-                    return await resp.json()
+        session = _get_session()
+        async with session.get(
+            f"{peer_url}/sync/pull",
+            timeout=aiohttp.ClientTimeout(total=15)
+        ) as resp:
+            if resp.status == 200:
+                return await resp.json()
     except Exception as e:
         logger.warning(f"[sync] 从 {peer_url} 拉取失败: {e}")
     return {}
@@ -52,14 +62,13 @@ async def pull_from_peer(peer_url: str) -> dict:
 async def push_to_peer(peer_url: str, data: dict) -> bool:
     """推送本地数据到对端"""
     try:
-        connector = aiohttp.TCPConnector(ssl=_ssl_ctx())
-        async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.post(
-                f"{peer_url}/sync/push",
-                json=data,
-                timeout=aiohttp.ClientTimeout(total=15)
-            ) as resp:
-                return resp.status == 200
+        session = _get_session()
+        async with session.post(
+            f"{peer_url}/sync/push",
+            json=data,
+            timeout=aiohttp.ClientTimeout(total=15)
+        ) as resp:
+            return resp.status == 200
     except Exception as e:
         logger.warning(f"[sync] 推送到 {peer_url} 失败: {e}")
     return False
