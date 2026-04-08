@@ -30,6 +30,7 @@ from fastapi.responses import HTMLResponse
 from core.storage import _load_persistent_data, _save_agents, _save_tasks, _save_app_deploys
 from routers import auth, servers, agents, tasks, deploy
 from routers.agents import ws_agent_endpoint
+from routers import sync as sync_router
 import swarm.router as swarm_router
 
 WEB_DIR = Path(__file__).parent.parent / "web"
@@ -48,6 +49,10 @@ async def lifespan(app: FastAPI):
         logger.error(f"[lifespan] 数据加载失败: {e}")
         import traceback
         traceback.print_exc()
+
+    # 启动双向同步
+    from sync import start_sync
+    start_sync()
 
     yield
 
@@ -74,6 +79,7 @@ app.include_router(agents.router)
 app.include_router(tasks.router)
 app.include_router(deploy.router)
 app.include_router(swarm_router.router)
+app.include_router(sync_router.router)
 
 # ── WebSocket ────────────────────────────────────────────────────
 app.add_api_websocket_route("/ws/agent/{agent_id}", ws_agent_endpoint)
