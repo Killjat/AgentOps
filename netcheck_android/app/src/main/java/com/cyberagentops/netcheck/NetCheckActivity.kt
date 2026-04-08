@@ -69,7 +69,12 @@ class NetCheckActivity : AppCompatActivity() {
             val trResult = withContext(Dispatchers.IO) { runTraceroute(target) }
             tvLog.append(trResult + "\n")
 
-            // 3. 持续 ping 测延迟
+            // 3. DNS 泄露检测
+            tvLog.append("🔎 DNS 泄露检测...\n")
+            val dnsResult = withContext(Dispatchers.IO) { checkDnsLeak(target) }
+            tvLog.append(dnsResult + "\n\n")
+
+            // 4. 持续 ping 测延迟
             tvLog.append("📡 开始延迟测试...\n")
             repeat(20) { i ->
                 if (stopFlag) return@repeat
@@ -138,6 +143,44 @@ class NetCheckActivity : AppCompatActivity() {
         val final = CommandExecutor.exec("ping -c 2 -W 3 $target 2>&1 | tail -3", 10)
         sb.append("\n目标: $final.output.trim().take(200)")
         return sb.toString()
+    }
+
+    private fun checkDnsLeak(target: String): String {
+        return try {
+            // 本机 DNS 解析
+            val localIps = java.net.InetAddress.getAllByName(target).map { it.hostAddress }.take(3)
+
+            // Google DoH 查询（绕过本机 DNS）
+            val conn = URL("https://dns.google/resolve?name=$target&type=A").openConnection() as HttpURLConnection
+            conn.connectTimeout = 6000; conn.readTimeout = 6000
+            conn.setRequestProperty("Accept", "application/dns-json")
+            val dohText = conn.inputStream.bufferedReader().readText()
+            val dohJson = JSONObject(dohText)
+            val dohIps = mutableListOf<String>()
+            val answers = dohJson.optJSONArray("Answer")
+            if (answers != null) {
+                for (i in 0 until answers.length()) {
+                    val a = answers.getJSONObject(i)
+                    if (a.optInt("type") == 1) dohIps.add(a.optString("data"))
+                }
+            }
+
+            val leaked = localIps.isNotEmpty() && dohIps.isNotEmpty() &&
+                    localIps.none { it in dohIps }
+
+            buildString {
+                append("本机 DNS: ${localIps.joinToString(", ")}\n")
+                append("Google DNS: ${dohIps.take(3).joinToString(", ")}\n")
+                if (leaked) {
+                    append("⚠️ DNS 泄露！本机 DNS 与 Google DNS 结果不一致\n")
+                    append("代理可能未接管 DNS，TikTok 可识别真实位置")
+                } else {
+                    append("✅ DNS 正常，无泄露")
+                }
+            }
+        } catch (e: Exception) {
+            "DNS 检测失败: ${e.message?.take(60)}"
+        }
     }
 
     private fun measureLatency(target: String): Double {

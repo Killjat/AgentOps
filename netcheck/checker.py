@@ -247,6 +247,34 @@ def analyze_path(hops: list, org: str, country: str, latency_ms: float) -> tuple
         return PathQuality.CLEAN, risk, flags
 
 
+async def check_dns_leak(target: str) -> dict:
+    """DNS 泄露检测：对比本机 DNS 和 Google DoH 的解析结果"""
+    import socket
+    result = {"local_ips": [], "google_ips": [], "leaked": False, "detail": ""}
+    try:
+        # Google DoH 查询
+        import aiohttp, ssl
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+        connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+        async with aiohttp.ClientSession(connector=connector) as s:
+            async with s.get(
+                f"https://dns.google/resolve?name={target}&type=A",
+                headers={"Accept": "application/dns-json"},
+                timeout=aiohttp.ClientTimeout(total=8)
+            ) as r:
+                if r.status == 200:
+                    data = await r.json(content_type=None)
+                    for ans in data.get("Answer", []):
+                        if ans.get("type") == 1:
+                            result["google_ips"].append(ans["data"])
+    except Exception as e:
+        result["detail"] = f"Google DoH 查询失败: {e}"
+
+    return result
+
+
 async def check_node(agent_id: str, target: str, os_type: str = "linux") -> NodeResult:
     """在单个 agent 上执行完整检测"""
     from routers.agents import _ws_call
@@ -306,7 +334,11 @@ async def check_node(agent_id: str, target: str, os_type: str = "linux") -> Node
             tk_raw = await exec_cmd(CMDS["tiktok_check"], timeout=15)
             result.tiktok_status_code = tk_raw.strip()[:10] if tk_raw else ""
 
-        # 5. 路径质量分析（含新增检测）
+        # 5. DNS 泄露检测
+        dns_leak = await check_dns_leak(target)
+        result.dns_leak = dns_leak
+
+        # 6. 路径质量分析（含新增检测）
         result.path_quality, result.risk_score, flags = analyze_path(
             result.traceroute_hops, result.ip_org,
             result.ip_country, result.latency_ms

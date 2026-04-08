@@ -39,9 +39,10 @@ class NodeResult(BaseModel):
     latency_ms: float = -1
 
     # 新增检测结果
-    risk_flags: List[str] = []          # 风险标签列表
-    tiktok_status_code: str = ""        # TikTok HTTP 状态码
-    tiktok_blocked: bool = False        # 是否被 TikTok 封禁
+    risk_flags: List[str] = []
+    tiktok_status_code: str = ""
+    tiktok_blocked: bool = False
+    dns_leak: Dict[str, Any] = {}  # DNS 泄露检测结果
 
     # AI 分析
     path_quality: PathQuality = PathQuality.CLEAN

@@ -256,6 +256,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
           </div>
         </div>
 
+        <!-- DNS 泄露检测结果 -->
+        <div v-if="dnsLeak.checked" style="margin-top:10px;padding:10px 14px;border-radius:8px"
+             :style="dnsLeak.leaked?'background:#1f0a0a;border:1px solid #3d1212':'background:#0a1f0a;border:1px solid #1a3a1a'">
+          <div style="font-size:11px;font-weight:700;margin-bottom:4px"
+               :style="{color: dnsLeak.leaked?'#f87171':'#4ade80'}">
+            {{ dnsLeak.leaked ? '⚠️ DNS 泄露检测：发现泄露' : '✅ DNS 泄露检测：无泄露' }}
+          </div>
+          <div style="font-size:11px;color:#475569;font-family:monospace;line-height:1.8">
+            <div>本机 DNS: {{ (dnsLeak.local_ips||[]).join(', ') || '—' }}</div>
+            <div>Google DNS: {{ (dnsLeak.google_ips||[]).slice(0,3).join(', ') || '—' }}</div>
+            <div v-if="dnsLeak.leaked" style="color:#f87171;margin-top:4px">代理未接管 DNS，TikTok 可通过 DNS 识别真实位置</div>
+          </div>
+        </div>
+
         <!-- 风险标签 -->
         <div v-if="riskFlags.length" style="display:flex;flex-wrap:wrap;gap:6px">
           <span v-for="f in riskFlags" :key="f"
@@ -303,6 +317,7 @@ createApp({
     const ipInfo = ref({})
     const riskFlags = ref([])
     const aiAnalysis = ref('')
+    const dnsLeak = ref({ checked: false, leaked: false, local_ips: [], google_ips: [] })
 
     const stats = ref({ current: 0, avg: 0, min: 9999, max: 0, jitter: 0, loss: 0, count: 0, lossRate: 0, elapsed: 0 })
     let startTime = 0
@@ -597,6 +612,16 @@ createApp({
 
       riskFlags.value = result.risk_flags || []
       if (result.analysis) aiAnalysis.value = result.analysis
+
+      // DNS 泄露
+      if (result.dns_leak && result.dns_leak.google_ips?.length) {
+        dnsLeak.value = {
+          checked: true,
+          leaked: result.dns_leak.leaked || false,
+          local_ips: result.dns_leak.local_ips || [],
+          google_ips: result.dns_leak.google_ips || [],
+        }
+      }
     }
 
     async function startCheck() {
@@ -648,7 +673,7 @@ createApp({
       latencyChart, jitterChart, stats, hops, ipInfo, riskFlags, aiAnalysis,
       verdictClass, verdictIcon, verdictText, verdictSub,
       latencyClass, jitterClass, lossClass, lossCardStyle, tagClass, formatDuration,
-      startCheck, stopCheck,
+      startCheck, stopCheck, dnsLeak,
     }
   }
 }).mount('#app')
