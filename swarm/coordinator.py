@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'server'))
 from swarm_models import SwarmTask, SwarmTaskRequest, SwarmTaskStatus, SubTask
 from planner import plan_swarm_task
 from executor import SwarmExecutor
+from knowledge import record_success, get_relevant_examples
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,13 @@ async def run_swarm(req: SwarmTaskRequest, owner: str = "") -> SwarmTask:
     # 4. 生成 AI 汇报
     task.summary = await _ai_report(task)
     task.completed_at = datetime.now().isoformat()
+
+    # 5. 成功任务沉淀到知识库
+    try:
+        record_success(task)
+    except Exception as e:
+        logger.warning(f"[swarm] 知识库记录失败: {e}")
+
     logger.info(f"[swarm:{swarm_task_id}] 完成，状态: {task.status}")
     return task
 

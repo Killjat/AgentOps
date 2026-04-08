@@ -56,11 +56,16 @@ async def plan_swarm_task(task: SwarmTask, agents_info: List[Dict], context: str
     if context:
         context_section = f"\n\n上一次任务的执行结果（供参考）：\n{context}\n"
 
+    # 注入历史成功案例
+    from knowledge import get_relevant_examples
+    examples = get_relevant_examples(task.goal)
+    examples_section = f"\n\n{examples}\n" if examples else ""
+
     messages = [
         {"role": "user", "content": PLAN_PROMPT.format(
             goal=task.goal,
             agents_info=agents_desc,
-        ) + context_section}
+        ) + context_section + examples_section}
     ]
 
     raw = await chat(messages, max_tokens=2000)
