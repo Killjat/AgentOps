@@ -247,12 +247,10 @@ def analyze_path(hops: list, org: str, country: str, latency_ms: float) -> tuple
         return PathQuality.CLEAN, risk, flags
 
 
-async def check_dns_leak(target: str) -> dict:
-    """DNS 泄露检测：对比本机 DNS 和 Google DoH 的解析结果"""
-    import socket
-    result = {"local_ips": [], "google_ips": [], "leaked": False, "detail": ""}
+async def check_dns_leak(target: str, local_ips: list = None) -> dict:
+    """DNS 泄露检测：对比 agent 的 DNS 解析结果和 Google DoH"""
+    result = {"local_ips": local_ips or [], "google_ips": [], "leaked": False, "detail": ""}
     try:
-        # Google DoH 查询
         import aiohttp, ssl
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
@@ -269,9 +267,14 @@ async def check_dns_leak(target: str) -> dict:
                     for ans in data.get("Answer", []):
                         if ans.get("type") == 1:
                             result["google_ips"].append(ans["data"])
-    except Exception as e:
-        result["detail"] = f"Google DoH 查询失败: {e}"
 
+        # 判断泄露：本机 DNS 和 Google DNS 结果完全不重叠
+        if result["local_ips"] and result["google_ips"]:
+            local_set = set(result["local_ips"])
+            google_set = set(result["google_ips"])
+            result["leaked"] = len(local_set & google_set) == 0
+    except Exception as e:
+        result["detail"] = f"Google DoH 查询失败: {str(e)[:50]}"
     return result
 
 
@@ -334,8 +337,15 @@ async def check_node(agent_id: str, target: str, os_type: str = "linux") -> Node
             tk_raw = await exec_cmd(CMDS["tiktok_check"], timeout=15)
             result.tiktok_status_code = tk_raw.strip()[:10] if tk_raw else ""
 
-        # 5. DNS 泄露检测
-        dns_leak = await check_dns_leak(target)
+        # 5. DNS 泄露检测（agent 端解析 + 服务器端 Google DoH 对比）
+        dns_cmd = f"nslookup {target} 2>/dev/null | grep -A1 'Name:' | grep 'Address' | awk '{{print $2}}' | head -3"
+        dns_raw = await exec_cmd(dns_cmd, timeout=10)
+        if not dns_raw.strip():
+            # fallback: 用 getent 或 ping 获取 IP
+            dns_raw = await exec_cmd(f"ping -c 1 -W 2 {target} 2>/dev/null | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' | head -1", timeout=8)
+        local_ips = [ip.strip() for ip in dns_raw.strip().splitlines() if ip.strip() and '.' in ip]
+
+        dns_leak = await check_dns_leak(target, local_ips)
         result.dns_leak = dns_leak
 
         # 6. 路径质量分析（含新增检测）
