@@ -113,7 +113,7 @@ jobs:
         run: |
           cd netcheck_android
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleRelease --info 2>&1 | grep -E "error:|warning:|e:" | head -50 || ./gradlew assembleRelease
 
       - name: Upload NetCheck APK artifact
         uses: actions/upload-artifact@v4
