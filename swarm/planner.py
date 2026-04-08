@@ -42,6 +42,8 @@ PLAN_PROMPT = """你是一个多 Agent 任务调度专家。
 - Android 设备运行在 Termux 环境，只能执行 shell 命令，可用工具包括：curl、wget、ping、nslookup、traceroute、getprop、cat /proc/*、df、ps、ss、ip addr 等；不能执行任何 UI 操作，不能打开浏览器，不能访问需要 root 权限的路径；查询 WiFi 信息用 /system/bin/cmd wifi status，不要用 dumpsys wifi
 - Windows 设备只能使用 PowerShell 或 cmd 原生命令，不能使用 awk、sed、grep、curl（用 Invoke-WebRequest 替代）等 Linux 工具；ping 用 ping -n，查网络用 netstat、ipconfig
 - 生成的 shell 命令必须完整，不能截断，命令长度没有限制
+- traceroute 任务只用 `traceroute -n www.example.com` 不加任何 grep/awk 过滤，让原始输出返回
+- Android 的 grep 不支持 \\s，必须用 [0-9] 和空格字符，不能用正则扩展语法
 """
 
 

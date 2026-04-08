@@ -112,7 +112,7 @@ async def generate_command(task: str, os_type: str = "Linux",
         {"role": "system", "content": GENERATE_PROMPT.format(os_type=os_type)},
         {"role": "user", "content": task},
     ]
-    return await _call_api(provider, messages, max_tokens=200)
+    return await _call_api(provider, messages, max_tokens=400)
 
 
 async def analyze_result(task: str, command: str, output: str, success: bool,
