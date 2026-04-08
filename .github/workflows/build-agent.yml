@@ -113,13 +113,19 @@ jobs:
         run: |
           cd netcheck_android
           chmod +x gradlew
-          ./gradlew assembleRelease --info 2>&1 | grep -E "error:|warning:|e:" | head -50 || ./gradlew assembleRelease
+          ./gradlew assembleRelease
+
+      - name: Rename APK
+        run: |
+          mv netcheck_android/app/build/outputs/apk/release/app-release-unsigned.apk \
+             netcheck_android/app/build/outputs/apk/release/cybernetcheck.apk 2>/dev/null || \
+          find netcheck_android/app/build/outputs/apk/release/ -name "*.apk" -exec mv {} netcheck_android/app/build/outputs/apk/release/cybernetcheck.apk \;
 
       - name: Upload NetCheck APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: cybernetcheck-android
-          path: netcheck_android/app/build/outputs/apk/release/*.apk
+          path: netcheck_android/app/build/outputs/apk/release/cybernetcheck.apk
 
   package-usb:
     needs: build
