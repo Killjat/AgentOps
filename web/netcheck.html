@@ -309,11 +309,25 @@ createApp({
     let timer = null
     let stopFlag = false
 
-    // 计算判决
+    // 计算判决 - 综合延迟、抖动、丢包、IP类型
     const verdictClass = computed(() => {
       const { lossRate, avg, jitter } = stats.value
+      const ipType = ipInfo.value.type || ''
+      const blocked = ipInfo.value.tiktok_blocked
+      const flags = riskFlags.value
+
+      // 直接封禁
+      if (blocked) return 'verdict-bad'
+      // 机房 IP 或代理
+      if (ipType.includes('机房') || ipType.includes('代理')) return 'verdict-bad'
+      // 隧道代理特征
+      if (flags.some(f => f.includes('隧道'))) return 'verdict-bad'
+      // 网络质量差
       if (lossRate > 5 || avg > 500 || jitter > 100) return 'verdict-bad'
+      // 住宅 IP 但网络一般
       if (lossRate > 1 || avg > 200 || jitter > 50) return 'verdict-warn'
+      // 未知 IP 类型，谨慎
+      if (ipType.includes('未知') && stats.value.count > 0) return 'verdict-warn'
       return 'verdict-ok'
     })
     const verdictIcon = computed(() => {
@@ -322,13 +336,26 @@ createApp({
       return '🟢'
     })
     const verdictText = computed(() => {
-      if (verdictClass.value === 'verdict-bad') return '线路质量差 — TikTok 直播可能严重卡顿'
-      if (verdictClass.value === 'verdict-warn') return '线路质量一般 — 可能出现偶发卡顿'
-      return '线路质量良好 — 适合 TikTok 直播'
+      const ipType = ipInfo.value.type || ''
+      const blocked = ipInfo.value.tiktok_blocked
+      if (blocked) return 'IP 已被 TikTok 封禁 — 账号权重极低'
+      if (ipType.includes('机房')) return '机房 IP — TikTok 判定为非真实用户，账号权重低'
+      if (ipType.includes('代理')) return '代理/VPN IP — TikTok 风控高风险'
+      if (riskFlags.value.some(f => f.includes('隧道'))) return '隧道代理特征 — TikTok 可能识别为异常流量'
+      if (verdictClass.value === 'verdict-bad') return '线路质量差 — 直播可能严重卡顿'
+      if (verdictClass.value === 'verdict-warn') return '线路质量一般 — 建议持续监控'
+      if (ipType.includes('住宅')) return '住宅 IP + 线路良好 — 适合 TikTok 直播'
+      return '线路质量良好 — IP 类型待确认'
     })
     const verdictSub = computed(() => {
       const { avg, jitter, lossRate } = stats.value
-      return `延迟 ${avg}ms · 抖动 ${jitter}ms · 丢包 ${lossRate.toFixed(1)}%`
+      const ipType = ipInfo.value.type || ''
+      const parts = []
+      if (ipType) parts.push(ipType)
+      if (avg > 0) parts.push(`延迟 ${avg}ms`)
+      if (jitter > 0) parts.push(`抖动 ${jitter}ms`)
+      if (stats.value.count > 0) parts.push(`丢包 ${lossRate.toFixed(1)}%`)
+      return parts.join(' · ')
     })
 
     function latencyClass(v) {
