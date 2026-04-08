@@ -261,7 +261,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 <script>
 const { createApp, ref, onMounted } = Vue
 const API = ''
-const token = localStorage.getItem('token') || ''
+const token = localStorage.getItem('cyber_token') || ''
 const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {}
 
 createApp({
