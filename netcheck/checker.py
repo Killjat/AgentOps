@@ -247,6 +247,100 @@ def analyze_path(hops: list, org: str, country: str, latency_ms: float) -> tuple
         return PathQuality.CLEAN, risk, flags
 
 
+async def detect_proxy_type(exec_cmd, is_windows: bool) -> dict:
+    """检测代理类型：通过端口、接口、环境变量推断"""
+    result = {"type": "unknown", "detail": ""}
+
+    if is_windows:
+        # Windows：检查常见代理端口
+        ports_raw = await exec_cmd("netstat -ano | findstr LISTENING | findstr -E '1080|7890|10808|8080|1087'", 8)
+        if "7890" in ports_raw:
+            return {"type": "clash_system", "detail": "检测到 Clash 系统代理端口 7890"}
+        if "1080" in ports_raw:
+            return {"type": "socks5", "detail": "检测到 SOCKS5 代理端口 1080"}
+        if "10808" in ports_raw:
+            return {"type": "v2ray", "detail": "检测到 V2Ray 代理端口 10808"}
+        # 检查系统代理设置
+        proxy_raw = await exec_cmd('reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyEnable', 8)
+        if "0x1" in proxy_raw:
+            return {"type": "system_proxy", "detail": "Windows 系统代理已启用"}
+        return {"type": "none", "detail": "未检测到代理"}
+
+    # Linux/macOS
+    # 1. 检查 TUN 接口（TUN 模式代理）
+    iface_raw = await exec_cmd("ip addr 2>/dev/null || ifconfig 2>/dev/null", 8)
+    if any(x in iface_raw for x in ["tun0", "utun", "wg0", "tap0"]):
+        if "wg0" in iface_raw:
+            return {"type": "wireguard", "detail": "检测到 WireGuard VPN 接口 wg0"}
+        if any(x in iface_raw for x in ["tun0", "utun"]):
+            return {"type": "tun_mode", "detail": "检测到 TUN 模式代理（Clash TUN/V2Ray TUN）"}
+
+    # 2. 检查代理端口
+    ports_raw = await exec_cmd("ss -tlnp 2>/dev/null | grep -E '1080|7890|10808|8080|1087' || netstat -tlnp 2>/dev/null | grep -E '1080|7890|10808'", 8)
+    if "7890" in ports_raw:
+        return {"type": "clash_system", "detail": "检测到 Clash 系统代理端口 7890"}
+    if "10808" in ports_raw:
+        return {"type": "v2ray", "detail": "检测到 V2Ray 代理端口 10808"}
+    if "1080" in ports_raw:
+        return {"type": "socks5", "detail": "检测到 SOCKS5 代理端口 1080"}
+
+    # 3. 检查环境变量
+    env_raw = await exec_cmd("echo $http_proxy $https_proxy $ALL_PROXY", 5)
+    if env_raw.strip() and env_raw.strip() != "  ":
+        return {"type": "env_proxy", "detail": f"检测到代理环境变量: {env_raw.strip()[:60]}"}
+
+    return {"type": "none", "detail": "未检测到本地代理进程"}
+
+
+def get_fix_advice(proxy_type: str, leaked: bool) -> str:
+    """根据代理类型和泄露状态给出精准修复建议"""
+    if not leaked:
+        return "✅ DNS 配置正常，无需修改"
+
+    advice = {
+        "clash_system": (
+            "🔧 修复方法（Clash 系统代理）：\n"
+            "打开 Clash → 设置 → DNS → 开启「DNS 劫持」\n"
+            "或在 config.yaml 中设置 dns.enhanced-mode: fake-ip"
+        ),
+        "tun_mode": (
+            "🔧 修复方法（TUN 模式）：\n"
+            "TUN 模式通常会自动接管 DNS，请检查代理软件的 DNS 设置\n"
+            "确认「DNS 劫持」或「接管系统 DNS」已开启"
+        ),
+        "v2ray": (
+            "🔧 修复方法（V2Ray）：\n"
+            "在 V2Ray 配置中添加 DNS 路由规则，将 DNS 查询路由到代理\n"
+            "或开启 Fake DNS 模式"
+        ),
+        "wireguard": (
+            "🔧 修复方法（WireGuard）：\n"
+            "在 WireGuard 配置中设置 DNS = 8.8.8.8\n"
+            "确保 AllowedIPs 包含 0.0.0.0/0（全局模式）"
+        ),
+        "socks5": (
+            "🔧 修复方法（SOCKS5 代理）：\n"
+            "手动将系统 DNS 改为 8.8.8.8 或 1.1.1.1\n"
+            "或使用支持 DNS 代理的客户端（如 Proxifier）"
+        ),
+        "system_proxy": (
+            "🔧 修复方法（系统代理）：\n"
+            "系统代理不会接管 DNS，建议改用 TUN 模式\n"
+            "或手动将 DNS 服务器改为 8.8.8.8"
+        ),
+        "none": (
+            "🔧 修复方法：\n"
+            "未检测到代理进程，可能是路由器翻墙\n"
+            "在路由器设置中将 DNS 改为 8.8.8.8，并确保 DNS 查询走代理"
+        ),
+    }
+    return advice.get(proxy_type, (
+        "🔧 修复建议：\n"
+        "将系统 DNS 改为 8.8.8.8 或 1.1.1.1\n"
+        "并确保代理软件开启了 DNS 劫持功能"
+    ))
+
+
 async def check_dns_leak(target: str, local_ips: list = None) -> dict:
     """DNS 泄露检测：对比 agent 的 DNS 解析结果和 Google DoH"""
     result = {"local_ips": local_ips or [], "google_ips": [], "leaked": False, "detail": ""}
@@ -346,6 +440,12 @@ async def check_node(agent_id: str, target: str, os_type: str = "linux") -> Node
         local_ips = [ip.strip() for ip in dns_raw.strip().splitlines() if ip.strip() and '.' in ip]
 
         dns_leak = await check_dns_leak(target, local_ips)
+
+        # 6. 代理类型检测
+        proxy_info = await detect_proxy_type(exec_cmd, is_windows)
+        dns_leak["proxy_type"] = proxy_info.get("type", "unknown")
+        dns_leak["proxy_detail"] = proxy_info.get("detail", "")
+        dns_leak["fix_advice"] = get_fix_advice(proxy_info.get("type", "unknown"), dns_leak.get("leaked", False))
         result.dns_leak = dns_leak
 
         # 6. 路径质量分析（含新增检测）

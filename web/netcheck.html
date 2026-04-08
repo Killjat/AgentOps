@@ -257,17 +257,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         </div>
 
         <!-- DNS 泄露检测结果 -->
-        <div v-if="dnsLeak.checked" style="margin-top:10px;padding:10px 14px;border-radius:8px"
+        <div v-if="dnsLeak.checked" style="margin-top:10px;padding:14px 18px;border-radius:12px"
              :style="dnsLeak.leaked?'background:#1f0a0a;border:1px solid #3d1212':'background:#0a1f0a;border:1px solid #1a3a1a'">
-          <div style="font-size:11px;font-weight:700;margin-bottom:4px"
-               :style="{color: dnsLeak.leaked?'#f87171':'#4ade80'}">
-            {{ dnsLeak.leaked ? '⚠️ DNS 泄露检测：发现泄露' : '✅ DNS 泄露检测：无泄露' }}
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="font-size:13px;font-weight:700"
+                 :style="{color: dnsLeak.leaked?'#f87171':'#4ade80'}">
+              {{ dnsLeak.leaked ? '⚠️ DNS 泄露：已检测到' : '✅ DNS 泄露：无泄露' }}
+            </div>
+            <div v-if="dnsLeak.proxy_type && dnsLeak.proxy_type!=='unknown'" style="font-size:11px;color:#475569;background:#0a0d14;padding:2px 8px;border-radius:4px">
+              {{ {clash_system:'Clash 系统代理',tun_mode:'TUN 模式',v2ray:'V2Ray',wireguard:'WireGuard',socks5:'SOCKS5',system_proxy:'系统代理',none:'无代理',env_proxy:'环境变量代理'}[dnsLeak.proxy_type] || dnsLeak.proxy_type }}
+            </div>
           </div>
-          <div style="font-size:11px;color:#475569;font-family:monospace;line-height:1.8">
-            <div>本机 DNS: {{ (dnsLeak.local_ips||[]).join(', ') || '—' }}</div>
-            <div>Google DNS: {{ (dnsLeak.google_ips||[]).slice(0,3).join(', ') || '—' }}</div>
-            <div v-if="dnsLeak.leaked" style="color:#f87171;margin-top:4px">代理未接管 DNS，TikTok 可通过 DNS 识别真实位置</div>
+          <div style="font-size:11px;color:#475569;font-family:monospace;line-height:1.8;margin-bottom:8px">
+            <div>本机 DNS 解析: {{ (dnsLeak.local_ips||[]).join(', ') || '—' }}</div>
+            <div>Google DoH 解析: {{ (dnsLeak.google_ips||[]).slice(0,3).join(', ') || '—' }}</div>
+            <div v-if="dnsLeak.proxy_detail" style="color:#334155">{{ dnsLeak.proxy_detail }}</div>
           </div>
+          <!-- 修复建议 -->
+          <div v-if="dnsLeak.leaked && dnsLeak.fix_advice"
+               style="background:#0a0d14;border-radius:8px;padding:10px 12px;font-size:12px;color:#94a3b8;line-height:1.8;white-space:pre-wrap">{{ dnsLeak.fix_advice }}</div>
         </div>
 
         <!-- 风险标签 -->
@@ -620,6 +628,9 @@ createApp({
           leaked: result.dns_leak.leaked || false,
           local_ips: result.dns_leak.local_ips || [],
           google_ips: result.dns_leak.google_ips || [],
+          proxy_type: result.dns_leak.proxy_type || 'unknown',
+          proxy_detail: result.dns_leak.proxy_detail || '',
+          fix_advice: result.dns_leak.fix_advice || '',
         }
       }
     }
