@@ -40,6 +40,8 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     logger.info("[lifespan] 开始加载持久化数据...")
     try:
+        from core.db import init_db
+        init_db()
         _load_persistent_data()
         logger.info("[lifespan] 数据加载完成")
     except Exception as e:

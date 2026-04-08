@@ -15,12 +15,32 @@ from knowledge import record_success, get_relevant_examples
 
 logger = logging.getLogger(__name__)
 
-# 内存存储（与 server/core/state.py 同进程，直接 import）
+# 内存缓存（启动时从 DB 加载）
 _swarm_tasks: Dict[str, SwarmTask] = {}
+_db_loaded = False
+
+
+def _ensure_loaded():
+    global _db_loaded
+    if _db_loaded:
+        return
+    _db_loaded = True
+    try:
+        from core.db import load_swarm_tasks
+        for d in load_swarm_tasks():
+            try:
+                task = SwarmTask(**d)
+                _swarm_tasks[task.swarm_task_id] = task
+            except Exception:
+                pass
+        logger.info(f"[swarm] 从 DB 加载 {len(_swarm_tasks)} 个历史任务")
+    except Exception as e:
+        logger.warning(f"[swarm] DB 加载失败: {e}")
 
 
 async def run_swarm(req: SwarmTaskRequest, owner: str = "") -> SwarmTask:
     """创建并执行一个 swarm 任务"""
+    _ensure_loaded()
     # 延迟 import，避免循环依赖
     from core import state
     from routers.agents import _ws_call
@@ -96,16 +116,25 @@ async def run_swarm(req: SwarmTaskRequest, owner: str = "") -> SwarmTask:
     except Exception as e:
         logger.warning(f"[swarm] 知识库记录失败: {e}")
 
+    # 6. 持久化到 DB
+    try:
+        from core.db import save_swarm_task
+        save_swarm_task(task)
+    except Exception as e:
+        logger.warning(f"[swarm] DB 保存失败: {e}")
+
     logger.info(f"[swarm:{swarm_task_id}] 完成，状态: {task.status}")
     return task
 
 
 def get_task(swarm_task_id: str) -> Optional[SwarmTask]:
+    _ensure_loaded()
     return _swarm_tasks.get(swarm_task_id)
 
 
 def list_tasks() -> List[SwarmTask]:
-    return list(_swarm_tasks.values())
+    _ensure_loaded()
+    return sorted(_swarm_tasks.values(), key=lambda t: t.created_at, reverse=True)
 
 
 def _get_agents_info(agent_ids: List[str], state) -> List[dict]:
