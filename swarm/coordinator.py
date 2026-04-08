@@ -139,17 +139,29 @@ def list_tasks() -> List[SwarmTask]:
 
 def _get_agents_info(agent_ids: List[str], state) -> List[dict]:
     result = []
+    from datetime import datetime, timezone
+    now = datetime.now()
     for aid in agent_ids:
         agent = state.agents.get(aid)
-        if agent and agent.status == "online":
+        if not agent:
+            continue
+        # 本地 online 或者最近60秒内有心跳（可能连在对端）
+        last_seen = agent.last_seen or ""
+        try:
+            last_dt = datetime.fromisoformat(last_seen.replace("Z", ""))
+            recent = (now - last_dt).total_seconds() < 60
+        except Exception:
+            recent = False
+
+        if agent.status == "online" or recent:
             result.append({
                 "agent_id": aid,
                 "os_type": agent.os_type,
                 "hostname": (agent.metrics or {}).get("os_info", {}).get("hostname", ""),
-                "status": agent.status,
+                "status": "online",  # 视为可用
             })
-        elif agent:
-            logger.info(f"[swarm] 跳过离线 Agent: {aid} (status={agent.status})")
+        else:
+            logger.info(f"[swarm] 跳过不可用 Agent: {aid} (status={agent.status}, last_seen={last_seen[:19]})")
     return result
 
 

@@ -129,9 +129,32 @@ async def _agent_exec(info: AgentInfo, command: str, timeout: int) -> dict:
 
 
 async def _ws_call(agent_id: str, msg: dict, timeout: int = 60) -> dict:
-    """通过 WebSocket 向 agent 发送消息并等待响应"""
+    """通过 WebSocket 向 agent 发送消息并等待响应，agent 不在本地时转发给对端"""
     ws = _ws_connections.get(agent_id)
     if not ws:
+        # 尝试通过对端代理执行
+        import os, aiohttp, ssl
+        peer_url = os.getenv("PEER_URL", "").strip()
+        if peer_url:
+            try:
+                ssl_ctx = ssl.create_default_context()
+                ssl_ctx.check_hostname = False
+                ssl_ctx.verify_mode = ssl.CERT_NONE
+                connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+                async with aiohttp.ClientSession(connector=connector) as session:
+                    async with session.post(
+                        f"{peer_url}/sync/proxy",
+                        json={"agent_id": agent_id, "msg": msg, "timeout": timeout},
+                        timeout=aiohttp.ClientTimeout(total=timeout + 10)
+                    ) as resp:
+                        if resp.status == 200:
+                            return await resp.json()
+                        text = await resp.text()
+                        raise HTTPException(status_code=resp.status, detail=f"对端代理失败: {text[:100]}")
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=503, detail=f"对端代理异常: {e}")
         raise HTTPException(status_code=503, detail="Agent 未连接（离线）")
 
     task_id = msg.get("task_id") or uuid.uuid4().hex[:8]

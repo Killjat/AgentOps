@@ -21,6 +21,24 @@ async def sync_push(data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/proxy")
+async def sync_proxy(req: dict):
+    """代理执行：对端 agent 不在本地时，转发命令到本节点执行"""
+    agent_id = req.get("agent_id")
+    msg = req.get("msg", {})
+    timeout = req.get("timeout", 60)
+
+    if not agent_id or not msg:
+        raise HTTPException(status_code=400, detail="缺少 agent_id 或 msg")
+
+    from core.state import _ws_connections
+    if agent_id not in _ws_connections:
+        raise HTTPException(status_code=503, detail=f"Agent {agent_id} 不在本节点")
+
+    from routers.agents import _ws_call
+    return await _ws_call(agent_id, msg, timeout=timeout)
+
+
 @router.get("/status")
 async def sync_status():
     """查看同步状态"""
