@@ -192,7 +192,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
           <div class="agent-dot" :class="a.status === 'online' ? 'dot-online' : 'dot-offline'"></div>
           <div class="agent-info">
             <div class="agent-name">{{ a.name || a.agent_id }}</div>
-            <div class="agent-meta">{{ a.os_type }} · {{ a.agent_id }}</div>
+            <div class="agent-meta">{{ a.os_type }} · {{ a.status === 'online' ? '本地' : '对端' }}</div>
           </div>
           <span v-if="selectedIds.includes(a.agent_id)" class="agent-check">✓</span>
         </div>
@@ -334,13 +334,21 @@ createApp({
         if (r.status === 401) { location.href = '/?redirect=/swarm-ui'; return }
         if (r.ok) {
           const all = await r.json()
-          agents.value = all.filter(a => a.status === 'online')
+          const now = Date.now()
+          // 显示 online 的，以及最近120秒内有心跳的（可能连在对端）
+          agents.value = all.filter(a => {
+            if (a.status === 'online') return true
+            if (a.last_seen) {
+              const diff = (now - new Date(a.last_seen).getTime()) / 1000
+              return diff < 120
+            }
+            return false
+          })
         }
       } catch(e) {}
     }
 
     function toggleAgent(a) {
-      if (a.status !== 'online') return
       const idx = selectedIds.value.indexOf(a.agent_id)
       if (idx === -1) selectedIds.value.push(a.agent_id)
       else selectedIds.value.splice(idx, 1)
