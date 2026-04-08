@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#060810"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gap="12dp">
+
+        <TextView
+            android:text="🔍 TikTok 线路检测"
+            android:textSize="18sp"
+            android:textColor="#e2e8f0"
+            android:textStyle="bold"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"/>
+
+        <EditText
+            android:id="@+id/etTarget"
+            android:hint="检测目标 (如 tiktok.com)"
+            android:text="tiktok.com"
+            android:textColor="#e2e8f0"
+            android:textColorHint="#475569"
+            android:background="@drawable/input_bg"
+            android:padding="12dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"/>
+
+        <!-- 判决横幅 -->
+        <TextView
+            android:id="@+id/tvVerdict"
+            android:text="等待检测..."
+            android:textSize="14sp"
+            android:textColor="#64748b"
+            android:textStyle="bold"
+            android:background="@drawable/card_bg"
+            android:padding="14dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+        <!-- 统计数据 -->
+        <TextView
+            android:id="@+id/tvStats"
+            android:text="--"
+            android:textSize="13sp"
+            android:textColor="#94a3b8"
+            android:fontFamily="monospace"
+            android:background="@drawable/card_bg"
+            android:padding="12dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+        <!-- IP 信息 -->
+        <TextView
+            android:id="@+id/tvIpInfo"
+            android:text="出口 IP: --"
+            android:textSize="12sp"
+            android:textColor="#64748b"
+            android:fontFamily="monospace"
+            android:background="@drawable/card_bg"
+            android:padding="12dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gap="8dp">
+
+            <Button
+                android:id="@+id/btnStartCheck"
+                android:text="▶ 开始检测"
+                android:textColor="#ffffff"
+                android:backgroundTint="#7c6af7"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"/>
+
+            <Button
+                android:id="@+id/btnStopCheck"
+                android:text="⏹ 停止"
+                android:textColor="#f87171"
+                android:backgroundTint="#1f0a0a"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:visibility="gone"/>
+        </LinearLayout>
+
+        <!-- 日志输出 -->
+        <TextView
+            android:id="@+id/tvLog"
+            android:text=""
+            android:textSize="11sp"
+            android:textColor="#475569"
+            android:fontFamily="monospace"
+            android:background="@drawable/card_bg"
+            android:padding="12dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="120dp"/>
+
+    </LinearLayout>
+</ScrollView>

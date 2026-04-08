@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#0D0F1A"
+    android:padding="24dp">
+
+    <!-- Logo 区域 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingTop="32dp"
+        android:paddingBottom="24dp">
+
+        <ImageView
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:src="@drawable/ic_launcher"
+            android:scaleType="fitCenter"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="CyberAgent"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:textColor="#E2E8F0"
+            android:letterSpacing="0.1" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Distributed AI Agent"
+            android:textSize="12sp"
+            android:textColor="#475569"
+            android:letterSpacing="0.15" />
+    </LinearLayout>
+
+    <!-- Agent ID 卡片 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#1A1D27"
+        android:padding="16dp"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="AGENT ID"
+            android:textSize="10sp"
+            android:textColor="#475569"
+            android:letterSpacing="0.2" />
+
+        <TextView
+            android:id="@+id/tvAgentId"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="android-xxxxxxxx"
+            android:textSize="14sp"
+            android:textColor="#7C6AF7"
+            android:fontFamily="monospace"
+            android:layout_marginTop="4dp" />
+    </LinearLayout>
+
+    <!-- Server URL 输入 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#1A1D27"
+        android:padding="16dp"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SERVER URL"
+            android:textSize="10sp"
+            android:textColor="#475569"
+            android:letterSpacing="0.2" />
+
+        <EditText
+            android:id="@+id/etServerUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="https://47.111.28.162"
+            android:textColorHint="#334155"
+            android:textColor="#E2E8F0"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:background="@null"
+            android:layout_marginTop="8dp"
+            android:inputType="textUri" />
+    </LinearLayout>
+
+    <!-- 状态 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#1A1D27"
+        android:padding="16dp"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="24dp">
+
+        <View
+            android:id="@+id/statusDot"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:background="#475569"
+            android:layout_marginEnd="10dp" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="OFFLINE"
+            android:textSize="12sp"
+            android:textColor="#475569"
+            android:letterSpacing="0.15" />
+    </LinearLayout>
+
+    <!-- 按钮 -->
+    <Button
+        android:id="@+id/btnStart"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:text="CONNECT"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:letterSpacing="0.15"
+        android:backgroundTint="#7C6AF7"
+        android:layout_marginBottom="12dp" />
+
+    <Button
+        android:id="@+id/btnStop"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:text="DISCONNECT"
+        android:textColor="#94A3B8"
+        android:textSize="14sp"
+        android:letterSpacing="0.15"
+        android:backgroundTint="#1A1D27" />
+
+    <!-- 常亮模式，适合长期驻守 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="16dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="屏幕常亮（长期工作模式）"
+            android:textColor="#475569"
+            android:textSize="13sp" />
+
+        <Switch
+            android:id="@+id/switchKeepScreen"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+    </LinearLayout>
+
+    <!-- 网络检测入口 -->
+    <Button
+        android:id="@+id/btnNetCheck"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:text="🔍 TikTok 线路质量检测"
+        android:textColor="#ffffff"
+        android:textSize="14sp"
+        android:backgroundTint="#1a1527"
+        android:layout_marginTop="16dp" />
+
+</LinearLayout>
