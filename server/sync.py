@@ -89,6 +89,13 @@ def get_local_snapshot() -> dict:
     try:
         from core.db import load_swarm_tasks
         for t in load_swarm_tasks():
+            # status 字段可能是枚举，转成字符串值
+            if "status" in t and hasattr(t["status"], "value"):
+                t["status"] = t["status"].value
+            elif "status" in t:
+                s = str(t["status"])
+                if "." in s:
+                    t["status"] = s.split(".")[-1].lower()
             swarm_data[t["swarm_task_id"]] = t
     except Exception:
         pass
