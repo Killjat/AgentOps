@@ -43,7 +43,9 @@ PLAN_PROMPT = """你是一个多 Agent 任务调度专家。
 - Windows 设备只能使用 PowerShell 或 cmd 原生命令，不能使用 awk、sed、grep、curl（用 Invoke-WebRequest 替代）等 Linux 工具；ping 用 ping -n，查网络用 netstat、ipconfig
 - 生成的 shell 命令必须完整，不能截断，命令长度没有限制
 - traceroute 任务只用 `traceroute -n www.example.com` 不加任何 grep/awk 过滤，让原始输出返回
-- Android 的 grep 不支持 \\s，必须用 [0-9] 和空格字符，不能用正则扩展语法
+- 如果是 Linux 系统，traceroute 命令用 `traceroute -n {target} 2>/dev/null || tracepath -n {target} 2>/dev/null || mtr -n --report --report-cycles 3 {target} 2>/dev/null`，三个命令依次 fallback
+- Windows 系统 traceroute 用 `tracert -d -h 20 {target}`，不要加任何引号或额外参数
+- Android 系统没有 traceroute，用 `ping -c 5 {target}` 代替
 """
 
 

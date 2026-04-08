@@ -79,25 +79,8 @@ async def run_swarm(req: SwarmTaskRequest, owner: str = "") -> SwarmTask:
                 from llm import generate_command
                 agent = state.agents.get(agent_id)
                 os_type = str(agent.os_type) if agent else "Linux"
-
-                # traceroute 任务硬编码，不走 LLM，避免命令截断
-                instr_lower = subtask.instruction.lower()
-                if any(kw in instr_lower for kw in ["traceroute", "tracert", "路由追踪", "路由路径"]):
-                    # 提取目标域名/IP
-                    import re
-                    target_match = re.search(r'(?:traceroute|tracert|追踪|路由)\s+([^\s,，]+)', subtask.instruction, re.I)
-                    target = target_match.group(1) if target_match else subtask.instruction.split()[-1]
-                    if "windows" in os_type.lower():
-                        cmd = f"tracert -d -h 20 -w 2000 {target}"
-                    elif "android" in os_type.lower():
-                        cmd = f"ping -c 3 {target}"  # Android 无 traceroute，用 ping 代替
-                    else:
-                        cmd = f"traceroute -n -m 20 -w 2 {target} 2>/dev/null || tracepath -n {target} 2>/dev/null"
-                    subtask.command = cmd
-                    logger.info(f"[swarm] traceroute 硬编码命令: {cmd}")
-                else:
-                    cmd = await generate_command(subtask.instruction, os_type=os_type)
-                    subtask.command = cmd
+                cmd = await generate_command(subtask.instruction, os_type=os_type)
+                subtask.command = cmd
 
             # 检测命令是否被截断（末尾有未闭合的引号、反斜杠或管道）
             cmd_stripped = cmd.strip()
