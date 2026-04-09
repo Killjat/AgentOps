@@ -115,11 +115,15 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
+      - name: Rename APK
+        run: |
+          find netcheck_android/app/build/outputs/apk/debug/ -name "*.apk" -exec mv {} netcheck_android/app/build/outputs/apk/debug/cybernetcheck.apk \;
+
       - name: Upload NetCheck APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: cybernetcheck-android
-          path: netcheck_android/app/build/outputs/apk/debug/app-debug.apk
+          path: netcheck_android/app/build/outputs/apk/debug/cybernetcheck.apk
 
   package-usb:
     needs: build
