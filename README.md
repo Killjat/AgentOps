@@ -32,6 +32,56 @@ CyberAgentOps 是一个**AI 驱动的分布式设备管理平台**。
 
 ## 核心能力
 
+### 🔬 IP 纯净度检测 — 专为 TikTok 跨境电商设计
+
+这是 CyberAgentOps 面向普通用户的公开功能，无需登录，打开即用。
+
+**访问 `/probe`，自动完成：**
+
+- **出口 IP 检测**：识别 IP 类型（住宅 / 机房 / 代理），给出 TikTok 适用性判断
+- **WebRTC 泄露检测**：浏览器层面检测真实 IP，判断代理是否泄露
+- **DNS 泄露检测**：对比本机 DNS 与 Google DoH，判断代理是否接管 DNS
+- **出口分流检测**：对比访问不同目标时的出口 IP，判断代理规则是否干净
+- **反向路由侦察**：用我们全球节点 traceroute 用户 IP，分析路由路径和 IP 画像
+- **综合纯净度评分**：0-100 分，参考 IPPure 系数逻辑
+
+```
+用户打开 /probe
+  → 自动检测出口 IP（住宅/机房/代理）
+  → WebRTC 检测真实 IP（判断是否泄露）
+  → DNS 泄露检测
+  → 全球节点反向 traceroute 用户 IP
+  → 综合评分 + 修复建议
+  → 引导下载 Android App 做完整路径检测
+```
+
+---
+
+### 📡 线路质量检测 — TikTok 直播线路分析
+
+访问 `/netcheck-ui`，无需登录，选择节点检测目标域名：
+
+- **实时延迟折线图**：每 3 秒刷新，200ms / 500ms 基准线
+- **抖动分析**：计算 Jitter（Ping 方差），高抖动直播必卡
+- **丢包检测**：红色竖条标记每次丢包
+- **MTR 路由路径可视化**：每跳显示国旗 + 城市 + 运营商类型 + 延迟条
+- **IP 纯净度分析**：多数据源对比（ipinfo / ip-api / db-ip），检测机房/VPN 标记
+- **出口分流检测**：Cloudflare trace 对比，判断 TikTok 是否走不同出口
+- **DNS 泄露检测**：agent 端解析 + Google DoH 对比
+
+---
+
+### 🎯 目标侦察 — 多节点并发 traceroute
+
+从全球多个节点同时对目标域名进行 traceroute，分析目标服务器的网络画像：
+
+- 目标服务器托管位置（城市 / 机房 / 运营商）
+- 各节点到达目标的路径差异
+- CDN 分布和多接入点检测
+- 最优接入节点推荐
+
+---
+
 ### 🤖 Swarm 多 Agent 协同 — 让机器集群像一个大脑一样工作
 
 这是 CyberAgentOps 最强大的能力。
@@ -61,9 +111,20 @@ AI 汇总：baidu.com 使用自研 bfe 服务器，多 IP 负载均衡，
 
 - **息屏后台常驻**：WakeLock + Foreground Service，黑屏不断线
 - **自动重连**：网络切换、服务器重启后自动恢复连接
+- **原生网络命令**：无需 curl/traceroute，OkHttp + InetAddress 原生实现
+  - `traceroute`：TTL 递增 ping，真实路由跳点
+  - `ping`：系统 `/system/bin/ping`，真实 ICMP
+  - `nslookup`：Java InetAddress，原生 DNS 解析
+  - `curl`：OkHttp，支持 ipinfo / cloudflare trace / DoH
 - **真实网络测速**：从移动端视角测试 CDN 延迟，服务器节点无法替代
-- **系统技能扫描**：自动发现设备可用工具（ping、curl、ip、getprop 等）
 - **开机自启**：设备重启后自动连回控制端
+
+**两个 Android App：**
+
+| App | 功能 | 包名 |
+|-----|------|------|
+| CyberAgent | 接受服务端命令，作为探测节点 | com.cyberagentops.agent |
+| CyberNetCheck | 本机直接执行检测，展示线路质量 | com.cyberagentops.netcheck |
 
 ```
 支持 Android 8.0+，无需 root，无需 Termux
@@ -195,7 +256,12 @@ python3 -m uvicorn server.main:app --host 0.0.0.0 --port 8000
 
 **2. 访问 Web 界面**
 
-打开 `http://localhost:8000`，用 `.env` 里配置的 admin 账号登录。
+- `https://www.cyberstroll.top/` — 产品介绍页（公开）
+- `https://www.cyberstroll.top/probe` — IP 纯净度检测（公开，无需登录）
+- `https://www.cyberstroll.top/netcheck-ui` — 线路质量检测（公开，无需登录）
+- `https://www.cyberstroll.top/admin` — 控制台（需要登录）
+
+本地开发：打开 `http://localhost:8000/admin`，用 `.env` 里配置的 admin 账号登录。
 
 **3. 添加第一台服务器**
 
@@ -203,7 +269,12 @@ python3 -m uvicorn server.main:app --host 0.0.0.0 --port 8000
 
 **4. 安装 Android Agent**
 
-从 [Releases](https://github.com/Killjat/AgentOps/releases/latest) 下载最新 APK，安装后填入控制端地址即可。
+从 [Releases](https://github.com/Killjat/AgentOps/releases/latest) 下载最新 APK：
+
+- `cyberagent.apk` — 作为探测节点，接受服务端命令
+- `cybernetcheck.apk` — 本机检测 App，打开自动运行线路质量检测
+
+安装后 App 自动连接 `https://47.111.28.162:8443`，无需配置。
 
 **5. 配置双节点同步（可选）**
 

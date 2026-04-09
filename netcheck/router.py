@@ -297,7 +297,7 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
             cmd = f"traceroute -n -m 20 -w 2 {target_ip} 2>/dev/null || tracepath -n {target_ip} 2>/dev/null"
 
         try:
-            resp = await _ws_call(agent_id, {"type": "exec", "command": cmd, "timeout": 45}, timeout=50)
+            resp = await _ws_call(agent_id, {"type": "exec", "command": cmd, "timeout": 60}, timeout=75)
             raw = resp.get("output", "") or ""
         except Exception as e:
             return {"agent_id": agent_id, "name": name, "os_type": os_type,
