@@ -156,7 +156,7 @@ class WindowsAgent(BaseAgent):
             if any(kw in command for kw in ["Get-", "Set-", "New-", "Remove-", "$"]):
                 cmd = ["powershell", "-Command", command]
             else:
-                cmd = ["cmd", "/c", "chcp 65001 >nul 2>&1 &&", command]
+                cmd = ["cmd", "/c", f"chcp 65001 >nul 2>&1 && {command}"]
 
             result = subprocess.run(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
