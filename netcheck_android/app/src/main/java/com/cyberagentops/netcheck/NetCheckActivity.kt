@@ -136,7 +136,7 @@ class NetCheckActivity : AppCompatActivity() {
     private fun checkDnsLeak(target: String): String {
         return try {
             // 本机 DNS 解析（Java 原生，不用 nslookup）
-            val localIps = InetAddress.getAllByName(target).map { it.hostAddress }.take(3)
+            val localIps = InetAddress.getAllByName(target).mapNotNull { it.hostAddress }.take(3)
 
             // Google DoH（OkHttp，不用 curl）
             val req = Request.Builder()
@@ -237,10 +237,13 @@ class NetCheckActivity : AppCompatActivity() {
     // ── UI 辅助 ───────────────────────────────────────────────
     private fun log(tv: TextView, msg: String) {
         tv.append(msg + "\n")
-        // 找外层 ScrollView 滚到底
         var p = tv.parent
         while (p != null) {
-            if (p is ScrollView) { p.post { p.fullScroll(View.FOCUS_DOWN) }; break }
+            if (p is ScrollView) {
+                val sv = p  // 固定引用，避免 smart cast 问题
+                sv.post { sv.fullScroll(View.FOCUS_DOWN) }
+                break
+            }
             p = (p as? android.view.View)?.parent
         }
     }
