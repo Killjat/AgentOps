@@ -384,20 +384,35 @@ async def remove_agent(agent_id: str, authorization: str = Header(default="")):
     info = _get_agent(agent_id)
     _check_owner(authorization, info.owner, "Agent")
 
-    if info.server_id not in servers:
-        raise HTTPException(status_code=404, detail="关联的服务器不存在")
+    # 1. 先通过 WebSocket 发 shutdown，让 agent 进程自行退出（不依赖 SSH）
+    ws = _ws_connections.get(agent_id)
+    if ws:
+        try:
+            import json as _json
+            await ws.send_text(_json.dumps({"type": "shutdown", "reason": "removed by admin"}))
+        except Exception:
+            pass
+        # 从连接池移除
+        _ws_connections.pop(agent_id, None)
 
-    server = servers[info.server_id]
-    host = RemoteHost(
-        name=info.name,
-        host=server.host,
-        port=server.port,
-        username=server.username,
-        password=server.password,
-        ssh_key=server.ssh_key,
-        deploy_dir=info.agent_deploy_dir,
-    )
-    await undeploy(host)
+    # 2. 尝试通过 SSH undeploy（如果有关联服务器）
+    if info.server_id and info.server_id in servers:
+        server = servers[info.server_id]
+        host = RemoteHost(
+            name=info.name,
+            host=server.host,
+            port=server.port,
+            username=server.username,
+            password=server.password,
+            ssh_key=server.ssh_key,
+            deploy_dir=info.agent_deploy_dir,
+        )
+        try:
+            await undeploy(host)
+        except Exception:
+            pass  # SSH 失败不影响删除
+
+    # 3. 删除记录
     del agents[agent_id]
     _save_agents()
     return {"message": f"Agent {agent_id} 已移除"}

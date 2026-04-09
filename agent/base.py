@@ -143,6 +143,12 @@ class BaseAgent(abc.ABC):
         if msg_type == "ping":
             return {"type": "pong", "task_id": task_id}
 
+        elif msg_type == "shutdown":
+            # 服务端要求退出，优雅关闭
+            import sys
+            logger.info(f"[Agent] 收到 shutdown 指令，退出")
+            sys.exit(0)
+
         elif msg_type == "exec":
             command = msg.get("command", "").strip()
             timeout = int(msg.get("timeout", 60))
