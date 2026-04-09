@@ -162,7 +162,7 @@ jobs:
           path: usb_agent.zip
 
   release:
-    needs: [build, build-android, package-usb]
+    needs: [build, build-android, build-netcheck-android, package-usb]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
