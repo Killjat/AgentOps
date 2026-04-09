@@ -431,11 +431,14 @@ async def update_agent(agent_id: str, authorization: str = Header(default="")):
 
 @router.get("", response_model=List[AgentInfo])
 async def list_agents(authorization: str = Header(default="")):
-    """admin 看全部，其他用户只看自己的"""
+    """admin 看全部，游客看所有在线节点，其他用户只看自己的"""
     all_agents = list(agents.values())
     if _is_admin(authorization):
         return all_agents
     caller = _get_caller(authorization)
+    if not caller:
+        # 游客：只返回在线节点（不暴露离线节点信息）
+        return [a for a in all_agents if a.status == "online"]
     return [a for a in all_agents if a.owner == caller]
 
 

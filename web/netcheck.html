@@ -504,8 +504,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <script>
 const { createApp, ref, computed, onMounted, nextTick, watch } = Vue
 const API = ''
-const token = localStorage.getItem('cyber_token') || ''
-const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {}
+const token = ''
+const authHeader = {}
 
 createApp({
   setup() {
@@ -524,6 +524,7 @@ createApp({
     const jitterChart = ref(null)
     const scoreRing = ref(null)
     const purityRing = ref(null)
+    const radarCanvas = ref(null)
     const purityData = ref({ score: -1, sources: null, outbound: null })
     let lchart = null, jchart = null
 
