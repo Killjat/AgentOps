@@ -102,78 +102,74 @@ object AndroidNetTools {
         }
     }
 
-    // ── traceroute 模拟（TTL 递增 + InetAddress）─────────────
+    // ── traceroute：用 /system/bin/ping TTL 递增实现（真正的路由追踪）────
     private fun simulateTraceroute(target: String): String {
         val sb = StringBuilder()
         return try {
             val targetAddr = InetAddress.getByName(target)
             sb.appendLine("traceroute to $target (${targetAddr.hostAddress}), 20 hops max")
 
-            // 读网关（/proc/net/route）
-            val gateway = readDefaultGateway()
-            if (gateway != null) {
-                val ms = measureReachable(InetAddress.getByName(gateway), 500)
-                sb.appendLine(" 1  $gateway  ${if (ms >= 0) "${ms}ms" else "*"}")
-            }
+            for (ttl in 1..20) {
+                val raw = runPingTtl(target, ttl)
+                val hopIp = extractHopIp(raw)
+                val ms = extractPingMs(raw)
 
-            // TTL 递增探测（用 isReachable 近似）
-            val timeouts = listOf(50, 100, 200, 400, 800, 1500, 3000, 5000)
-            var prevMs = -1L
-            for ((hop, timeout) in timeouts.withIndex()) {
-                val ms = measureReachable(targetAddr, timeout)
-                if (ms >= 0 && ms != prevMs) {
-                    val hopNum = (gateway?.let { 2 } ?: 1) + hop
-                    sb.appendLine(" $hopNum  ${targetAddr.hostAddress}  ${ms}ms")
-                    prevMs = ms
-                    if (hop >= 3) break  // 到达目标后停止
-                } else if (hop < 3) {
-                    val hopNum = (gateway?.let { 2 } ?: 1) + hop
-                    sb.appendLine(" $hopNum  *")
+                if (hopIp != null) {
+                    sb.appendLine(" $ttl  $hopIp  ${if (ms > 0) "${ms}ms" else "*"}")
+                    if (hopIp == targetAddr.hostAddress) break  // 到达目标
+                } else {
+                    sb.appendLine(" $ttl  * * *")
+                    // 连续3个超时且已超过5跳，停止
+                    if (ttl > 5) {
+                        val lastLines = sb.lines().takeLast(4)
+                        if (lastLines.count { it.contains("* * *") } >= 3) break
+                    }
                 }
             }
-
-            // 最终延迟
-            val finalMs = measureHttpLatency("https://$target")
-            if (finalMs >= 0) {
-                sb.appendLine("\n目标 HTTP 延迟: ${finalMs}ms")
-            }
-
             sb.toString()
         } catch (e: Exception) {
-            "[Android traceroute] 目标: $target\n错误: ${e.message?.take(80)}\n" +
-            "注：Android 无原生 traceroute，使用 ICMP reachable 模拟"
+            "traceroute to $target\n[Android] ${e.message?.take(80)}"
         }
     }
 
-    // ── ping ──────────────────────────────────────────────────
-    private fun doPing(target: String, count: Int): String {
-        val sb = StringBuilder()
+    private fun runPingTtl(target: String, ttl: Int): String {
         return try {
-            val addr = InetAddress.getByName(target)
-            sb.appendLine("PING $target (${addr.hostAddress})")
-            val results = mutableListOf<Long>()
-            repeat(count) { i ->
-                val ms = measureReachable(addr, 3000)
-                if (ms >= 0) {
-                    results.add(ms)
-                    sb.appendLine("64 bytes from ${addr.hostAddress}: icmp_seq=$i ttl=64 time=${ms}ms")
-                } else {
-                    sb.appendLine("Request timeout for icmp_seq $i")
-                }
-                if (i < count - 1) Thread.sleep(500)
-            }
-            val loss = ((count - results.size).toDouble() / count * 100).toInt()
-            sb.appendLine("\n--- $target ping statistics ---")
-            sb.appendLine("$count packets transmitted, ${results.size} received, $loss% packet loss")
-            if (results.isNotEmpty()) {
-                sb.appendLine("rtt min/avg/max = ${results.min()}/${results.average().toLong()}/${results.max()} ms")
-            }
-            sb.toString()
+            // Android 有 /system/bin/ping，-t 设置 TTL
+            val proc = ProcessBuilder("ping", "-c", "1", "-t", "$ttl", "-W", "2", target)
+                .redirectErrorStream(true)
+                .start()
+            proc.waitFor(4, TimeUnit.SECONDS)
+            proc.inputStream.bufferedReader().readText().take(500)
+        } catch (e: Exception) { "" }
+    }
+
+    private fun extractHopIp(pingOutput: String): String? {
+        // "From 10.0.0.1: Time to live exceeded"
+        val fromMatch = Regex("From ([\\d.]+)").find(pingOutput)
+        if (fromMatch != null) return fromMatch.groupValues[1]
+        // "64 bytes from 1.2.3.4: ..."（到达目标）
+        val bytesMatch = Regex("bytes from ([\\d.]+)").find(pingOutput)
+        return bytesMatch?.groupValues?.get(1)
+    }
+
+    private fun extractPingMs(pingOutput: String): Long {
+        val m = Regex("time[=<]([\\d.]+)\\s*ms", RegexOption.IGNORE_CASE).find(pingOutput)
+            ?: Regex("([\\d.]+)\\s*ms").find(pingOutput)
+        return m?.groupValues?.get(1)?.toDoubleOrNull()?.toLong() ?: -1L
+    }
+
+    // ── ping（用 /system/bin/ping，不用 isReachable）────────
+    private fun doPing(target: String, count: Int): String {
+        return try {
+            val proc = ProcessBuilder("ping", "-c", "$count", "-W", "3", target)
+                .redirectErrorStream(true)
+                .start()
+            proc.waitFor((count * 4 + 5).toLong(), TimeUnit.SECONDS)
+            proc.inputStream.bufferedReader().readText().take(2000)
         } catch (e: Exception) {
             "ping: $target: ${e.message?.take(60)}"
         }
     }
-
     // ── nslookup ──────────────────────────────────────────────
     private fun doNslookup(target: String): String {
         return try {

@@ -191,42 +191,32 @@ class NetCheckActivity : AppCompatActivity() {
         }
     }
 
-    // ── 路由模拟（InetAddress.isReachable，不用 ping/traceroute）
+    // ── 路由追踪（用 /system/bin/ping TTL 递增，真正的 traceroute）────
     private fun simulateTraceroute(target: String): String {
-        val sb = StringBuilder("路由探测（ICMP reachable）:\n")
+        val sb = StringBuilder("路由追踪 to $target:\n")
         return try {
-            // 先解析目标 IP
             val targetAddr = InetAddress.getByName(target)
-            sb.append("目标: ${targetAddr.hostAddress}\n")
+            sb.append("目标 IP: ${targetAddr.hostAddress}\n\n")
 
-            // 用不同超时测试可达性（模拟延迟层次）
-            val timeouts = listOf(100, 300, 500, 1000, 2000, 5000)
-            var firstReachable = -1
-            for ((i, ms) in timeouts.withIndex()) {
-                val reachable = targetAddr.isReachable(ms)
-                if (reachable && firstReachable < 0) {
-                    firstReachable = ms
-                    sb.append("  ✅ ${ms}ms 内可达\n")
-                    break
+            for (ttl in 1..15) {
+                val proc = ProcessBuilder("ping", "-c", "1", "-t", "$ttl", "-W", "2", target)
+                    .redirectErrorStream(true).start()
+                proc.waitFor(4, TimeUnit.SECONDS)
+                val raw = proc.inputStream.bufferedReader().readText()
+
+                // 提取跳点 IP
+                val hopIp = Regex("From ([\\d.]+)").find(raw)?.groupValues?.get(1)
+                    ?: Regex("bytes from ([\\d.]+)").find(raw)?.groupValues?.get(1)
+                val ms = Regex("time[=<]([\\d.]+)\\s*ms", RegexOption.IGNORE_CASE).find(raw)
+                    ?.groupValues?.get(1)?.toDoubleOrNull()?.toLong() ?: -1L
+
+                if (hopIp != null) {
+                    sb.append(" $ttl  $hopIp  ${if (ms > 0) "${ms}ms" else "*"}\n")
+                    if (hopIp == targetAddr.hostAddress) break
+                } else {
+                    sb.append(" $ttl  * * *\n")
                 }
             }
-            if (firstReachable < 0) sb.append("  ❌ ICMP 不可达（可能被防火墙屏蔽，不影响 TCP 连接）\n")
-
-            // 尝试获取本机网关（通过 /proc/net/route）
-            try {
-                val routeLines = java.io.File("/proc/net/route").readLines()
-                val defaultRoute = routeLines.drop(1).firstOrNull { it.split("\t").getOrNull(1) == "00000000" }
-                if (defaultRoute != null) {
-                    val gatewayHex = defaultRoute.split("\t").getOrNull(2) ?: ""
-                    if (gatewayHex.length == 8) {
-                        val gw = (0..3).map { i ->
-                            gatewayHex.substring(6 - i * 2, 8 - i * 2).toInt(16)
-                        }.joinToString(".")
-                        sb.append("  网关: $gw\n")
-                    }
-                }
-            } catch (e: Exception) {}
-
             sb.toString()
         } catch (e: Exception) {
             sb.append("路由探测失败: ${e.message?.take(60)}\n").toString()
