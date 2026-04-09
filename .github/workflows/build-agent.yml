@@ -91,13 +91,13 @@ jobs:
         run: |
           cd agent/android
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: cyberagent-android
-          path: agent/android/app/build/outputs/apk/release/cyberagent.apk
+          path: agent/android/app/build/outputs/apk/debug/cyberagent.apk
 
   build-netcheck-android:
     runs-on: ubuntu-latest
@@ -113,19 +113,13 @@ jobs:
         run: |
           cd netcheck_android
           chmod +x gradlew
-          ./gradlew assembleRelease
-
-      - name: Rename APK
-        run: |
-          mv netcheck_android/app/build/outputs/apk/release/app-release-unsigned.apk \
-             netcheck_android/app/build/outputs/apk/release/cybernetcheck.apk 2>/dev/null || \
-          find netcheck_android/app/build/outputs/apk/release/ -name "*.apk" -exec mv {} netcheck_android/app/build/outputs/apk/release/cybernetcheck.apk \;
+          ./gradlew assembleDebug
 
       - name: Upload NetCheck APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: cybernetcheck-android
-          path: netcheck_android/app/build/outputs/apk/release/cybernetcheck.apk
+          path: netcheck_android/app/build/outputs/apk/debug/app-debug.apk
 
   package-usb:
     needs: build
