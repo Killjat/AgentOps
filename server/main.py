@@ -123,6 +123,14 @@ if WEB_DIR.exists():
             "Pragma": "no-cache"
         })
 
+    @app.get("/admin", include_in_schema=False)
+    async def serve_admin():
+        content = (WEB_DIR / "index.html").read_text()
+        return HTMLResponse(content=content, headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache"
+        })
+
     @app.get("/swarm-ui", include_in_schema=False)
     async def serve_swarm():
         content = (WEB_DIR / "swarm.html").read_text()

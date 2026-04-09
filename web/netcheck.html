@@ -138,6 +138,51 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* ── 综合评分圆环 ── */
 .score-ring-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px}
 .score-ring-label{font-size:10px;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-top:8px}
+
+/* ── 移动端适配 ── */
+@media (max-width:768px){
+  .layout{flex-direction:column;height:auto}
+  .sidebar{
+    width:100%!important;
+    border-right:none;
+    border-bottom:1px solid #1e2240;
+    padding:12px 14px;
+    gap:8px;
+    flex-direction:column;
+  }
+  /* 侧栏内的 label+input 横向排列 */
+  .sidebar > div{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .sidebar .label{white-space:nowrap;margin-bottom:0;min-width:50px}
+  .sidebar .inp,.sidebar .sel{flex:1;min-width:120px}
+  .sidebar .chips{flex:1}
+  .run-btn{flex:1;padding:10px}
+  .stop-btn{flex:1;padding:8px}
+  .main{padding:12px}
+  .scorecard{grid-template-columns:repeat(2,1fr)}
+  .chart-row{grid-template-columns:1fr}
+  .recon-grid{grid-template-columns:1fr}
+  .topbar{padding:10px 14px;flex-wrap:wrap;gap:6px}
+  .tab-group{order:2;width:100%}
+  .tab-btn{flex:1;font-size:11px;padding:6px 4px}
+  .back-link{font-size:11px}
+  .recon-canvas-wrap{height:260px}
+  .ip-card{grid-template-columns:repeat(2,1fr)}
+  /* 路由路径横向滚动 */
+  .route-scroll{-webkit-overflow-scrolling:touch}
+  /* 纯净度分析多数据源 grid */
+  .purity-sources{grid-template-columns:repeat(2,1fr)!important}
+}
+@media (max-width:480px){
+  .scorecard{grid-template-columns:1fr}
+  .ip-card{grid-template-columns:1fr}
+  .sc-val{font-size:24px}
+  .verdict{padding:12px 14px;gap:10px}
+  .verdict-icon{font-size:28px}
+  .verdict-main{font-size:15px}
+  .sidebar > div{flex-direction:column;align-items:flex-start}
+  .sidebar .inp,.sidebar .sel{width:100%}
+  .purity-sources{grid-template-columns:1fr!important}
+}
 </style>
 </head>
 <body>

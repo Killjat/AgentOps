@@ -58,7 +58,7 @@ async def quick_ping(req: PingRequest):
     from core.state import agents as _agents
 
     agent = _agents.get(req.agent_id)
-    os_type = str(agent.os_type) if agent else "linux"
+    os_type = getattr(agent.os_type, "value", str(agent.os_type)) if agent else "linux"
     is_win = "windows" in os_type.lower()
 
     if is_win:
@@ -272,14 +272,24 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
     task["ip_profile"] = ip_profile
 
     # 2. 多节点并发 traceroute
+    is_ipv6 = ":" in target_ip  # IPv6 地址包含冒号
+
     async def trace_one(agent_id: str) -> dict:
         agent = _agents.get(agent_id)
-        os_type = str(agent.os_type) if agent else "linux"
+        os_type = getattr(agent.os_type, "value", str(agent.os_type)) if agent else "linux"
         name = (agent.name if agent else agent_id) or agent_id
         is_win = "windows" in os_type.lower()
         is_android = "android" in os_type.lower()
 
-        if is_win:
+        if is_ipv6:
+            # IPv6：traceroute6 或 ping6，取延迟为主
+            if is_win:
+                cmd = f"ping -6 -n 3 {target_ip}"
+            elif is_android:
+                cmd = f"ping6 -c 3 {target_ip} 2>/dev/null || ping -c 3 {target_ip}"
+            else:
+                cmd = f"traceroute6 -n -m 15 -w 2 {target_ip} 2>/dev/null || ping6 -c 3 {target_ip} 2>/dev/null || ping -c 3 {target_ip}"
+        elif is_win:
             cmd = f"tracert -d -h 20 {target_ip}"
         elif is_android:
             cmd = f"ping -c 3 {target_ip}"
@@ -444,7 +454,7 @@ async def _run_check(task: CheckTask):
 
     async def check_one(agent_id: str) -> NodeResult:
         agent = agents.get(agent_id)
-        os_type = str(agent.os_type) if agent else "linux"
+        os_type = getattr(agent.os_type, "value", str(agent.os_type)) if agent else "linux"
         name = agent.name if agent else agent_id
         result = await check_node(agent_id, task.target, os_type)
         result.agent_name = name
@@ -510,7 +520,7 @@ async def _run_recon(task_id: str, target: str, agent_ids: List[str]):
 
     async def probe_one(agent_id: str) -> dict:
         agent = agents.get(agent_id)
-        os_type = str(agent.os_type) if agent else "linux"
+        os_type = getattr(agent.os_type, "value", str(agent.os_type)) if agent else "linux"
         name = (agent.name if agent else agent_id) or agent_id
         is_win = "windows" in os_type.lower()
         is_android = "android" in os_type.lower()

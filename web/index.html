@@ -127,10 +127,10 @@
         一个平台，管理全球任意数量的设备。AI 理解你的意图，自动生成命令，跨多台机器协同执行。
       </p>
       <div style="display:flex;gap:12px;justify-content:center">
-        <button class="btn btn-primary" style="padding:13px 36px;font-size:15px;border-radius:8px" @click="showLanding=false">
+        <button class="btn btn-primary" style="padding:13px 36px;font-size:15px;border-radius:8px" onclick="location.href='/probe'">
           立即开始 →
         </button>
-        <button class="btn btn-ghost" style="padding:13px 36px;font-size:15px;border-radius:8px" @click="landingDemo='nlp'">
+        <button class="btn btn-ghost" style="padding:13px 36px;font-size:15px;border-radius:8px" onclick="location.href='/netcheck-ui'">
           查看演示
         </button>
       </div>
@@ -422,9 +422,12 @@
 
     <!-- CTA -->
     <div style="text-align:center;padding:40px 24px 80px">
-      <button class="btn btn-primary" style="padding:14px 48px;font-size:16px;border-radius:8px" @click="showLanding=false">
+      <button class="btn btn-primary" style="padding:14px 48px;font-size:16px;border-radius:8px" onclick="location.href='/probe'">
         开始使用 →
       </button>
+      <div style="margin-top:16px">
+        <a href="/admin" style="font-size:12px;color:#334155;text-decoration:none">管理员入口 →</a>
+      </div>
     </div>
   </div>
 
@@ -1565,7 +1568,8 @@ createApp({
     // ── Auth ──
     const _savedToken = localStorage.getItem('cyber_token')
     const token = ref(_savedToken || null)
-    const showLanding = ref(!_savedToken)
+    // /admin 路径直接进控制台，否则显示产品介绍页
+    const showLanding = ref(!window.location.pathname.startsWith('/admin'))
 
     // ── Landing 数据 ──
     const landingDemo = ref(null)
