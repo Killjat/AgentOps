@@ -158,13 +158,21 @@ class AgentWebSocket(private val context: Context, private val onStatus: (String
                     val command = json.optString("command")
                     val timeout = json.optInt("timeout", 60)
                     scope.launch(Dispatchers.Default) {
-                        val result = CommandExecutor.exec(command, timeout)
+                        // 先尝试 Android 原生实现（traceroute/ping/curl/nslookup 等）
+                        val nativeResult = AndroidNetTools.intercept(command, context)
+                        val (success, output, error) = if (nativeResult != null) {
+                            Triple(true, nativeResult, "")
+                        } else {
+                            // 原生不支持，走 shell
+                            val r = CommandExecutor.exec(command, timeout)
+                            Triple(r.success, r.output, r.error)
+                        }
                         ws.send(JSONObject().apply {
                             put("type", "result")
                             put("task_id", taskId)
-                            put("success", result.success)
-                            put("output", result.output)
-                            put("error", result.error)
+                            put("success", success)
+                            put("output", output)
+                            put("error", error)
                             put("done", true)
                         }.toString())
                     }
@@ -244,41 +252,33 @@ class AgentWebSocket(private val context: Context, private val onStatus: (String
     }
 
     private fun discoverTools(): org.json.JSONArray {
-        val tools = listOf(
-            "ping" to "网络连通测试",
-            "curl" to "HTTP 请求",
-            "wget" to "文件下载",
-            "nslookup" to "DNS 查询",
-            "traceroute" to "路由追踪",
-            "netstat" to "网络连接状态",
-            "ss" to "Socket 统计",
-            "ip" to "网络接口管理",
-            "ifconfig" to "网络接口配置",
-            "cat" to "文件查看",
-            "grep" to "文本搜索",
-            "awk" to "文本处理",
-            "sed" to "流编辑器",
-            "find" to "文件查找",
-            "ps" to "进程查看",
-            "top" to "系统监控",
-            "df" to "磁盘使用",
-            "du" to "目录大小",
-            "getprop" to "Android 系统属性",
-            "dumpsys" to "Android 系统服务信息",
-            "am" to "Android Activity 管理",
-            "pm" to "Android 包管理",
-            "settings" to "Android 系统设置",
-            "logcat" to "Android 日志",
-            "python" to "Python 脚本",
-            "python3" to "Python3 脚本",
+        // Android 原生支持的能力（不用 which 探测）
+        val nativeTools = listOf(
+            "ping"       to "网络连通测试（InetAddress.isReachable）",
+            "traceroute" to "路由追踪（TTL 模拟 + ICMP）",
+            "nslookup"   to "DNS 查询（Java InetAddress）",
+            "curl"       to "HTTP 请求（OkHttp）",
+            "ipinfo"     to "出口 IP 查询（ipinfo.io）",
+            "ifconfig"   to "网络接口信息（NetworkInterface）",
+            "dns_leak"   to "DNS 泄露检测（Google DoH 对比）",
         )
         val result = org.json.JSONArray()
-        for ((tool, desc) in tools) {
-            val check = CommandExecutor.exec("which $tool 2>/dev/null || command -v $tool 2>/dev/null", 3)
+        // 先加原生工具
+        for ((name, desc) in nativeTools) {
+            result.put(JSONObject().apply {
+                put("name", name)
+                put("description", desc)
+                put("path", "android-native")
+            })
+        }
+        // 再探测 shell 工具（有就加，没有不报错）
+        val shellTools = listOf("getprop", "ps", "df", "dumpsys", "am", "pm", "settings", "logcat")
+        for (tool in shellTools) {
+            val check = CommandExecutor.exec("which $tool 2>/dev/null", 2)
             if (check.success && check.output.isNotBlank()) {
                 result.put(JSONObject().apply {
                     put("name", tool)
-                    put("description", desc)
+                    put("description", "Android shell 工具")
                     put("path", check.output.trim())
                 })
             }

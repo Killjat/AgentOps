@@ -14,12 +14,16 @@ CMDS = {
     "ipinfo": "curl -s --max-time 8 https://ipinfo.io/json",
     "traceroute_linux": "traceroute -n -m 20 -w 2 {target} 2>/dev/null || tracepath -n {target} 2>/dev/null",
     "traceroute_windows": "tracert -d -h 20 -w 2000 {target}",
+    "traceroute_android": "traceroute -n -m 20 {target}",  # AndroidNetTools 会拦截并用原生实现
     "latency": "curl -s -o /dev/null -w '%{{time_total}}' --max-time 10 https://{target}",
     "latency_windows": "powershell -Command \"(Measure-Command {{ Invoke-WebRequest -Uri 'https://{target}' -UseBasicParsing }}).TotalMilliseconds\"",
+    "latency_android": "curl -s -o /dev/null -w '%{{time_total}}' --max-time 10 https://{target}",  # OkHttp 拦截
     # TikTok 封禁检测
     "tiktok_check": "curl -s -o /dev/null -w '%{{http_code}}' --max-time 10 -H 'User-Agent: Mozilla/5.0' 'https://www.tiktok.com/api/recommend/item_list/?count=1'",
     # DNS 归属地检测
     "dns_check": "curl -s --max-time 5 https://dns.google/resolve?name={target}&type=A | head -c 500",
+    # Android DNS 解析（AndroidNetTools 拦截 nslookup）
+    "dns_android": "nslookup {target}",
 }
 
 # 已知机房 ASN 关键词（黑名单）
@@ -577,6 +581,7 @@ async def check_node(agent_id: str, target: str, os_type: str = "linux") -> Node
     result = NodeResult(agent_id=agent_id, status="running")
 
     is_windows = "windows" in os_type.lower()
+    is_android = "android" in os_type.lower()
 
     async def exec_cmd(cmd: str, timeout: int = 30) -> str:
         try:
@@ -606,42 +611,56 @@ async def check_node(agent_id: str, target: str, os_type: str = "linux") -> Node
             except Exception:
                 result.exit_ip = ipinfo_raw.strip()[:50]
 
-        # 2. traceroute
-        tr_cmd = CMDS["traceroute_windows"].format(target=target) if is_windows \
-                 else CMDS["traceroute_linux"].format(target=target)
+        # 2. traceroute（Android 用原生实现，服务端解析输出格式相同）
+        if is_android:
+            tr_cmd = CMDS["traceroute_android"].format(target=target)
+        elif is_windows:
+            tr_cmd = CMDS["traceroute_windows"].format(target=target)
+        else:
+            tr_cmd = CMDS["traceroute_linux"].format(target=target)
         tr_raw = await exec_cmd(tr_cmd, timeout=50)
         result.traceroute_raw = tr_raw[:3000]
         result.traceroute_hops = parse_traceroute(tr_raw)
-
-        # 对每跳 IP 查询地理位置和打标签（服务器端查询，不占用 agent）
         result.traceroute_enriched = await enrich_hops(result.traceroute_hops)
 
         # 3. 延迟
-        lat_cmd = CMDS["latency_windows"].format(target=target) if is_windows \
-                  else CMDS["latency"].format(target=target)
+        if is_android:
+            lat_cmd = CMDS["latency_android"].format(target=target)
+        elif is_windows:
+            lat_cmd = CMDS["latency_windows"].format(target=target)
+        else:
+            lat_cmd = CMDS["latency"].format(target=target)
         lat_raw = await exec_cmd(lat_cmd, timeout=15)
         try:
             result.latency_ms = round(float(lat_raw.strip()) * (1 if is_windows else 1000), 1)
         except Exception:
             pass
 
-        # 4. TikTok 封禁检测（仅当目标是 tiktok 相关时）
+        # 4. TikTok 封禁检测
         if "tiktok" in target.lower():
             tk_raw = await exec_cmd(CMDS["tiktok_check"], timeout=15)
             result.tiktok_status_code = tk_raw.strip()[:10] if tk_raw else ""
 
-        # 5. DNS 泄露检测（agent 端解析 + 服务器端 Google DoH 对比）
-        dns_cmd = f"nslookup {target} 2>/dev/null | grep -A1 'Name:' | grep 'Address' | awk '{{print $2}}' | head -3"
-        dns_raw = await exec_cmd(dns_cmd, timeout=10)
-        if not dns_raw.strip():
-            # fallback: 用 getent 或 ping 获取 IP
-            dns_raw = await exec_cmd(f"ping -c 1 -W 2 {target} 2>/dev/null | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' | head -1", timeout=8)
-        local_ips = [ip.strip() for ip in dns_raw.strip().splitlines() if ip.strip() and '.' in ip]
+        # 5. DNS 泄露检测
+        if is_android:
+            # Android：直接用 nslookup（AndroidNetTools 拦截，返回 Java InetAddress 结果）
+            dns_raw = await exec_cmd(CMDS["dns_android"].format(target=target), timeout=10)
+            import re as _re
+            local_ips = _re.findall(r'Address:\s*(\d+\.\d+\.\d+\.\d+)', dns_raw)
+        else:
+            dns_cmd = f"nslookup {target} 2>/dev/null | grep -A1 'Name:' | grep 'Address' | awk '{{print $2}}' | head -3"
+            dns_raw = await exec_cmd(dns_cmd, timeout=10)
+            if not dns_raw.strip():
+                dns_raw = await exec_cmd(f"ping -c 1 -W 2 {target} 2>/dev/null | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' | head -1", timeout=8)
+            local_ips = [ip.strip() for ip in dns_raw.strip().splitlines() if ip.strip() and '.' in ip]
 
         dns_leak = await check_dns_leak(target, local_ips)
 
-        # 6. 代理类型检测
-        proxy_info = await detect_proxy_type(exec_cmd, is_windows)
+        # 6. 代理类型检测（Android 跳过 shell 端口检测）
+        if not is_android:
+            proxy_info = await detect_proxy_type(exec_cmd, is_windows)
+        else:
+            proxy_info = {"type": "unknown", "detail": "Android 不支持端口检测"}
         dns_leak["proxy_type"] = proxy_info.get("type", "unknown")
         dns_leak["proxy_detail"] = proxy_info.get("detail", "")
         dns_leak["fix_advice"] = get_fix_advice(proxy_info.get("type", "unknown"), dns_leak.get("leaked", False))
@@ -665,7 +684,7 @@ async def check_node(agent_id: str, target: str, os_type: str = "linux") -> Node
             if not result.multi_source.get("country_consistent", True):
                 result.risk_flags.append("⚠️ 定位不一致：多数据库地理位置冲突")
 
-        # 9. 出口分流检测（仅 Linux/Mac，Windows curl 行为不同）
+        # 9. 出口分流检测（Android 也支持，AndroidNetTools 拦截 curl cloudflare）
         if not is_windows:
             result.outbound_split = await check_outbound_split(exec_cmd, is_windows)
             if result.outbound_split.get("split_detected"):
