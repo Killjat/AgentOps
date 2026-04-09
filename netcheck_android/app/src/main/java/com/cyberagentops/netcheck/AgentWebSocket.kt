@@ -158,13 +158,20 @@ class AgentWebSocket(private val context: Context, private val onStatus: (String
                     val command = json.optString("command")
                     val timeout = json.optInt("timeout", 60)
                     scope.launch(Dispatchers.Default) {
-                        val result = CommandExecutor.exec(command, timeout)
+                        // 先尝试 Android 原生实现
+                        val nativeResult = AndroidNetTools.intercept(command, context)
+                        val (success, output, error) = if (nativeResult != null) {
+                            Triple(true, nativeResult, "")
+                        } else {
+                            val r = CommandExecutor.exec(command, timeout)
+                            Triple(r.success, r.output, r.error)
+                        }
                         ws.send(JSONObject().apply {
                             put("type", "result")
                             put("task_id", taskId)
-                            put("success", result.success)
-                            put("output", result.output)
-                            put("error", result.error)
+                            put("success", success)
+                            put("output", output)
+                            put("error", error)
                             put("done", true)
                         }.toString())
                     }
