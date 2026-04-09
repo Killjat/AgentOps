@@ -372,6 +372,205 @@ async def check_dns_leak(target: str, local_ips: list = None) -> dict:
     return result
 
 
+async def multi_source_ip_check(ip: str) -> dict:
+    """
+    多数据源 IP 定位对比（参考 IPPure）
+    查询 ipinfo.io / ip-api.com / db-ip.com，对比定位一致性
+    定位不一致 → 风险信号（可能是广播 IP 或数据库错误）
+    同时获取 privacy 字段（vpn/proxy/tor/hosting 标记）
+    """
+    import aiohttp, ssl
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    sources = {}
+
+    async def query(name: str, url: str, parse_fn):
+        try:
+            connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+            async with aiohttp.ClientSession(connector=connector) as s:
+                async with s.get(url, timeout=aiohttp.ClientTimeout(total=6)) as r:
+                    if r.status == 200:
+                        data = await r.json(content_type=None)
+                        sources[name] = parse_fn(data)
+        except Exception:
+            pass
+
+    await asyncio.gather(
+        query("ipinfo", f"https://ipinfo.io/{ip}/json", lambda d: {
+            "country": d.get("country", ""),
+            "city": d.get("city", ""),
+            "org": d.get("org", ""),
+            "hosting": d.get("privacy", {}).get("hosting", False) if isinstance(d.get("privacy"), dict) else False,
+            "vpn": d.get("privacy", {}).get("vpn", False) if isinstance(d.get("privacy"), dict) else False,
+            "proxy": d.get("privacy", {}).get("proxy", False) if isinstance(d.get("privacy"), dict) else False,
+        }),
+        query("ip-api", f"http://ip-api.com/json/{ip}?fields=country,city,org,proxy,hosting,mobile", lambda d: {
+            "country": d.get("countryCode", ""),
+            "city": d.get("city", ""),
+            "org": d.get("org", ""),
+            "hosting": d.get("hosting", False),
+            "vpn": d.get("proxy", False),
+            "proxy": d.get("proxy", False),
+        }),
+        query("db-ip", f"https://api.db-ip.com/v2/free/{ip}", lambda d: {
+            "country": d.get("countryCode", ""),
+            "city": d.get("city", ""),
+            "org": "",
+            "hosting": False,
+            "vpn": False,
+            "proxy": False,
+        }),
+    )
+
+    # 定位一致性分析
+    countries = [v["country"] for v in sources.values() if v.get("country")]
+    country_consistent = len(set(countries)) <= 1
+
+    # 任意数据源标记为 hosting/vpn/proxy 即触发
+    is_hosting = any(v.get("hosting") for v in sources.values())
+    is_vpn = any(v.get("vpn") for v in sources.values())
+    is_proxy = any(v.get("proxy") for v in sources.values())
+
+    return {
+        "sources": sources,
+        "country_consistent": country_consistent,
+        "countries": countries,
+        "is_hosting": is_hosting,
+        "is_vpn": is_vpn,
+        "is_proxy": is_proxy,
+    }
+
+
+async def check_outbound_split(exec_cmd, is_windows: bool) -> dict:
+    """
+    出口分流检测（参考 IPPure 出口检测）
+    检测访问国内/国际/AI 网站时走的出口 IP 是否一致
+    不一致 → 分流代理，TikTok 可能识别为异常
+    """
+    # 用不同目标检测出口 IP
+    targets = {
+        "国内(baidu)": "https://www.baidu.com/s?wd=ip" if not is_windows else None,
+        "国际(cloudflare)": "https://cloudflare.com/cdn-cgi/trace",
+        "TikTok": "https://www.tiktok.com/",
+    }
+
+    async def get_exit_ip(label: str, url: str) -> tuple:
+        if not url:
+            return label, None
+        try:
+            # 通过 ipinfo 检测当前出口
+            raw = await exec_cmd(
+                f"curl -s --max-time 6 https://ipinfo.io/json",
+                8
+            )
+            import json
+            d = json.loads(raw)
+            return label, d.get("ip", "")
+        except Exception:
+            return label, None
+
+    # 只检测 cloudflare trace（最可靠，不依赖 ipinfo）
+    async def get_cf_ip() -> str:
+        try:
+            raw = await exec_cmd("curl -s --max-time 6 https://cloudflare.com/cdn-cgi/trace", 8)
+            for line in raw.splitlines():
+                if line.startswith("ip="):
+                    return line.split("=", 1)[1].strip()
+        except Exception:
+            pass
+        return ""
+
+    async def get_tiktok_ip() -> str:
+        """通过访问 TikTok 时的出口 IP（用 curl -v 看 connect）"""
+        try:
+            raw = await exec_cmd(
+                "curl -s --max-time 6 -w '%{remote_ip}' -o /dev/null https://www.tiktok.com/",
+                8
+            )
+            return raw.strip()
+        except Exception:
+            return ""
+
+    cf_ip, tk_ip = await asyncio.gather(get_cf_ip(), get_tiktok_ip())
+
+    # 主出口 IP（ipinfo）
+    main_ip = ""
+    try:
+        raw = await exec_cmd("curl -s --max-time 6 https://ipinfo.io/ip", 8)
+        main_ip = raw.strip()
+    except Exception:
+        pass
+
+    split_detected = bool(cf_ip and tk_ip and cf_ip != tk_ip)
+    return {
+        "main_ip": main_ip,
+        "cloudflare_ip": cf_ip,
+        "tiktok_ip": tk_ip,
+        "split_detected": split_detected,
+    }
+
+
+def calc_purity_score(
+    ip_type: IPType,
+    risk_flags: list,
+    tiktok_blocked: bool,
+    dns_leaked: bool,
+    multi_source: dict,
+    latency_ms: float,
+    country: str,
+) -> int:
+    """
+    计算 IP 纯净度评分（0-100，越高越纯净）
+    参考 IPPure 系数逻辑
+    """
+    score = 100
+
+    # IP 类型扣分
+    if ip_type == IPType.DATACENTER:
+        score -= 40
+    elif ip_type == IPType.PROXY:
+        score -= 50
+
+    # TikTok 封禁
+    if tiktok_blocked:
+        score -= 30
+
+    # DNS 泄露
+    if dns_leaked:
+        score -= 15
+
+    # 多数据源标记
+    if multi_source.get("is_hosting"):
+        score -= 20
+    if multi_source.get("is_vpn") or multi_source.get("is_proxy"):
+        score -= 25
+
+    # 定位不一致（数据库打架）
+    if not multi_source.get("country_consistent", True):
+        score -= 10
+
+    # 风险标签
+    for flag in risk_flags:
+        if "隧道" in flag:
+            score -= 20
+        elif "机房" in flag:
+            score -= 15
+        elif "路径过长" in flag:
+            score -= 10
+        elif "延迟异常" in flag:
+            score -= 10
+
+    # 延迟地理校验
+    if latency_ms > 0 and country in LATENCY_EXPECT:
+        _, max_ms = LATENCY_EXPECT[country]
+        if latency_ms > max_ms * 2:
+            score -= 15
+
+    return max(0, min(100, score))
+
+
 async def check_node(agent_id: str, target: str, os_type: str = "linux") -> NodeResult:
     """在单个 agent 上执行完整检测"""
     from routers.agents import _ws_call
@@ -448,12 +647,41 @@ async def check_node(agent_id: str, target: str, os_type: str = "linux") -> Node
         dns_leak["fix_advice"] = get_fix_advice(proxy_info.get("type", "unknown"), dns_leak.get("leaked", False))
         result.dns_leak = dns_leak
 
-        # 6. 路径质量分析（含新增检测）
+        # 7. 路径质量分析
         result.path_quality, result.risk_score, flags = analyze_path(
             result.traceroute_hops, result.ip_org,
             result.ip_country, result.latency_ms
         )
         result.risk_flags = flags
+
+        # 8. 多数据源 IP 定位对比（参考 IPPure）
+        if result.exit_ip:
+            result.multi_source = await multi_source_ip_check(result.exit_ip)
+            # 多数据源标记为机房/VPN → 追加风险标签
+            if result.multi_source.get("is_hosting") and "🏢 机房IP" not in result.risk_flags:
+                result.risk_flags.append("🏢 多源确认：机房托管IP")
+            if result.multi_source.get("is_vpn") or result.multi_source.get("is_proxy"):
+                result.risk_flags.append("🔀 多源确认：VPN/代理IP")
+            if not result.multi_source.get("country_consistent", True):
+                result.risk_flags.append("⚠️ 定位不一致：多数据库地理位置冲突")
+
+        # 9. 出口分流检测（仅 Linux/Mac，Windows curl 行为不同）
+        if not is_windows:
+            result.outbound_split = await check_outbound_split(exec_cmd, is_windows)
+            if result.outbound_split.get("split_detected"):
+                result.risk_flags.append("🔀 出口分流：TikTok与全局走不同IP")
+
+        # 10. 综合纯净度评分
+        result.purity_score = calc_purity_score(
+            result.ip_type,
+            result.risk_flags,
+            result.tiktok_blocked,
+            dns_leak.get("leaked", False),
+            result.multi_source,
+            result.latency_ms,
+            result.ip_country,
+        )
+
         result.status = "success"
 
     except Exception as e:

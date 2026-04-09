@@ -3,392 +3,498 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TikTok 线路质量检测 — CyberAgentOps</title>
+<title>网络质量检测 — CyberAgentOps</title>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#060810;color:#e2e8f0;min-height:100vh}
-.topbar{background:#0a0d14;border-bottom:1px solid #1e2240;padding:12px 24px;display:flex;align-items:center;justify-content:space-between}
+
+/* ── 顶栏 ── */
+.topbar{background:#0a0d14;border-bottom:1px solid #1e2240;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
 .topbar-title{font-size:15px;font-weight:700;color:#e2e8f0;display:flex;align-items:center;gap:8px}
-.topbar-back{font-size:12px;color:#475569;text-decoration:none}
-.topbar-back:hover{color:#7c6af7}
+.tab-group{display:flex;gap:2px;background:#060810;border-radius:8px;padding:3px;border:1px solid #1e2240}
+.tab-btn{border:none;border-radius:6px;padding:6px 18px;font-size:12px;cursor:pointer;font-weight:600;transition:all .2s;background:transparent;color:#334155}
+.tab-btn.active{background:#1a1d27;color:#e2e8f0}
+.back-link{font-size:12px;color:#334155;text-decoration:none}
+.back-link:hover{color:#7c6af7}
+
+/* ── 布局 ── */
 .layout{display:flex;height:calc(100vh - 49px)}
-.sidebar{width:260px;background:#0a0d14;border-right:1px solid #1e2240;display:flex;flex-direction:column;flex-shrink:0;padding:16px}
-.sidebar-label{font-size:10px;color:#334155;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
-.target-input{width:100%;background:#060810;border:1px solid #2d3148;border-radius:8px;color:#e2e8f0;padding:9px 12px;font-size:13px;outline:none;margin-bottom:8px}
-.target-input:focus{border-color:#7c6af7}
-.preset-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:16px}
+.sidebar{width:240px;background:#0a0d14;border-right:1px solid #1e2240;display:flex;flex-direction:column;flex-shrink:0;padding:16px;gap:10px}
+.main{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
+
+/* ── 侧栏控件 ── */
+.label{font-size:10px;color:#334155;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}
+.inp{width:100%;background:#060810;border:1px solid #2d3148;border-radius:8px;color:#e2e8f0;padding:9px 12px;font-size:13px;outline:none}
+.inp:focus{border-color:#7c6af7}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
 .chip{background:#0f1117;border:1px solid #2d3148;border-radius:20px;padding:3px 10px;font-size:11px;color:#64748b;cursor:pointer;transition:all .15s}
-.chip:hover,.chip.active{border-color:#7c6af7;color:#7c6af7;background:#1a1527}
-.agent-label{font-size:10px;color:#334155;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;margin-top:8px}
-.agent-select{width:100%;background:#060810;border:1px solid #2d3148;border-radius:8px;color:#e2e8f0;padding:9px 12px;font-size:13px;outline:none;margin-bottom:16px}
-.run-btn{width:100%;padding:12px;background:linear-gradient(135deg,#5b4fcf,#7c6af7);border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .2s;letter-spacing:.5px}
+.chip:hover,.chip.on{border-color:#7c6af7;color:#7c6af7;background:#1a1527}
+.run-btn{width:100%;padding:12px;background:linear-gradient(135deg,#5b4fcf,#7c6af7);border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .2s;margin-top:4px}
 .run-btn:hover{opacity:.9}
-.run-btn:disabled{opacity:.4;cursor:not-allowed}
-.stop-btn{width:100%;padding:10px;background:#1f0a0a;border:1px solid #3d1212;border-radius:10px;color:#f87171;font-size:13px;font-weight:600;cursor:pointer;margin-top:8px}
-.main{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px}
-/* Scorecard */
+.run-btn:disabled{opacity:.35;cursor:not-allowed}
+.stop-btn{width:100%;padding:9px;background:#1f0a0a;border:1px solid #3d1212;border-radius:10px;color:#f87171;font-size:13px;font-weight:600;cursor:pointer}
+.sel{width:100%;background:#060810;border:1px solid #2d3148;border-radius:8px;color:#e2e8f0;padding:9px 12px;font-size:13px;outline:none}
+
+/* ── 空状态 ── */
+.empty{text-align:center;padding:80px 40px;color:#1e2240}
+.empty-icon{font-size:52px;margin-bottom:14px}
+.empty-title{font-size:18px;font-weight:600;color:#2d3148;margin-bottom:8px}
+.empty-sub{font-size:13px;color:#1e2240;line-height:1.8}
+
+/* ── 判决横幅 ── */
+.verdict{border-radius:14px;padding:18px 22px;display:flex;align-items:center;gap:16px}
+.verdict-ok{background:linear-gradient(135deg,#0a1f0a,#0d2a12);border:1px solid #1a5a2e}
+.verdict-warn{background:linear-gradient(135deg,#1f1a0a,#2a200a);border:1px solid #5a3a0a}
+.verdict-bad{background:linear-gradient(135deg,#1f0a0a,#2a0d0d);border:1px solid #5a1a1a}
+.verdict-icon{font-size:36px;line-height:1;flex-shrink:0}
+.verdict-main{font-size:18px;font-weight:800;line-height:1.2}
+.verdict-sub{font-size:12px;opacity:.7;margin-top:4px}
+.verdict-ok .verdict-main{color:#4ade80}
+.verdict-warn .verdict-main{color:#fbbf24}
+.verdict-bad .verdict-main{color:#f87171}
+
+/* ── 计分卡 ── */
 .scorecard{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.score-card{background:#0f1117;border-radius:12px;padding:16px 20px;border:1px solid #1e2240;position:relative;overflow:hidden}
-.score-label{font-size:10px;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
-.score-value{font-size:32px;font-weight:800;line-height:1}
-.score-sub{font-size:11px;color:#334155;margin-top:6px}
-.status-ok{color:#4ade80}
-.status-warn{color:#fbbf24}
-.status-bad{color:#f87171}
-.verdict-banner{border-radius:12px;padding:14px 20px;display:flex;align-items:center;gap:12px;font-size:14px;font-weight:600}
-.verdict-ok{background:#0a1f0a;border:1px solid #1a4a2e;color:#4ade80}
-.verdict-warn{background:#1f1a0a;border:1px solid #4a3a0a;color:#fbbf24}
-.verdict-bad{background:#1f0a0a;border:1px solid #4a1a1a;color:#f87171}
-/* Charts */
-.chart-row{display:grid;grid-template-columns:2fr 1fr;gap:16px}
-.chart-card{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px}
-.chart-title{font-size:11px;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
-.chart-wrap{position:relative;height:180px}
-/* MTR Table */
-.mtr-card{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px}
-.mtr-table{width:100%;border-collapse:collapse;font-size:12px}
-.mtr-table th{color:#334155;font-weight:600;letter-spacing:.5px;text-transform:uppercase;padding:6px 10px;border-bottom:1px solid #1e2240;text-align:left;font-size:10px}
-.mtr-table td{padding:7px 10px;border-bottom:1px solid #0f1117;font-family:monospace}
-.mtr-table tr:hover td{background:#0a0d14}
-.hop-bar-wrap{width:200px;height:8px;background:#0a0d14;border-radius:4px;overflow:hidden;display:inline-block;vertical-align:middle}
-.hop-bar{height:100%;border-radius:4px;transition:width .3s}
-.tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600}
-.tag-dc{background:#1f0a0a;color:#f87171}
-.tag-res{background:#0a1f0a;color:#4ade80}
-.tag-priv{background:#1f1a0a;color:#fbbf24}
-.tag-proxy{background:#1f0a1f;color:#e879f9}
-.tag-bb{background:#0a1527;color:#60a5fa}
-.tag-isp{background:#1a1d27;color:#64748b}
-.tag-to{background:#1a1d27;color:#334155}
-.loss-bar{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:2px}
-.empty-state{text-align:center;padding:60px;color:#1e2240}
-.empty-icon{font-size:48px;margin-bottom:12px}
+.sc{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:14px 18px}
+.sc-label{font-size:10px;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.sc-val{font-size:30px;font-weight:800;line-height:1}
+.sc-sub{font-size:11px;color:#334155;margin-top:5px}
+.ok{color:#4ade80}.warn{color:#fbbf24}.bad{color:#f87171}
+
+/* ── 图表卡 ── */
+.chart-row{display:grid;grid-template-columns:2fr 1fr;gap:14px}
+.card{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px}
+.card-title{font-size:10px;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+.chart-wrap{position:relative;height:160px}
+
+/* ── 路由路径可视化 ── */
+.route-card{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px}
+.route-scroll{overflow-x:auto;padding-bottom:8px}
+.route-path{display:flex;align-items:center;gap:0;min-width:max-content;padding:8px 0}
+.hop-node{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:90px;max-width:110px}
+.hop-circle{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;border:2px solid;flex-shrink:0;position:relative}
+.hop-circle.dc{background:#1f0a0a;border-color:#5a1a1a}
+.hop-circle.res{background:#0a1f0a;border-color:#1a5a2e}
+.hop-circle.priv{background:#1f1a0a;border-color:#5a3a0a}
+.hop-circle.proxy{background:#1f0a1f;border-color:#5a1a5a}
+.hop-circle.bb{background:#0a1527;border-color:#1a3a5a}
+.hop-circle.isp{background:#0f1117;border-color:#2d3148}
+.hop-circle.timeout{background:#0a0d14;border-color:#1e2240;opacity:.4}
+.hop-circle.target{background:#1a1527;border-color:#7c6af7;box-shadow:0 0 12px rgba(124,106,247,.4)}
+.hop-ip{font-size:10px;font-family:monospace;color:#60a5fa;text-align:center;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hop-loc{font-size:10px;color:#475569;text-align:center;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hop-ms{font-size:11px;font-weight:700;text-align:center}
+.hop-tag{font-size:9px;padding:1px 5px;border-radius:3px;text-align:center;white-space:nowrap}
+.hop-arrow{display:flex;align-items:center;padding:0 2px;flex-shrink:0;margin-top:-20px}
+.arrow-line{height:2px;width:24px;background:linear-gradient(90deg,#2d3148,#3d4168)}
+.arrow-head{width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:6px solid #3d4168}
+.arrow-line.fast{background:linear-gradient(90deg,#22c55e,#4ade80)}
+.arrow-head.fast{border-left-color:#4ade80}
+.arrow-line.slow{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+.arrow-head.slow{border-left-color:#fbbf24}
+.arrow-line.bad{background:linear-gradient(90deg,#ef4444,#f87171)}
+.arrow-head.bad{border-left-color:#f87171}
+
+/* ── IP 信息 ── */
+.ip-card{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.ip-field-label{font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.ip-field-val{font-size:13px}
+
+/* ── 风险标签 ── */
+.risk-flags{display:flex;flex-wrap:wrap;gap:6px}
+.risk-flag{background:#1f0a0a;border:1px solid #3d1212;border-radius:6px;padding:4px 10px;font-size:12px;color:#f87171}
+
+/* ── DNS 泄露 ── */
+.dns-card{border-radius:12px;padding:14px 18px}
+.dns-ok{background:#0a1f0a;border:1px solid #1a3a1a}
+.dns-bad{background:#1f0a0a;border:1px solid #3d1212}
+
+/* ── 目标侦察 ── */
+.recon-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.recon-node-card{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px}
+.recon-node-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.recon-node-name{font-weight:700;font-size:14px;color:#e2e8f0}
+.recon-stats{display:flex;gap:8px;font-size:11px;color:#475569}
+.recon-stat{background:#0a0d14;border-radius:4px;padding:2px 7px}
+
+/* 侦察雷达图 */
+.recon-radar-wrap{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px}
+.recon-canvas-wrap{position:relative;width:100%;height:360px}
+
+/* ── 节点选择 ── */
+.agent-item{padding:8px 10px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:4px;transition:all .15s;border:1px solid transparent}
+.agent-item.selected{background:#1a1527;border-color:#7c6af7}
+.agent-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+
+/* ── 动画 ── */
 .pulse{animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .live-dot{width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 8px #4ade80;animation:pulse 2s infinite;display:inline-block}
+.spin{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── 综合评分圆环 ── */
+.score-ring-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px}
+.score-ring-label{font-size:10px;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-top:8px}
 </style>
 </head>
 <body>
 <div id="app">
   <div class="topbar">
     <div class="topbar-title">
-      <span class="live-dot" v-if="running"></span>
-      🔍 网络检测工具
+      <span class="live-dot" v-if="running||reconRunning"></span>
+      🔍 网络质量检测
     </div>
     <div style="display:flex;align-items:center;gap:16px">
-      <!-- Tab 切换 -->
-      <div style="display:flex;gap:2px;background:#0a0d14;border-radius:8px;padding:3px">
-        <button @click="activeTab='check'"
-          :style="activeTab==='check'?'background:#1a1d27;color:#e2e8f0':'color:#334155'"
-          style="border:none;border-radius:6px;padding:6px 16px;font-size:12px;cursor:pointer;font-weight:600;transition:all .2s">
-          📡 线路质量
-        </button>
-        <button @click="activeTab='recon'"
-          :style="activeTab==='recon'?'background:#1a1d27;color:#e2e8f0':'color:#334155'"
-          style="border:none;border-radius:6px;padding:6px 16px;font-size:12px;cursor:pointer;font-weight:600;transition:all .2s">
-          🎯 目标侦察
-        </button>
+      <div class="tab-group">
+        <button class="tab-btn" :class="{active:tab==='check'}" @click="tab='check'">📡 线路质量</button>
+        <button class="tab-btn" :class="{active:tab==='recon'}" @click="tab='recon'">🎯 目标侦察</button>
       </div>
-      <a href="/" class="topbar-back">← 返回控制台</a>
+      <a href="/" class="back-link">← 返回控制台</a>
     </div>
   </div>
 
   <div class="layout">
-    <!-- 左侧配置 - 线路质量 -->
-    <div class="sidebar" v-show="activeTab==='check'">
-      <div class="sidebar-label">检测目标</div>
-      <input class="target-input" v-model="target" placeholder="tiktok.com" />
-      <div class="preset-row">
-        <span v-for="p in presets" :key="p" class="chip" :class="{active:target===p}" @click="target=p">{{ p }}</span>
+
+    <!-- ══ 线路质量 侧栏 ══ -->
+    <div class="sidebar" v-show="tab==='check'">
+      <div>
+        <div class="label">检测目标</div>
+        <input class="inp" v-model="target" placeholder="tiktok.com" />
+        <div class="chips" style="margin-top:6px">
+          <span v-for="p in presets" :key="p" class="chip" :class="{on:target===p}" @click="target=p">{{ p }}</span>
+        </div>
       </div>
-
-      <div class="agent-label">选择节点</div>
-      <select class="agent-select" v-model="selectedAgent">
-        <option value="">-- 选择节点 --</option>
-        <option v-for="a in agents" :key="a.agent_id" :value="a.agent_id">
-          {{ a.name || a.agent_id }} ({{ a.status==='online'?'本地':'对端' }})
-        </option>
-      </select>
-
-      <div class="sidebar-label">检测模式</div>
-      <div class="preset-row" style="margin-bottom:16px">
-        <span class="chip" :class="{active:mode==='once'}" @click="mode='once'">单次检测</span>
-        <span class="chip" :class="{active:mode==='continuous'}" @click="mode='continuous'">持续监控</span>
+      <div>
+        <div class="label">选择节点</div>
+        <select class="sel" v-model="selectedAgent">
+          <option value="">-- 选择节点 --</option>
+          <option v-for="a in agents" :key="a.agent_id" :value="a.agent_id">
+            {{ a.name || a.agent_id.slice(0,8) }} · {{ a.os_type }}
+          </option>
+        </select>
       </div>
-
+      <div>
+        <div class="label">检测模式</div>
+        <div class="chips">
+          <span class="chip" :class="{on:mode==='once'}" @click="mode='once'">单次</span>
+          <span class="chip" :class="{on:mode==='continuous'}" @click="mode='continuous'">持续监控</span>
+        </div>
+      </div>
       <button class="run-btn" @click="startCheck" :disabled="running||!selectedAgent||!target">
-        {{ running ? '检测中...' : mode==='continuous'?'▶ 开始监控':'▶ 开始检测' }}
+        {{ running ? '检测中...' : '▶ 开始检测' }}
       </button>
       <button class="stop-btn" v-if="running" @click="stopCheck">⏹ 停止</button>
-
-      <div style="margin-top:16px;font-size:11px;color:#1e2240;line-height:1.8" v-if="stats.count>0">
-        已检测 {{ stats.count }} 次<br>
-        运行时长 {{ formatDuration(stats.elapsed) }}
+      <div v-if="stats.count>0" style="font-size:11px;color:#334155;line-height:1.8;margin-top:4px">
+        已检测 {{ stats.count }} 次 · {{ formatDuration(stats.elapsed) }}
       </div>
     </div>
 
-    <!-- 主内容 - 线路质量 -->
-    <div class="main" v-show="activeTab==='check'">
+    <!-- ══ 线路质量 主区 ══ -->
+    <div class="main" v-show="tab==='check'">
       <!-- 空状态 -->
-      <div v-if="!started" class="empty-state">
+      <div v-if="!started" class="empty">
         <div class="empty-icon">📡</div>
-        <div style="font-size:18px;font-weight:600;color:#334155;margin-bottom:8px">TikTok 线路质量仪表盘</div>
-        <div style="font-size:13px;color:#1e2240;line-height:1.8">
-          选择节点 → 输入目标 → 开始检测<br>
-          实时折线图 · 抖动分析 · 丢包检测 · MTR 路由追踪
-        </div>
+        <div class="empty-title">TikTok 线路质量仪表盘</div>
+        <div class="empty-sub">选择节点 → 输入目标 → 开始检测<br>实时折线图 · 抖动分析 · 丢包检测 · 路由可视化</div>
       </div>
 
       <template v-if="started">
         <!-- 判决横幅 -->
-        <div class="verdict-banner" :class="verdictClass">
-          <span style="font-size:20px">{{ verdictIcon }}</span>
-          <div>
-            <div>{{ verdictText }}</div>
-            <div style="font-size:12px;font-weight:400;opacity:.8;margin-top:2px">{{ verdictSub }}</div>
+        <div class="verdict" :class="verdictClass">
+          <div class="verdict-icon">{{ verdictIcon }}</div>
+          <div style="flex:1">
+            <div class="verdict-main">{{ verdictText }}</div>
+            <div class="verdict-sub">{{ verdictSub }}</div>
           </div>
-          <div style="margin-left:auto;font-size:12px;opacity:.6">{{ target }} · {{ currentAgent }}</div>
+          <!-- 综合评分圆环 -->
+          <div class="score-ring-wrap" v-if="stats.count>0">
+            <canvas ref="scoreRing" width="72" height="72"></canvas>
+            <div class="score-ring-label">综合评分</div>
+          </div>
         </div>
 
         <!-- 计分卡 -->
         <div class="scorecard">
-          <div class="score-card">
-            <div class="score-label">当前延迟</div>
-            <div class="score-value" :class="latencyClass(stats.current)">{{ stats.current > 0 ? stats.current+'ms' : '--' }}</div>
-            <div class="score-sub">200ms 基准线</div>
+          <div class="sc">
+            <div class="sc-label">当前延迟</div>
+            <div class="sc-val" :class="latencyClass(stats.current)">{{ stats.current>0?stats.current+'ms':'--' }}</div>
+            <div class="sc-sub">基准 200ms</div>
           </div>
-          <div class="score-card">
-            <div class="score-label">平均延迟</div>
-            <div class="score-value" :class="latencyClass(stats.avg)">{{ stats.avg > 0 ? stats.avg+'ms' : '--' }}</div>
-            <div class="score-sub">min {{ stats.min }}ms / max {{ stats.max }}ms</div>
+          <div class="sc">
+            <div class="sc-label">平均延迟</div>
+            <div class="sc-val" :class="latencyClass(stats.avg)">{{ stats.avg>0?stats.avg+'ms':'--' }}</div>
+            <div class="sc-sub">min {{ stats.min }}ms / max {{ stats.max }}ms</div>
           </div>
-          <div class="score-card">
-            <div class="score-label">抖动 Jitter</div>
-            <div class="score-value" :class="jitterClass(stats.jitter)">{{ stats.jitter > 0 ? stats.jitter+'ms' : '--' }}</div>
-            <div class="score-sub">{{ stats.jitter < 20 ? '稳定' : stats.jitter < 50 ? '轻微抖动' : '严重抖动' }}</div>
+          <div class="sc">
+            <div class="sc-label">抖动 Jitter</div>
+            <div class="sc-val" :class="jitterClass(stats.jitter)">{{ stats.jitter>0?stats.jitter+'ms':'--' }}</div>
+            <div class="sc-sub">{{ stats.jitter<20?'稳定':stats.jitter<50?'轻微抖动':'严重抖动' }}</div>
           </div>
-          <div class="score-card" :style="lossCardStyle(stats.lossRate)">
-            <div class="score-label">丢包率</div>
-            <div class="score-value" :class="lossClass(stats.lossRate)">{{ stats.lossRate.toFixed(1) }}%</div>
-            <div class="score-sub">{{ stats.loss }}/{{ stats.count }} 丢包</div>
+          <div class="sc" :style="lossCardStyle(stats.lossRate)">
+            <div class="sc-label">丢包率</div>
+            <div class="sc-val" :class="lossClass(stats.lossRate)">{{ stats.lossRate.toFixed(1) }}%</div>
+            <div class="sc-sub">{{ stats.loss }}/{{ stats.count }} 丢包</div>
           </div>
         </div>
 
-        <!-- 图表区 -->
+        <!-- 图表 -->
         <div class="chart-row">
-          <!-- 延迟折线图 -->
-          <div class="chart-card">
-            <div class="chart-title">
-              <span>延迟趋势 (Latency)</span>
-              <span style="color:#334155;font-size:10px">最近 60 次</span>
-            </div>
-            <div class="chart-wrap">
-              <canvas ref="latencyChart"></canvas>
-            </div>
+          <div class="card">
+            <div class="card-title"><span>延迟趋势</span><span style="color:#334155">最近60次</span></div>
+            <div class="chart-wrap"><canvas ref="latencyChart"></canvas></div>
           </div>
-          <!-- 抖动图 -->
-          <div class="chart-card">
-            <div class="chart-title">
-              <span>抖动 (Jitter)</span>
-              <span style="color:#334155;font-size:10px">ms 方差</span>
-            </div>
-            <div class="chart-wrap">
-              <canvas ref="jitterChart"></canvas>
-            </div>
+          <div class="card">
+            <div class="card-title"><span>抖动 Jitter</span></div>
+            <div class="chart-wrap"><canvas ref="jitterChart"></canvas></div>
           </div>
         </div>
 
-        <!-- MTR 路由追踪表 -->
-        <div class="mtr-card" v-if="hops.length">
-          <div class="chart-title">
-            <span>MTR 路由追踪</span>
-            <span style="color:#334155;font-size:10px">{{ hops.length }} 跳 · {{ target }}</span>
+        <!-- 路由路径可视化 -->
+        <div class="route-card" v-if="hops.length">
+          <div class="card-title">
+            <span>路由路径可视化</span>
+            <span style="color:#334155">{{ hops.length }} 跳 · {{ target }}</span>
           </div>
-          <table class="mtr-table">
-            <thead>
-              <tr>
-                <th style="width:30px">#</th>
-                <th style="width:130px">IP</th>
-                <th style="width:160px">位置</th>
-                <th style="width:80px">运营商</th>
-                <th style="width:60px">类型</th>
-                <th style="width:60px">Avg</th>
-                <th style="width:60px">Cur</th>
-                <th>延迟可视化</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(hop, i) in hops" :key="i">
-                <td style="color:#334155">{{ i+1 }}</td>
-                <td style="color:#60a5fa">{{ hop.ip }}</td>
-                <td style="color:#64748b">{{ hop.city ? hop.city+', ' : '' }}{{ hop.country }}</td>
-                <td style="color:#475569;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="hop.org">{{ hop.org ? hop.org.split(' ').slice(1).join(' ').slice(0,15) : '' }}</td>
-                <td>
-                  <span class="tag" :class="tagClass(hop.tag)">{{ hop.tag || '—' }}</span>
-                </td>
-                <td :style="{color: hop.avg>200?'#f87171':hop.avg>100?'#fbbf24':'#4ade80'}">
-                  {{ hop.avg > 0 ? hop.avg+'ms' : hop.ip==='*'?'*':'—' }}
-                </td>
-                <td :style="{color: hop.cur>200?'#f87171':hop.cur>100?'#fbbf24':'#4ade80'}">
-                  {{ hop.cur > 0 ? hop.cur+'ms' : hop.ip==='*'?'*':'—' }}
-                </td>
-                <td>
-                  <div v-if="hop.avg > 0">
-                    <div class="hop-bar-wrap">
-                      <div class="hop-bar" :style="{
-                        width: Math.min(hop.avg/500*100,100)+'%',
-                        background: hop.avg>200?'#ef4444':hop.avg>100?'#f59e0b':'#22c55e'
-                      }"></div>
+          <div class="route-scroll">
+            <div class="route-path">
+              <template v-for="(hop, i) in hops" :key="i">
+                <div class="hop-node">
+                  <div class="hop-circle" :class="hopCircleClass(hop, i===hops.length-1)">
+                    {{ hopEmoji(hop, i===hops.length-1) }}
+                    <!-- 延迟徽章 -->
+                    <div v-if="hop.avg>0" style="position:absolute;top:-8px;right:-8px;background:#0a0d14;border:1px solid #2d3148;border-radius:8px;padding:1px 5px;font-size:9px;font-weight:700"
+                         :style="{color: hop.avg>200?'#f87171':hop.avg>100?'#fbbf24':'#4ade80'}">
+                      {{ hop.avg }}ms
                     </div>
                   </div>
-                  <span v-else-if="hop.loss===100" style="color:#f87171;font-size:11px">100% 丢包</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                  <div class="hop-ip">{{ hop.ip==='*'?'* * *':hop.ip }}</div>
+                  <div class="hop-loc">{{ hopLoc(hop) }}</div>
+                  <div class="hop-tag" :style="hopTagStyle(hop.tag)">{{ hop.tag||'—' }}</div>
+                </div>
+                <!-- 箭头连线 -->
+                <div class="hop-arrow" v-if="i<hops.length-1">
+                  <div class="arrow-line" :class="arrowClass(hop)"></div>
+                  <div class="arrow-head" :class="arrowClass(hop)"></div>
+                </div>
+              </template>
+            </div>
+          </div>
         </div>
 
-        <!-- IP 信息卡 -->
-        <div v-if="ipInfo.ip" style="background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+        <!-- IP 信息 -->
+        <div class="ip-card" v-if="ipInfo.ip">
           <div>
-            <div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">出口 IP</div>
-            <div style="font-family:monospace;color:#60a5fa;font-size:13px">{{ ipInfo.ip }}</div>
+            <div class="ip-field-label">出口 IP</div>
+            <div class="ip-field-val" style="font-family:monospace;color:#60a5fa">{{ ipInfo.ip }}</div>
           </div>
           <div>
-            <div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">位置</div>
-            <div style="color:#e2e8f0;font-size:13px">{{ ipInfo.city }}, {{ ipInfo.country }}</div>
+            <div class="ip-field-label">位置</div>
+            <div class="ip-field-val">{{ ipInfo.city }}, {{ ipInfo.country }}</div>
           </div>
           <div>
-            <div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">运营商</div>
-            <div style="color:#94a3b8;font-size:12px">{{ ipInfo.org }}</div>
+            <div class="ip-field-label">运营商</div>
+            <div class="ip-field-val" style="color:#94a3b8;font-size:12px">{{ ipInfo.org }}</div>
           </div>
           <div>
-            <div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">IP 类型</div>
-            <span class="tag" :class="tagClass(ipInfo.type)">{{ ipInfo.type }}</span>
+            <div class="ip-field-label">IP 类型</div>
+            <span style="padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600" :style="ipTypeStyle(ipInfo.type)">{{ ipInfo.type }}</span>
             <span v-if="ipInfo.tiktok_blocked" style="margin-left:6px;color:#f87171;font-size:11px">🚫 TikTok封禁</span>
           </div>
         </div>
 
-        <!-- DNS 泄露检测结果 -->
-        <div v-if="dnsLeak.checked" style="margin-top:10px;padding:14px 18px;border-radius:12px"
-             :style="dnsLeak.leaked?'background:#1f0a0a;border:1px solid #3d1212':'background:#0a1f0a;border:1px solid #1a3a1a'">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div style="font-size:13px;font-weight:700"
-                 :style="{color: dnsLeak.leaked?'#f87171':'#4ade80'}">
-              {{ dnsLeak.leaked ? '⚠️ DNS 泄露：已检测到' : '✅ DNS 泄露：无泄露' }}
+        <!-- 纯净度分析（多数据源 + 出口分流） -->
+        <div v-if="purityData.score >= 0" style="background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px">
+          <div style="display:flex;align-items:center;gap:16px;margin-bottom:14px">
+            <canvas ref="purityRing" width="64" height="64"></canvas>
+            <div>
+              <div style="font-size:10px;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">IP 纯净度评分</div>
+              <div style="font-size:24px;font-weight:800" :style="{color: purityData.score>=70?'#4ade80':purityData.score>=40?'#fbbf24':'#f87171'}">
+                {{ purityData.score }} <span style="font-size:13px;font-weight:400;color:#475569">/ 100</span>
+              </div>
+              <div style="font-size:11px;color:#475569;margin-top:2px">{{ purityData.score>=70?'纯净住宅IP':purityData.score>=40?'中性/可疑':'高风险IP' }}</div>
             </div>
-            <div v-if="dnsLeak.proxy_type && dnsLeak.proxy_type!=='unknown'" style="font-size:11px;color:#475569;background:#0a0d14;padding:2px 8px;border-radius:4px">
-              {{ {clash_system:'Clash 系统代理',tun_mode:'TUN 模式',v2ray:'V2Ray',wireguard:'WireGuard',socks5:'SOCKS5',system_proxy:'系统代理',none:'无代理',env_proxy:'环境变量代理'}[dnsLeak.proxy_type] || dnsLeak.proxy_type }}
+            <!-- 多数据源定位 -->
+            <div v-if="purityData.sources" style="flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+              <div v-for="(src, name) in purityData.sources" :key="name"
+                   style="background:#0a0d14;border-radius:8px;padding:8px 10px;border:1px solid #1e2240">
+                <div style="font-size:10px;color:#334155;margin-bottom:3px">{{ name }}</div>
+                <div style="font-size:12px;font-weight:600;color:#e2e8f0">{{ src.country }} {{ src.city }}</div>
+                <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
+                  <span v-if="src.hosting" style="font-size:9px;background:#1f0a0a;color:#f87171;padding:1px 5px;border-radius:3px">机房</span>
+                  <span v-if="src.vpn||src.proxy" style="font-size:9px;background:#1f0a1f;color:#e879f9;padding:1px 5px;border-radius:3px">VPN/代理</span>
+                </div>
+              </div>
             </div>
           </div>
-          <div style="font-size:11px;color:#475569;font-family:monospace;line-height:1.8;margin-bottom:8px">
-            <div>本机 DNS 解析: {{ (dnsLeak.local_ips||[]).join(', ') || '—' }}</div>
-            <div>Google DoH 解析: {{ (dnsLeak.google_ips||[]).slice(0,3).join(', ') || '—' }}</div>
-            <div v-if="dnsLeak.proxy_detail" style="color:#334155">{{ dnsLeak.proxy_detail }}</div>
+          <!-- 出口分流检测 -->
+          <div v-if="purityData.outbound" style="border-top:1px solid #1e2240;padding-top:12px">
+            <div style="font-size:10px;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">出口分流检测</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <div style="background:#0a0d14;border-radius:8px;padding:8px 12px;border:1px solid #1e2240">
+                <div style="font-size:10px;color:#334155;margin-bottom:3px">主出口</div>
+                <div style="font-size:12px;font-family:monospace;color:#60a5fa">{{ purityData.outbound.main_ip||'—' }}</div>
+              </div>
+              <div style="background:#0a0d14;border-radius:8px;padding:8px 12px;border:1px solid #1e2240">
+                <div style="font-size:10px;color:#334155;margin-bottom:3px">Cloudflare 出口</div>
+                <div style="font-size:12px;font-family:monospace;color:#60a5fa">{{ purityData.outbound.cloudflare_ip||'—' }}</div>
+              </div>
+              <div style="background:#0a0d14;border-radius:8px;padding:8px 12px;border:1px solid #1e2240">
+                <div style="font-size:10px;color:#334155;margin-bottom:3px">TikTok 出口</div>
+                <div style="font-size:12px;font-family:monospace" :style="{color: purityData.outbound.split_detected?'#f87171':'#60a5fa'}">
+                  {{ purityData.outbound.tiktok_ip||'—' }}
+                </div>
+              </div>
+              <div v-if="purityData.outbound.split_detected"
+                   style="background:#1f0a0a;border:1px solid #3d1212;border-radius:8px;padding:8px 12px;display:flex;align-items:center;gap:6px">
+                <span style="font-size:14px">⚠️</span>
+                <div>
+                  <div style="font-size:12px;color:#f87171;font-weight:600">出口分流</div>
+                  <div style="font-size:10px;color:#475569">TikTok 走不同出口，可能被识别为异常</div>
+                </div>
+              </div>
+              <div v-else-if="purityData.outbound.tiktok_ip"
+                   style="background:#0a1f0a;border:1px solid #1a3a1a;border-radius:8px;padding:8px 12px;display:flex;align-items:center;gap:6px">
+                <span style="font-size:14px">✅</span>
+                <div style="font-size:12px;color:#4ade80;font-weight:600">出口一致</div>
+              </div>
+            </div>
           </div>
-          <!-- 修复建议 -->
-          <div v-if="dnsLeak.leaked && dnsLeak.fix_advice"
-               style="background:#0a0d14;border-radius:8px;padding:10px 12px;font-size:12px;color:#94a3b8;line-height:1.8;white-space:pre-wrap">{{ dnsLeak.fix_advice }}</div>
+        </div>
+
+        <!-- DNS 泄露 -->
+        <div v-if="dnsLeak.checked" class="dns-card" :class="dnsLeak.leaked?'dns-bad':'dns-ok'">          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="font-size:13px;font-weight:700" :style="{color:dnsLeak.leaked?'#f87171':'#4ade80'}">
+              {{ dnsLeak.leaked?'⚠️ DNS 泄露：已检测到':'✅ DNS 无泄露' }}
+            </div>
+            <div v-if="dnsLeak.proxy_type&&dnsLeak.proxy_type!=='unknown'" style="font-size:11px;color:#475569;background:#0a0d14;padding:2px 8px;border-radius:4px">
+              {{ proxyTypeLabel(dnsLeak.proxy_type) }}
+            </div>
+          </div>
+          <div style="font-size:11px;color:#475569;font-family:monospace;line-height:1.8">
+            <div>本机 DNS: {{ (dnsLeak.local_ips||[]).join(', ')||'—' }}</div>
+            <div>Google DoH: {{ (dnsLeak.google_ips||[]).slice(0,3).join(', ')||'—' }}</div>
+          </div>
+          <div v-if="dnsLeak.leaked&&dnsLeak.fix_advice" style="margin-top:8px;background:#0a0d14;border-radius:8px;padding:10px 12px;font-size:12px;color:#94a3b8;line-height:1.8;white-space:pre-wrap">{{ dnsLeak.fix_advice }}</div>
         </div>
 
         <!-- 风险标签 -->
-        <div v-if="riskFlags.length" style="display:flex;flex-wrap:wrap;gap:6px">
-          <span v-for="f in riskFlags" :key="f"
-                style="background:#1f0a0a;border:1px solid #3d1212;border-radius:6px;padding:4px 10px;font-size:12px;color:#f87171">
-            {{ f }}
-          </span>
-        </div>
-
-        <!-- AI 分析 -->
-        <div v-if="aiAnalysis" style="background:#0f1117;border:1px solid #2d3148;border-radius:12px;padding:16px">
-          <div style="font-size:10px;color:#7c6af7;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">🤖 AI 分析</div>
-          <div style="font-size:13px;color:#94a3b8;line-height:1.8;white-space:pre-wrap">{{ aiAnalysis }}</div>
+        <div class="risk-flags" v-if="riskFlags.length">
+          <span v-for="f in riskFlags" :key="f" class="risk-flag">{{ f }}</span>
         </div>
       </template>
     </div>
 
-    <!-- 目标侦察 Tab -->
-    <div class="sidebar" v-show="activeTab==='recon'" style="width:280px">
-      <div class="sidebar-label">侦察目标</div>
-      <input class="target-input" v-model="reconTarget" placeholder="www.example.com" />
-      <div class="preset-row">
-        <span v-for="p in reconPresets" :key="p" class="chip" :class="{active:reconTarget===p}" @click="reconTarget=p">{{ p }}</span>
-      </div>
-
-      <div class="agent-label" style="margin-top:8px">选择探测节点（多选）</div>
-      <div style="flex:1;overflow-y:auto;padding:4px 0;margin-bottom:12px">
-        <div v-for="a in agents" :key="a.agent_id"
-             @click="toggleReconAgent(a.agent_id)"
-             style="padding:8px 10px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:4px;transition:all .15s"
-             :style="reconAgents.includes(a.agent_id)?'background:#1a1527;border:1px solid #7c6af7':'border:1px solid transparent'">
-          <div style="width:7px;height:7px;border-radius:50%;flex-shrink:0"
-               :style="{background: a.status==='online'?'#4ade80':'#334155'}"></div>
-          <div>
-            <div style="font-size:12px;font-weight:500;color:#e2e8f0">{{ a.name || a.agent_id }}</div>
-            <div style="font-size:10px;color:#475569">{{ a.os_type }}</div>
-          </div>
-          <span v-if="reconAgents.includes(a.agent_id)" style="margin-left:auto;color:#7c6af7;font-size:12px">✓</span>
+    <!-- ══ 目标侦察 侧栏 ══ -->
+    <div class="sidebar" v-show="tab==='recon'" style="width:260px">
+      <div>
+        <div class="label">侦察目标</div>
+        <input class="inp" v-model="reconTarget" placeholder="www.example.com" />
+        <div class="chips" style="margin-top:6px">
+          <span v-for="p in reconPresets" :key="p" class="chip" :class="{on:reconTarget===p}" @click="reconTarget=p">{{ p }}</span>
         </div>
       </div>
-
+      <div>
+        <div class="label">探测节点（多选）</div>
+        <div style="flex:1;overflow-y:auto;max-height:280px">
+          <div v-for="a in agents" :key="a.agent_id"
+               class="agent-item" :class="{selected:reconAgents.includes(a.agent_id)}"
+               @click="toggleReconAgent(a.agent_id)">
+            <div class="agent-dot" :style="{background:a.status==='online'?'#4ade80':'#334155'}"></div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:500;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.name||a.agent_id.slice(0,10) }}</div>
+              <div style="font-size:10px;color:#475569">{{ a.os_type }}</div>
+            </div>
+            <span v-if="reconAgents.includes(a.agent_id)" style="color:#7c6af7;font-size:12px;flex-shrink:0">✓</span>
+          </div>
+        </div>
+      </div>
       <button class="run-btn" @click="startRecon" :disabled="reconRunning||!reconTarget||!reconAgents.length">
-        {{ reconRunning ? '侦察中...' : `🎯 开始侦察 ${reconAgents.length?'('+reconAgents.length+'节点)':''}` }}
+        {{ reconRunning?'侦察中...':'🎯 开始侦察'+(reconAgents.length?' ('+reconAgents.length+'节点)':'') }}
       </button>
     </div>
 
-    <div class="main" v-show="activeTab==='recon'">
-      <!-- 空状态 -->
-      <div v-if="!reconResult && !reconRunning" class="empty-state">
+    <!-- ══ 目标侦察 主区 ══ -->
+    <div class="main" v-show="tab==='recon'">
+      <div v-if="!reconResult&&!reconRunning" class="empty">
         <div class="empty-icon">🎯</div>
-        <div style="font-size:18px;font-weight:600;color:#334155;margin-bottom:8px">目标网络侦察</div>
-        <div style="font-size:13px;color:#1e2240;line-height:1.8">
-          选择多个节点，输入目标域名<br>
-          从不同地理位置并发 traceroute，AI 分析目标服务器位置、CDN 分布、最优接入路径
-        </div>
+        <div class="empty-title">目标网络侦察</div>
+        <div class="empty-sub">选择多个节点，输入目标域名<br>从不同地理位置并发探测，可视化路径对比</div>
       </div>
 
-      <div v-if="reconRunning && !reconResult" style="text-align:center;padding:60px;color:#334155">
-        <div style="font-size:32px;margin-bottom:12px;animation:pulse 1.5s infinite">🎯</div>
+      <div v-if="reconRunning&&!reconResult" style="text-align:center;padding:80px;color:#334155">
+        <div style="font-size:40px;margin-bottom:14px" class="pulse">🎯</div>
         <div style="font-size:14px;color:#475569">正在从 {{ reconAgents.length }} 个节点并发探测...</div>
-        <div style="font-size:12px;color:#334155;margin-top:6px">traceroute 需要约 30-60 秒</div>
+        <div style="font-size:12px;color:#334155;margin-top:6px">traceroute 约需 30-60 秒</div>
       </div>
 
       <template v-if="reconResult">
-        <!-- AI 汇总 -->
-        <div style="background:#0f1117;border:1px solid #2d3148;border-radius:12px;padding:16px;margin-bottom:16px">
-          <div style="font-size:10px;color:#7c6af7;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">🤖 目标网络画像</div>
-          <div style="font-size:13px;color:#94a3b8;line-height:1.8;white-space:pre-wrap">{{ reconResult.summary }}</div>
+        <!-- 雷达连线图 -->
+        <div class="recon-radar-wrap">
+          <div class="card-title">
+            <span>多节点路径对比图</span>
+            <span style="color:#334155">{{ reconResult.results.length }} 个节点 → {{ reconTarget }}</span>
+          </div>
+          <div class="recon-canvas-wrap">
+            <canvas ref="radarCanvas" style="width:100%;height:100%"></canvas>
+          </div>
         </div>
 
-        <!-- 各节点结果 -->
-        <div v-for="r in reconResult.results" :key="r.agent_id"
-             style="background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px;margin-bottom:12px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-            <div style="font-weight:600;font-size:14px;color:#e2e8f0">
-              {{ r.name }} <span style="font-size:11px;color:#475569;font-weight:400">{{ r.os_type }}</span>
-            </div>
-            <div style="font-size:11px;color:#475569">
-              {{ r.valid_hops }} 有效跳 · {{ r.timeout_hops }} 超时 · {{ r.private_hops }} 内网
-            </div>
+        <!-- 关键发现卡片 -->
+        <div v-if="reconResult.findings&&reconResult.findings.length" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+          <div v-for="f in reconResult.findings" :key="f.label"
+               style="background:#0f1117;border:1px solid #1e2240;border-radius:10px;padding:14px">
+            <div style="font-size:10px;color:#475569;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">{{ f.label }}</div>
+            <div style="font-size:15px;font-weight:700;color:#e2e8f0">{{ f.value }}</div>
+            <div v-if="f.sub" style="font-size:11px;color:#475569;margin-top:3px">{{ f.sub }}</div>
           </div>
+        </div>
 
-          <!-- 最后5跳 -->
-          <div v-if="r.last5 && r.last5.length">
-            <div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">最后 {{ r.last5.length }} 个关键跳点</div>
-            <table style="width:100%;border-collapse:collapse;font-size:11px">
-              <tr v-for="(hop, i) in r.last5" :key="i" style="border-bottom:1px solid #0a0d14">
-                <td style="padding:5px 8px;font-family:monospace;color:#60a5fa;width:130px">{{ hop.ip }}</td>
-                <td style="padding:5px 8px;color:#64748b;width:140px">{{ hop.city ? hop.city+', '+hop.country : hop.country }}</td>
-                <td style="padding:5px 8px;color:#475569;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ hop.org ? hop.org.split(' ').slice(1).join(' ').slice(0,20) : '' }}</td>
-                <td style="padding:5px 8px">
-                  <span class="tag" :class="tagClass(hop.tag)">{{ hop.tag || '—' }}</span>
-                </td>
-              </tr>
-            </table>
+        <!-- 各节点路由卡片 -->
+        <div class="recon-grid">
+          <div v-for="r in reconResult.results" :key="r.agent_id" class="recon-node-card">
+            <div class="recon-node-header">
+              <div>
+                <div class="recon-node-name">{{ r.name }}</div>
+                <div style="font-size:11px;color:#475569;margin-top:2px">{{ r.os_type }}</div>
+              </div>
+              <div class="recon-stats">
+                <span class="recon-stat" style="color:#4ade80">{{ r.valid_hops }} 有效</span>
+                <span class="recon-stat" style="color:#334155">{{ r.timeout_hops }} 超时</span>
+                <span v-if="r.private_hops>0" class="recon-stat" style="color:#fbbf24">{{ r.private_hops }} 内网</span>
+              </div>
+            </div>
+
+            <!-- 最后5跳路径 -->
+            <div v-if="r.last5&&r.last5.length">
+              <div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">最后 {{ r.last5.length }} 跳（接近目标）</div>
+              <div v-for="(hop,i) in r.last5" :key="i"
+                   style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #0a0d14">
+                <div style="width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0"
+                     :style="hopCircleBg(hop, i===r.last5.length-1)">
+                  {{ hopEmoji(hop, i===r.last5.length-1) }}
+                </div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:11px;font-family:monospace;color:#60a5fa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ hop.ip }}</div>
+                  <div style="font-size:10px;color:#475569">{{ hop.city?hop.city+', ':'' }}{{ hop.country }} · {{ hop.org?hop.org.split(' ').slice(1).join(' ').slice(0,18):'' }}</div>
+                </div>
+                <div style="flex-shrink:0">
+                  <span style="padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600" :style="hopTagStyle(hop.tag)">{{ hop.tag||'—' }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else style="color:#334155;font-size:12px;padding:8px 0">
+              {{ r.status==='failed'?'❌ '+r.error:'无有效路由数据' }}
+            </div>
           </div>
-          <div v-else style="color:#334155;font-size:12px;padding:8px 0">{{ r.status === 'failed' ? '❌ '+r.error : '无有效路由数据' }}</div>
+        </div>
+
+        <!-- AI 汇总（结构化展示，不是大段文字） -->
+        <div v-if="reconResult.summary" style="background:#0f1117;border:1px solid #2d3148;border-radius:12px;padding:16px">
+          <div style="font-size:10px;color:#7c6af7;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">🤖 AI 分析摘要</div>
+          <div style="font-size:13px;color:#94a3b8;line-height:1.8;white-space:pre-wrap">{{ reconResult.summary }}</div>
         </div>
       </template>
     </div>
@@ -396,13 +502,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 
 <script>
-const { createApp, ref, computed, onMounted, nextTick } = Vue
+const { createApp, ref, computed, onMounted, nextTick, watch } = Vue
 const API = ''
 const token = localStorage.getItem('cyber_token') || ''
 const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {}
 
 createApp({
   setup() {
+    // ── 状态 ──
+    const tab = ref('check')
     const target = ref('tiktok.com')
     const selectedAgent = ref('')
     const agents = ref([])
@@ -410,64 +518,53 @@ createApp({
     const running = ref(false)
     const started = ref(false)
     const currentAgent = ref('')
+    const presets = ['tiktok.com', 'monalisasea.tiktokcdn.com', 'instagram.com', 'youtube.com', 'google.com']
 
-    const presets = ['tiktok.com', 'monalisasea.tiktokcdn.com', 'instagram.com', 'youtube.com']
-
-    // 图表 refs
     const latencyChart = ref(null)
     const jitterChart = ref(null)
+    const scoreRing = ref(null)
+    const purityRing = ref(null)
+    const purityData = ref({ score: -1, sources: null, outbound: null })
     let lchart = null, jchart = null
 
-    // 数据
-    const latencyHistory = ref([]) // [{t, ms, loss}]
     const hops = ref([])
     const ipInfo = ref({})
     const riskFlags = ref([])
-    const aiAnalysis = ref('')
     const dnsLeak = ref({ checked: false, leaked: false, local_ips: [], google_ips: [] })
-
     const stats = ref({ current: 0, avg: 0, min: 9999, max: 0, jitter: 0, loss: 0, count: 0, lossRate: 0, elapsed: 0 })
-    let startTime = 0
-    let timer = null
-    let stopFlag = false
+    let startTime = 0, timer = null, stopFlag = false
 
-    // 计算判决 - 综合延迟、抖动、丢包、IP类型
+    // ── 目标侦察 ──
+    const reconTarget = ref('www.tiktok.com')
+    const reconAgents = ref([])
+    const reconRunning = ref(false)
+    const reconResult = ref(null)
+    const reconPresets = ['www.tiktok.com', 'www.instagram.com', 'www.youtube.com', 'www.google.com']
+
+    // ── 判决计算 ──
     const verdictClass = computed(() => {
       const { lossRate, avg, jitter } = stats.value
       const ipType = ipInfo.value.type || ''
       const blocked = ipInfo.value.tiktok_blocked
-      const flags = riskFlags.value
-
-      // 直接封禁
       if (blocked) return 'verdict-bad'
-      // 机房 IP 或代理
       if (ipType.includes('机房') || ipType.includes('代理')) return 'verdict-bad'
-      // 隧道代理特征
-      if (flags.some(f => f.includes('隧道'))) return 'verdict-bad'
-      // 网络质量差
+      if (riskFlags.value.some(f => f.includes('隧道'))) return 'verdict-bad'
       if (lossRate > 5 || avg > 500 || jitter > 100) return 'verdict-bad'
-      // 住宅 IP 但网络一般
       if (lossRate > 1 || avg > 200 || jitter > 50) return 'verdict-warn'
-      // 未知 IP 类型，谨慎
       if (ipType.includes('未知') && stats.value.count > 0) return 'verdict-warn'
       return 'verdict-ok'
     })
-    const verdictIcon = computed(() => {
-      if (verdictClass.value === 'verdict-bad') return '🔴'
-      if (verdictClass.value === 'verdict-warn') return '🟡'
-      return '🟢'
-    })
+    const verdictIcon = computed(() => ({ 'verdict-bad': '🔴', 'verdict-warn': '🟡', 'verdict-ok': '🟢' }[verdictClass.value]))
     const verdictText = computed(() => {
       const ipType = ipInfo.value.type || ''
-      const blocked = ipInfo.value.tiktok_blocked
-      if (blocked) return 'IP 已被 TikTok 封禁 — 账号权重极低'
-      if (ipType.includes('机房')) return '机房 IP — TikTok 判定为非真实用户，账号权重低'
-      if (ipType.includes('代理')) return '代理/VPN IP — TikTok 风控高风险'
-      if (riskFlags.value.some(f => f.includes('隧道'))) return '隧道代理特征 — TikTok 可能识别为异常流量'
+      if (ipInfo.value.tiktok_blocked) return 'IP 已被 TikTok 封禁'
+      if (ipType.includes('机房')) return '机房 IP — 账号权重低'
+      if (ipType.includes('代理')) return '代理/VPN IP — 高风控风险'
+      if (riskFlags.value.some(f => f.includes('隧道'))) return '隧道代理特征 — 可能被识别为异常流量'
       if (verdictClass.value === 'verdict-bad') return '线路质量差 — 直播可能严重卡顿'
       if (verdictClass.value === 'verdict-warn') return '线路质量一般 — 建议持续监控'
-      if (ipType.includes('住宅')) return '住宅 IP + 线路良好 — 适合 TikTok 直播'
-      return '线路质量良好 — IP 类型待确认'
+      if (ipType.includes('住宅')) return '住宅 IP + 线路良好 — 适合直播'
+      return '线路质量良好'
     })
     const verdictSub = computed(() => {
       const { avg, jitter, lossRate } = stats.value
@@ -480,42 +577,259 @@ createApp({
       return parts.join(' · ')
     })
 
-    function latencyClass(v) {
-      if (v <= 0) return 'status-ok'
-      if (v < 100) return 'status-ok'
-      if (v < 200) return 'status-warn'
-      return 'status-bad'
-    }
-    function jitterClass(v) {
-      if (v < 20) return 'status-ok'
-      if (v < 50) return 'status-warn'
-      return 'status-bad'
-    }
-    function lossClass(v) {
-      if (v < 1) return 'status-ok'
-      if (v < 5) return 'status-warn'
-      return 'status-bad'
-    }
+    // ── 样式辅助 ──
+    function latencyClass(v) { return v <= 0 ? 'ok' : v < 100 ? 'ok' : v < 200 ? 'warn' : 'bad' }
+    function jitterClass(v) { return v < 20 ? 'ok' : v < 50 ? 'warn' : 'bad' }
+    function lossClass(v) { return v < 1 ? 'ok' : v < 5 ? 'warn' : 'bad' }
     function lossCardStyle(v) {
       if (v >= 5) return 'border-color:#4a1a1a;background:linear-gradient(135deg,#1f0a0a,#2a0d0d)'
       if (v >= 1) return 'border-color:#4a3a0a'
       return ''
     }
-    function tagClass(tag) {
-      if (!tag) return 'tag-isp'
-      if (tag.includes('机房')) return 'tag-dc'
-      if (tag.includes('住宅')) return 'tag-res'
-      if (tag.includes('内网') || tag.includes('CGNAT')) return 'tag-priv'
-      if (tag.includes('代理')) return 'tag-proxy'
-      if (tag.includes('骨干')) return 'tag-bb'
-      if (tag === '超时') return 'tag-to'
-      return 'tag-isp'
+    function hopCircleClass(hop, isTarget) {
+      if (isTarget) return 'target'
+      if (!hop || hop.ip === '*') return 'timeout'
+      const tag = hop.tag || ''
+      if (tag.includes('机房')) return 'dc'
+      if (tag.includes('住宅')) return 'res'
+      if (tag.includes('内网') || tag.includes('CGNAT')) return 'priv'
+      if (tag.includes('代理')) return 'proxy'
+      if (tag.includes('骨干')) return 'bb'
+      return 'isp'
     }
-    function formatDuration(s) {
-      if (s < 60) return s + 's'
-      return Math.floor(s/60) + 'm' + (s%60) + 's'
+    function hopCircleBg(hop, isTarget) {
+      if (isTarget) return 'background:#1a1527;border:1px solid #7c6af7'
+      const tag = hop.tag || ''
+      if (tag.includes('机房')) return 'background:#1f0a0a;border:1px solid #5a1a1a'
+      if (tag.includes('住宅')) return 'background:#0a1f0a;border:1px solid #1a5a2e'
+      if (tag.includes('内网')) return 'background:#1f1a0a;border:1px solid #5a3a0a'
+      if (tag.includes('代理')) return 'background:#1f0a1f;border:1px solid #5a1a5a'
+      if (tag.includes('骨干')) return 'background:#0a1527;border:1px solid #1a3a5a'
+      return 'background:#0f1117;border:1px solid #2d3148'
+    }
+    function hopEmoji(hop, isTarget) {
+      if (isTarget) return '🎯'
+      if (!hop || hop.ip === '*') return '·'
+      const tag = hop.tag || ''
+      if (tag.includes('机房')) return '🏢'
+      if (tag.includes('住宅')) return '🏠'
+      if (tag.includes('内网')) return '🔒'
+      if (tag.includes('代理')) return '🔀'
+      if (tag.includes('骨干')) return '🌐'
+      return '📡'
+    }
+    function hopLoc(hop) {
+      if (!hop || hop.ip === '*') return '超时'
+      if (hop.country === '内网') return '内网'
+      const parts = []
+      if (hop.city) parts.push(hop.city)
+      if (hop.country) parts.push(hop.country)
+      return parts.join(', ') || hop.ip
+    }
+    function hopTagStyle(tag) {
+      if (!tag || tag === '—') return 'background:#1a1d27;color:#334155'
+      if (tag.includes('机房')) return 'background:#1f0a0a;color:#f87171'
+      if (tag.includes('住宅')) return 'background:#0a1f0a;color:#4ade80'
+      if (tag.includes('内网') || tag.includes('CGNAT')) return 'background:#1f1a0a;color:#fbbf24'
+      if (tag.includes('代理')) return 'background:#1f0a1f;color:#e879f9'
+      if (tag.includes('骨干')) return 'background:#0a1527;color:#60a5fa'
+      if (tag === '超时') return 'background:#0a0d14;color:#334155'
+      return 'background:#1a1d27;color:#64748b'
+    }
+    function arrowClass(hop) {
+      if (!hop || hop.ip === '*') return ''
+      if (hop.avg > 200) return 'bad'
+      if (hop.avg > 100) return 'slow'
+      if (hop.avg > 0) return 'fast'
+      return ''
+    }
+    function ipTypeStyle(type) {
+      if (!type) return 'background:#1a1d27;color:#64748b'
+      if (type.includes('机房')) return 'background:#1f0a0a;color:#f87171'
+      if (type.includes('住宅')) return 'background:#0a1f0a;color:#4ade80'
+      if (type.includes('代理')) return 'background:#1f0a1f;color:#e879f9'
+      return 'background:#1a1d27;color:#94a3b8'
+    }
+    function proxyTypeLabel(t) {
+      return { clash_system: 'Clash 系统代理', tun_mode: 'TUN 模式', v2ray: 'V2Ray', wireguard: 'WireGuard', socks5: 'SOCKS5', system_proxy: '系统代理', none: '无代理', env_proxy: '环境变量代理' }[t] || t
+    }
+    function formatDuration(s) { return s < 60 ? s + 's' : Math.floor(s / 60) + 'm' + (s % 60) + 's' }
+
+    // ── 评分圆环 ──
+    function drawScoreRing(score) {
+      const canvas = scoreRing.value
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      const cx = 36, cy = 36, r = 28, lw = 6
+      ctx.clearRect(0, 0, 72, 72)
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2)
+      ctx.strokeStyle = '#1e2240'; ctx.lineWidth = lw; ctx.stroke()
+      const angle = (score / 100) * Math.PI * 2 - Math.PI / 2
+      const color = score >= 70 ? '#4ade80' : score >= 40 ? '#fbbf24' : '#f87171'
+      ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, angle)
+      ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke()
+      ctx.fillStyle = color; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillText(score, cx, cy)
     }
 
+    function drawPurityRing(score) {
+      const canvas = purityRing.value
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      const cx = 32, cy = 32, r = 24, lw = 5
+      ctx.clearRect(0, 0, 64, 64)
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2)
+      ctx.strokeStyle = '#1e2240'; ctx.lineWidth = lw; ctx.stroke()
+      const angle = (score / 100) * Math.PI * 2 - Math.PI / 2
+      const color = score >= 70 ? '#4ade80' : score >= 40 ? '#fbbf24' : '#f87171'
+      ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, angle)
+      ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke()
+      ctx.fillStyle = color; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillText(score, cx, cy)
+    }
+
+    // ── 图表初始化 ──
+    function initCharts() {
+      if (lchart) { lchart.destroy(); lchart = null }
+      if (jchart) { jchart.destroy(); jchart = null }
+      const lctx = latencyChart.value?.getContext('2d')
+      if (lctx) {
+        lchart = new Chart(lctx, {
+          type: 'line',
+          data: { labels: [], datasets: [
+            { label: '延迟', data: [], borderColor: '#7c6af7', backgroundColor: 'rgba(124,106,247,0.08)', borderWidth: 2, pointRadius: 2, fill: true, tension: 0.3 },
+            { label: '丢包', data: [], type: 'bar', backgroundColor: 'rgba(239,68,68,0.8)', yAxisID: 'loss', barThickness: 4 }
+          ]},
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { display: false },
+              y: { min: 0, grid: { color: '#1e2240' }, ticks: { color: '#475569', font: { size: 10 } }, afterDataLimits(s) { s.max = Math.max(s.max, 600) } },
+              loss: { display: false, min: 0, max: 1 }
+            }
+          }
+        })
+      }
+      const jctx = jitterChart.value?.getContext('2d')
+      if (jctx) {
+        jchart = new Chart(jctx, {
+          type: 'bar',
+          data: { labels: [], datasets: [{ label: 'Jitter', data: [], backgroundColor: [] }] },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { display: false }, y: { min: 0, grid: { color: '#1e2240' }, ticks: { color: '#475569', font: { size: 10 } } } }
+          }
+        })
+      }
+    }
+
+    function updateCharts(ms, isLoss, jitter) {
+      const now = new Date().toLocaleTimeString('zh-CN')
+      const MAX = 60
+      if (lchart) {
+        lchart.data.labels.push(now)
+        lchart.data.datasets[0].data.push(isLoss ? null : ms)
+        lchart.data.datasets[1].data.push(isLoss ? 1 : 0)
+        if (lchart.data.labels.length > MAX) { lchart.data.labels.shift(); lchart.data.datasets[0].data.shift(); lchart.data.datasets[1].data.shift() }
+        lchart.update('none')
+      }
+      if (jchart) {
+        const color = jitter < 20 ? '#22c55e' : jitter < 50 ? '#f59e0b' : '#ef4444'
+        jchart.data.labels.push(now)
+        jchart.data.datasets[0].data.push(jitter)
+        jchart.data.datasets[0].backgroundColor.push(color)
+        if (jchart.data.labels.length > MAX) { jchart.data.labels.shift(); jchart.data.datasets[0].data.shift(); jchart.data.datasets[0].backgroundColor.shift() }
+        jchart.update('none')
+      }
+    }
+
+    // ── 雷达连线图 ──
+    function drawRadar(results, target) {
+      const canvas = radarCanvas.value
+      if (!canvas) return
+      const dpr = window.devicePixelRatio || 1
+      const rect = canvas.getBoundingClientRect()
+      canvas.width = rect.width * dpr
+      canvas.height = rect.height * dpr
+      const ctx = canvas.getContext('2d')
+      ctx.scale(dpr, dpr)
+      const W = rect.width, H = rect.height
+      const cx = W / 2, cy = H / 2
+      const nodeR = 36, targetR = 48
+
+      // 背景网格圆
+      ctx.strokeStyle = '#1e2240'; ctx.lineWidth = 1
+      for (let r = 60; r <= Math.min(W, H) / 2 - 20; r += 60) {
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke()
+      }
+
+      // 节点位置（环绕目标）
+      const validResults = results.filter(r => r.status !== 'failed')
+      const n = validResults.length
+      const ringR = Math.min(W, H) / 2 - 70
+
+      validResults.forEach((r, i) => {
+        const angle = (i / n) * Math.PI * 2 - Math.PI / 2
+        const nx = cx + ringR * Math.cos(angle)
+        const ny = cy + ringR * Math.sin(angle)
+        r._x = nx; r._y = ny
+
+        // 计算最后一跳延迟（用于连线颜色）
+        const lastHop = r.last5 && r.last5.length ? r.last5[r.last5.length - 1] : null
+        const latency = lastHop && lastHop.avg > 0 ? lastHop.avg : 0
+
+        // 连线
+        const lineColor = latency === 0 ? '#334155' : latency < 100 ? '#22c55e' : latency < 300 ? '#f59e0b' : '#ef4444'
+        const grad = ctx.createLinearGradient(nx, ny, cx, cy)
+        grad.addColorStop(0, lineColor + '99')
+        grad.addColorStop(1, lineColor + '33')
+        ctx.beginPath(); ctx.moveTo(nx, ny); ctx.lineTo(cx, cy)
+        ctx.strokeStyle = grad; ctx.lineWidth = 2; ctx.stroke()
+
+        // 延迟标注（连线中点）
+        if (latency > 0) {
+          const mx = (nx + cx) / 2, my = (ny + cy) / 2
+          ctx.fillStyle = '#0a0d14'
+          ctx.fillRect(mx - 18, my - 9, 36, 18)
+          ctx.strokeStyle = lineColor + '66'; ctx.lineWidth = 1
+          ctx.strokeRect(mx - 18, my - 9, 36, 18)
+          ctx.fillStyle = lineColor; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+          ctx.fillText(latency + 'ms', mx, my)
+        }
+
+        // 节点圆
+        ctx.beginPath(); ctx.arc(nx, ny, nodeR / 2, 0, Math.PI * 2)
+        ctx.fillStyle = '#0f1117'; ctx.fill()
+        ctx.strokeStyle = lineColor; ctx.lineWidth = 2; ctx.stroke()
+
+        // 节点名
+        ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        const name = (r.name || r.agent_id || '').slice(0, 8)
+        ctx.fillText(name, nx, ny - 4)
+        ctx.fillStyle = '#475569'; ctx.font = '9px sans-serif'
+        ctx.fillText(r.os_type ? r.os_type.slice(0, 7) : '', nx, ny + 7)
+      })
+
+      // 目标圆（中心）
+      ctx.beginPath(); ctx.arc(cx, cy, targetR / 2, 0, Math.PI * 2)
+      ctx.fillStyle = '#1a1527'; ctx.fill()
+      ctx.strokeStyle = '#7c6af7'; ctx.lineWidth = 2; ctx.stroke()
+      // 光晕
+      const glow = ctx.createRadialGradient(cx, cy, targetR / 2, cx, cy, targetR)
+      glow.addColorStop(0, 'rgba(124,106,247,0.2)'); glow.addColorStop(1, 'transparent')
+      ctx.beginPath(); ctx.arc(cx, cy, targetR, 0, Math.PI * 2)
+      ctx.fillStyle = glow; ctx.fill()
+
+      ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillText('🎯', cx, cy - 6)
+      ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif'
+      const shortTarget = target.length > 14 ? target.slice(0, 14) + '…' : target
+      ctx.fillText(shortTarget, cx, cy + 8)
+    }
+
+    // ── 加载 agents ──
     async function loadAgents() {
       try {
         const r = await fetch(`${API}/agents`, { headers: authHeader })
@@ -528,300 +842,182 @@ createApp({
             return false
           })
         }
-      } catch(e) {}
+      } catch (e) {}
     }
 
-    function initCharts() {
-      if (lchart) { lchart.destroy(); lchart = null }
-      if (jchart) { jchart.destroy(); jchart = null }
-
-      const lctx = latencyChart.value?.getContext('2d')
-      if (lctx) {
-        lchart = new Chart(lctx, {
-          type: 'line',
-          data: {
-            labels: [],
-            datasets: [
-              {
-                label: '延迟 ms',
-                data: [],
-                borderColor: '#7c6af7',
-                backgroundColor: 'rgba(124,106,247,0.1)',
-                borderWidth: 2,
-                pointRadius: 2,
-                pointHoverRadius: 4,
-                fill: true,
-                tension: 0.3,
-              },
-              {
-                label: '丢包',
-                data: [],
-                type: 'bar',
-                backgroundColor: 'rgba(239,68,68,0.8)',
-                yAxisID: 'loss',
-                barThickness: 4,
-              }
-            ]
-          },
-          options: {
-            responsive: true, maintainAspectRatio: false, animation: false,
-            plugins: { legend: { display: false } },
-            scales: {
-              x: { display: false },
-              y: {
-                min: 0,
-                grid: { color: '#1e2240' },
-                ticks: { color: '#475569', font: { size: 10 } },
-                afterDataLimits(scale) { scale.max = Math.max(scale.max, 600) }
-              },
-              loss: { display: false, min: 0, max: 1 }
-            },
-            plugins: {
-              annotation: {
-                annotations: {
-                  line200: { type: 'line', yMin: 200, yMax: 200, borderColor: '#fbbf24', borderWidth: 1, borderDash: [4,4] },
-                  line500: { type: 'line', yMin: 500, yMax: 500, borderColor: '#ef4444', borderWidth: 1, borderDash: [4,4] },
-                }
-              }
-            }
-          }
-        })
-      }
-
-      const jctx = jitterChart.value?.getContext('2d')
-      if (jctx) {
-        jchart = new Chart(jctx, {
-          type: 'bar',
-          data: { labels: [], datasets: [{ label: 'Jitter', data: [], backgroundColor: [] }] },
-          options: {
-            responsive: true, maintainAspectRatio: false, animation: false,
-            plugins: { legend: { display: false } },
-            scales: {
-              x: { display: false },
-              y: { min: 0, grid: { color: '#1e2240' }, ticks: { color: '#475569', font: { size: 10 } } }
-            }
-          }
-        })
-      }
-    }
-
-    function updateCharts(ms, isLoss, jitter) {
-      const now = new Date().toLocaleTimeString('zh-CN')
-      const MAX = 60
-
-      if (lchart) {
-        lchart.data.labels.push(now)
-        lchart.data.datasets[0].data.push(isLoss ? null : ms)
-        lchart.data.datasets[1].data.push(isLoss ? 1 : 0)
-        if (lchart.data.labels.length > MAX) {
-          lchart.data.labels.shift()
-          lchart.data.datasets[0].data.shift()
-          lchart.data.datasets[1].data.shift()
-        }
-        lchart.update('none')
-      }
-
-      if (jchart) {
-        const color = jitter < 20 ? '#22c55e' : jitter < 50 ? '#f59e0b' : '#ef4444'
-        jchart.data.labels.push(now)
-        jchart.data.datasets[0].data.push(jitter)
-        jchart.data.datasets[0].backgroundColor.push(color)
-        if (jchart.data.labels.length > MAX) {
-          jchart.data.labels.shift()
-          jchart.data.datasets[0].data.shift()
-          jchart.data.datasets[0].backgroundColor.shift()
-        }
-        jchart.update('none')
-      }
-    }
-
-    async function runOnce() {
-      try {
-        const r = await fetch(`${API}/netcheck/tasks`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeader },
-          body: JSON.stringify({ target: target.value, agent_ids: [selectedAgent.value] })
-        })
-        const { task_id } = await r.json()
-
-        // 轮询
-        for (let i = 0; i < 40; i++) {
-          if (stopFlag) break
-          await new Promise(res => setTimeout(res, 3000))
-          const tr = await fetch(`${API}/netcheck/tasks/${task_id}`, { headers: authHeader })
-          const task = await tr.json()
-          if (task.status !== 'running') {
-            const result = task.results?.[0]
-            if (result) processResult(result)
-            break
-          }
-        }
-      } catch(e) { console.error(e) }
-    }
-
-    function processResult(result) {
-      const ms = result.latency_ms > 0 ? result.latency_ms : -1
-      const isLoss = ms <= 0
-
-      stats.value.count++
-      stats.value.elapsed = Math.round((Date.now() - startTime) / 1000)
-
-      if (isLoss) {
-        stats.value.loss++
-      } else {
-        stats.value.current = ms
-        if (ms < stats.value.min) stats.value.min = ms
-        if (ms > stats.value.max) stats.value.max = ms
-
-        const history = latencyHistory.value.filter(h => !h.loss).map(h => h.ms)
-        const avg = history.length > 0 ? Math.round((history.reduce((a,b)=>a+b,0) + ms) / (history.length+1)) : ms
-        stats.value.avg = avg
-
-        // 抖动 = 当前值与上一个值的差的绝对值的平均
-        if (history.length > 0) {
-          const diffs = history.slice(-9).map((v,i,a) => i>0 ? Math.abs(v-a[i-1]) : 0).filter((_,i)=>i>0)
-          diffs.push(Math.abs(ms - history[history.length-1]))
-          stats.value.jitter = Math.round(diffs.reduce((a,b)=>a+b,0) / diffs.length)
-        }
-      }
-
-      stats.value.lossRate = stats.value.count > 0 ? (stats.value.loss / stats.value.count * 100) : 0
-
-      latencyHistory.value.push({ ms, loss: isLoss, t: Date.now() })
-      if (latencyHistory.value.length > 200) latencyHistory.value.shift()
-
-      updateCharts(ms, isLoss, stats.value.jitter)
-
-      // 更新路由跳点
-      if (result.traceroute_enriched?.length) {
-        hops.value = result.traceroute_enriched.map(h => ({
-          ...h,
-          avg: h.ip === '*' ? 0 : (result.latency_ms > 0 ? Math.round(result.latency_ms * Math.random() * 0.8 + result.latency_ms * 0.1) : 0),
-          cur: h.ip === '*' ? 0 : (result.latency_ms > 0 ? result.latency_ms : 0),
-          loss: h.ip === '*' ? 100 : 0,
-        }))
-      }
-
-      // IP 信息
-      if (result.exit_ip) {
-        ipInfo.value = {
-          ip: result.exit_ip,
-          city: result.ip_city,
-          country: result.ip_country,
-          org: result.ip_org,
-          type: result.ip_type === 'datacenter' ? '🏢 机房' :
-                result.ip_type === 'residential' ? '🏠 住宅' :
-                result.ip_type === 'proxy' ? '🔀 代理' :
-                result.ip_type === 'mobile' ? '📱 移动' : '❓ 未知',
-          tiktok_blocked: result.tiktok_blocked,
-        }
-      }
-
-      riskFlags.value = result.risk_flags || []
-      if (result.analysis) aiAnalysis.value = result.analysis
-
-      // DNS 泄露
-      if (result.dns_leak && result.dns_leak.google_ips?.length) {
-        dnsLeak.value = {
-          checked: true,
-          leaked: result.dns_leak.leaked || false,
-          local_ips: result.dns_leak.local_ips || [],
-          google_ips: result.dns_leak.google_ips || [],
-          proxy_type: result.dns_leak.proxy_type || 'unknown',
-          proxy_detail: result.dns_leak.proxy_detail || '',
-          fix_advice: result.dns_leak.fix_advice || '',
-        }
-      }
-    }
-
+    // ── 开始检测 ──
     async function startCheck() {
       if (!selectedAgent.value || !target.value) return
-      stopFlag = false
-      running.value = true
-      started.value = true
+      running.value = true; started.value = true; stopFlag = false
       startTime = Date.now()
-      currentAgent.value = agents.value.find(a => a.agent_id === selectedAgent.value)?.name || selectedAgent.value
-
-      // 重置
       stats.value = { current: 0, avg: 0, min: 9999, max: 0, jitter: 0, loss: 0, count: 0, lossRate: 0, elapsed: 0 }
-      latencyHistory.value = []
-      hops.value = []
-      ipInfo.value = {}
-      riskFlags.value = []
-      aiAnalysis.value = ''
-
-      await nextTick()
-      initCharts()
-
-      if (mode.value === 'once') {
-        await runOnce()
-        running.value = false
-      } else {
-        // 持续模式：每30秒跑一次
-        const loop = async () => {
-          if (stopFlag) { running.value = false; return }
-          await runOnce()
-          if (!stopFlag) timer = setTimeout(loop, 30000)
+      hops.value = []; ipInfo.value = {}; riskFlags.value = []; dnsLeak.value = { checked: false, leaked: false }
+      currentAgent.value = agents.value.find(a => a.agent_id === selectedAgent.value)?.name || selectedAgent.value
+      await nextTick(); initCharts()
+      const latencies = []
+      const doCheck = async () => {
+        if (stopFlag) { running.value = false; return }
+        try {
+          const r = await fetch(`${API}/netcheck/ping`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeader },
+            body: JSON.stringify({ agent_id: selectedAgent.value, target: target.value })
+          })
+          if (r.ok) {
+            const d = await r.json()
+            const ms = d.latency_ms || 0
+            const isLoss = d.loss || ms === 0
+            stats.value.count++
+            stats.value.elapsed = Math.floor((Date.now() - startTime) / 1000)
+            if (isLoss) {
+              stats.value.loss++
+            } else {
+              stats.value.current = ms
+              latencies.push(ms)
+              if (latencies.length > 60) latencies.shift()
+              stats.value.avg = Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+              stats.value.min = Math.min(stats.value.min, ms)
+              stats.value.max = Math.max(stats.value.max, ms)
+              if (latencies.length >= 2) {
+                const diffs = latencies.slice(1).map((v, i) => Math.abs(v - latencies[i]))
+                stats.value.jitter = Math.round(diffs.reduce((a, b) => a + b, 0) / diffs.length)
+              }
+            }
+            stats.value.lossRate = (stats.value.loss / stats.value.count) * 100
+            updateCharts(ms, isLoss, stats.value.jitter)
+            // 更新评分圆环
+            const score = Math.max(0, 100 - Math.round(stats.value.lossRate * 5) - Math.round(Math.max(0, stats.value.avg - 100) / 10) - Math.round(stats.value.jitter / 2))
+            await nextTick(); drawScoreRing(score)
+            // 首次检测时拉取完整数据
+            if (stats.value.count === 1 && d.task_id) {
+              pollFullResult(d.task_id)
+            }
+          }
+        } catch (e) {}
+        if (mode.value === 'continuous' && !stopFlag) {
+          timer = setTimeout(doCheck, 3000)
+        } else {
+          running.value = false
         }
-        loop()
+      }
+      doCheck()
+    }
+
+    async function pollFullResult(taskId) {
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 3000))
+        try {
+          const r = await fetch(`${API}/netcheck/tasks/${taskId}`, { headers: authHeader })
+          if (r.ok) {
+            const d = await r.json()
+            if (d.status === 'success' && d.results && d.results.length) {
+              const res = d.results[0]
+              if (res.traceroute_enriched && res.traceroute_enriched.length) hops.value = res.traceroute_enriched
+              if (res.exit_ip) ipInfo.value = { ip: res.exit_ip, city: res.ip_city, country: res.ip_country, org: res.ip_org, type: res.ip_type, tiktok_blocked: res.tiktok_blocked }
+              if (res.risk_flags) riskFlags.value = res.risk_flags
+              if (res.dns_leak) dnsLeak.value = { ...res.dns_leak, checked: true }
+              // 纯净度数据
+              if (res.purity_score >= 0) {
+                purityData.value = {
+                  score: res.purity_score,
+                  sources: res.multi_source?.sources || null,
+                  outbound: res.outbound_split || null,
+                }
+                await nextTick()
+                drawPurityRing(res.purity_score)
+              }
+              break
+            }
+          }
+        } catch (e) {}
       }
     }
 
-    function stopCheck() {
-      stopFlag = true
-      if (timer) clearTimeout(timer)
-      running.value = false
-    }
+    function stopCheck() { stopFlag = true; clearTimeout(timer); running.value = false }
 
-    // ── 目标侦察 ──────────────────────────────────────────────
-    const activeTab = ref('check')
-    const reconTarget = ref('www.ekedu.net')
-    const reconAgents = ref([])
-    const reconRunning = ref(false)
-    const reconResult = ref(null)
-    const reconPresets = ['tiktok.com', 'instagram.com', 'youtube.com', 'www.ekedu.net', 'baidu.com']
-
-    function toggleReconAgent(agent_id) {
-      const idx = reconAgents.value.indexOf(agent_id)
-      if (idx === -1) reconAgents.value.push(agent_id)
-      else reconAgents.value.splice(idx, 1)
+    // ── 目标侦察 ──
+    function toggleReconAgent(id) {
+      const idx = reconAgents.value.indexOf(id)
+      if (idx >= 0) reconAgents.value.splice(idx, 1)
+      else reconAgents.value.push(id)
     }
 
     async function startRecon() {
       if (!reconTarget.value || !reconAgents.value.length) return
-      reconRunning.value = true
-      reconResult.value = null
+      reconRunning.value = true; reconResult.value = null
       try {
         const r = await fetch(`${API}/netcheck/recon`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeader },
           body: JSON.stringify({ target: reconTarget.value, agent_ids: reconAgents.value })
         })
+        if (!r.ok) throw new Error('请求失败')
         const { task_id } = await r.json()
+        // 轮询结果
         for (let i = 0; i < 30; i++) {
-          await new Promise(res => setTimeout(res, 4000))
+          await new Promise(r => setTimeout(r, 3000))
           const tr = await fetch(`${API}/netcheck/recon/${task_id}`, { headers: authHeader })
-          const task = await tr.json()
-          if (task.status !== 'running') { reconResult.value = task; break }
+          if (tr.ok) {
+            const d = await tr.json()
+            if (d.status !== 'running') {
+              // 提取关键发现
+              const findings = extractFindings(d)
+              reconResult.value = { ...d, findings }
+              await nextTick()
+              drawRadar(d.results || [], reconTarget.value)
+              break
+            }
+          }
         }
-      } catch(e) { console.error(e) }
-      reconRunning.value = false
+      } catch (e) {
+        alert('侦察失败: ' + e.message)
+      } finally {
+        reconRunning.value = false
+      }
     }
 
-    onMounted(() => {
-      if (!token) { location.href = '/?redirect=/netcheck-ui'; return }
-      loadAgents()
-    })
+    function extractFindings(data) {
+      const results = data.results || []
+      const valid = results.filter(r => r.status !== 'failed' && r.last5 && r.last5.length)
+      if (!valid.length) return []
+      const findings = []
+      // 目标服务器位置（最后一跳）
+      const lastHops = valid.map(r => r.last5[r.last5.length - 1]).filter(h => h && h.country)
+      const countries = [...new Set(lastHops.map(h => h.country))]
+      if (countries.length) findings.push({ label: '目标服务器位置', value: countries.join(' / '), sub: lastHops[0]?.city || '' })
+      // 最低延迟节点
+      const withLatency = valid.filter(r => r.last5.some(h => h.avg > 0))
+      if (withLatency.length) {
+        const best = withLatency.reduce((a, b) => {
+          const aLat = a.last5.find(h => h.avg > 0)?.avg || 9999
+          const bLat = b.last5.find(h => h.avg > 0)?.avg || 9999
+          return aLat < bLat ? a : b
+        })
+        const bestLat = best.last5.find(h => h.avg > 0)?.avg
+        if (bestLat) findings.push({ label: '最低延迟节点', value: best.name || best.agent_id, sub: bestLat + 'ms' })
+      }
+      // 机房检测
+      const dcCount = valid.reduce((n, r) => n + r.last5.filter(h => h.tag && h.tag.includes('机房')).length, 0)
+      if (dcCount > 0) findings.push({ label: '机房节点检测', value: `${dcCount} 个机房跳点`, sub: '目标可能托管于云机房' })
+      // 平均跳数
+      const avgHops = Math.round(valid.reduce((s, r) => s + r.total_hops, 0) / valid.length)
+      findings.push({ label: '平均路由跳数', value: avgHops + ' 跳', sub: '跳数越少路径越干净' })
+      return findings
+    }
+
+    onMounted(() => { loadAgents(); setInterval(loadAgents, 30000) })
 
     return {
-      target, selectedAgent, agents, mode, running, started, currentAgent, presets,
-      latencyChart, jitterChart, stats, hops, ipInfo, riskFlags, aiAnalysis,
+      tab, target, selectedAgent, agents, mode, running, started, currentAgent, presets,
+      latencyChart, jitterChart, scoreRing, radarCanvas,
+      purityRing, purityData,
+      hops, ipInfo, riskFlags, dnsLeak, stats,
+      reconTarget, reconAgents, reconRunning, reconResult, reconPresets,
       verdictClass, verdictIcon, verdictText, verdictSub,
-      latencyClass, jitterClass, lossClass, lossCardStyle, tagClass, formatDuration,
-      startCheck, stopCheck, dnsLeak,
-      // 目标侦察
-      activeTab, reconTarget, reconAgents, reconRunning, reconResult, reconPresets,
-      toggleReconAgent, startRecon,
+      latencyClass, jitterClass, lossClass, lossCardStyle,
+      hopCircleClass, hopCircleBg, hopEmoji, hopLoc, hopTagStyle, arrowClass,
+      ipTypeStyle, proxyTypeLabel, formatDuration,
+      startCheck, stopCheck, startRecon, toggleReconAgent
     }
   }
 }).mount('#app')

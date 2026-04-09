@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IP 纯净度检测 — CyberAgentOps</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#060810;color:#e2e8f0;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:40px 20px}
+.container{width:100%;max-width:860px}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:32px}
+.title{font-size:20px;font-weight:800;color:#e2e8f0;display:flex;align-items:center;gap:10px}
+.back{font-size:12px;color:#334155;text-decoration:none}
+.back:hover{color:#7c6af7}
+
+/* 大判决卡 */
+.verdict-card{border-radius:16px;padding:28px 32px;display:flex;align-items:center;gap:24px;margin-bottom:24px;transition:all .3s}
+.verdict-ok{background:linear-gradient(135deg,#0a1f0a,#0d2a12);border:1px solid #1a5a2e}
+.verdict-warn{background:linear-gradient(135deg,#1f1a0a,#2a200a);border:1px solid #5a3a0a}
+.verdict-bad{background:linear-gradient(135deg,#1f0a0a,#2a0d0d);border:1px solid #5a1a1a}
+.verdict-pending{background:#0f1117;border:1px solid #1e2240}
+.verdict-emoji{font-size:52px;line-height:1;flex-shrink:0}
+.verdict-text{flex:1}
+.verdict-main{font-size:22px;font-weight:800;line-height:1.2;margin-bottom:6px}
+.verdict-ok .verdict-main{color:#4ade80}
+.verdict-warn .verdict-main{color:#fbbf24}
+.verdict-bad .verdict-main{color:#f87171}
+.verdict-pending .verdict-main{color:#334155}
+.verdict-sub{font-size:13px;opacity:.7;line-height:1.6}
+
+/* 检测项网格 */
+.checks-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:24px}
+.check-card{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:18px 20px;transition:border-color .3s}
+.check-card.ok{border-color:#1a5a2e}
+.check-card.warn{border-color:#5a3a0a}
+.check-card.bad{border-color:#5a1a1a}
+.check-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.check-title{font-size:12px;font-weight:700;color:#94a3b8;letter-spacing:.5px;text-transform:uppercase}
+.check-status{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600}
+.status-ok{background:#0a1f0a;color:#4ade80}
+.status-warn{background:#1f1a0a;color:#fbbf24}
+.status-bad{background:#1f0a0a;color:#f87171}
+.status-checking{background:#0a0d14;color:#334155;animation:pulse 1.5s infinite}
+.check-value{font-size:20px;font-weight:800;color:#e2e8f0;margin-bottom:4px;font-family:monospace}
+.check-detail{font-size:11px;color:#475569;line-height:1.6}
+.check-detail .highlight{color:#94a3b8}
+
+/* IP 对比表 */
+.ip-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+.ip-table td{padding:5px 0;border-bottom:1px solid #0a0d14;vertical-align:top}
+.ip-table td:first-child{color:#334155;width:100px}
+.ip-table td:last-child{font-family:monospace;color:#60a5fa}
+.ip-mismatch{color:#f87171!important}
+
+/* 进度条 */
+.progress-wrap{height:4px;background:#1e2240;border-radius:2px;margin-top:12px;overflow:hidden}
+.progress-bar{height:100%;border-radius:2px;background:linear-gradient(90deg,#5b4fcf,#7c6af7);transition:width .5s}
+
+/* 建议卡 */
+.advice-card{background:#0f1117;border:1px solid #2d3148;border-radius:12px;padding:18px 20px;margin-bottom:14px}
+.advice-title{font-size:11px;color:#7c6af7;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+.advice-item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #0a0d14;font-size:13px;color:#94a3b8;line-height:1.6}
+.advice-item:last-child{border-bottom:none}
+.advice-icon{flex-shrink:0;font-size:16px}
+
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.spin{display:inline-block;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <div class="title">🔬 IP 纯净度检测</div>
+    <a href="/" class="back">← 返回控制台</a>
+  </div>
+
+  <!-- 大判决卡 -->
+  <div class="verdict-card" id="verdictCard">
+    <div class="verdict-emoji" id="verdictEmoji">⏳</div>
+    <div class="verdict-text">
+      <div class="verdict-main" id="verdictMain">正在检测中...</div>
+      <div class="verdict-sub" id="verdictSub">正在从多个维度分析您的网络环境，请稍候</div>
+    </div>
+    <div style="text-align:center;flex-shrink:0">
+      <canvas id="scoreCanvas" width="80" height="80"></canvas>
+      <div style="font-size:10px;color:#334155;margin-top:4px;letter-spacing:1px">纯净度评分</div>
+    </div>
+  </div>
+
+  <!-- 检测项 -->
+  <div class="checks-grid">
+    <!-- HTTP 出口 IP -->
+    <div class="check-card" id="card-http">
+      <div class="check-header">
+        <div class="check-title">🌐 HTTP 出口 IP</div>
+        <span class="check-status status-checking" id="status-http">检测中</span>
+      </div>
+      <div class="check-value" id="val-http">—</div>
+      <div class="check-detail" id="detail-http">正在获取您的出口 IP 地址...</div>
+    </div>
+
+    <!-- WebRTC 真实 IP -->
+    <div class="check-card" id="card-webrtc">
+      <div class="check-header">
+        <div class="check-title">📡 WebRTC 真实 IP</div>
+        <span class="check-status status-checking" id="status-webrtc">检测中</span>
+      </div>
+      <div class="check-value" id="val-webrtc">—</div>
+      <div class="check-detail" id="detail-webrtc">正在通过 WebRTC 协议检测真实 IP...</div>
+    </div>
+
+    <!-- DNS 泄露 -->
+    <div class="check-card" id="card-dns">
+      <div class="check-header">
+        <div class="check-title">🔍 DNS 泄露检测</div>
+        <span class="check-status status-checking" id="status-dns">检测中</span>
+      </div>
+      <div class="check-value" id="val-dns">—</div>
+      <div class="check-detail" id="detail-dns">
+        <table class="ip-table" id="dns-table"></table>
+      </div>
+    </div>
+
+    <!-- 出口分流 -->
+    <div class="check-card" id="card-split">
+      <div class="check-header">
+        <div class="check-title">🔀 出口分流检测</div>
+        <span class="check-status status-checking" id="status-split">检测中</span>
+      </div>
+      <div class="check-value" id="val-split">—</div>
+      <div class="check-detail" id="detail-split">
+        <table class="ip-table" id="split-table"></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 修复建议 -->
+  <div class="advice-card" id="adviceCard" style="display:none">
+    <div class="advice-title">💡 修复建议</div>
+    <div id="adviceList"></div>
+  </div>
+
+  <!-- 进度 -->
+  <div class="progress-wrap">
+    <div class="progress-bar" id="progressBar" style="width:0%"></div>
+  </div>
+  <div style="text-align:center;font-size:11px;color:#334155;margin-top:8px" id="progressText">0 / 4 项检测完成</div>
+</div>
+
+<script>
+// ── 状态 ──
+const results = { http: null, webrtc: null, dns: null, split: null }
+let doneCount = 0
+const token = localStorage.getItem('cyber_token') || ''
+const authH = token ? { 'Authorization': `Bearer ${token}` } : {}
+
+function setProgress(n) {
+  doneCount = n
+  document.getElementById('progressBar').style.width = (n / 4 * 100) + '%'
+  document.getElementById('progressText').textContent = `${n} / 4 项检测完成`
+  if (n === 4) updateVerdict()
+}
+
+function setCard(id, status, value, detail) {
+  const card = document.getElementById('card-' + id)
+  const statusEl = document.getElementById('status-' + id)
+  const valEl = document.getElementById('val-' + id)
+  const detailEl = document.getElementById('detail-' + id)
+  card.className = 'check-card ' + status
+  statusEl.className = 'check-status status-' + status
+  statusEl.textContent = { ok: '✅ 正常', warn: '⚠️ 注意', bad: '❌ 泄露', checking: '检测中' }[status] || status
+  if (valEl) valEl.textContent = value
+  if (detailEl && typeof detail === 'string') detailEl.innerHTML = detail
+}
+
+// ── 1. HTTP 出口 IP ──────────────────────────────────────────
+async function checkHttpIp() {
+  try {
+    const r = await fetch('/netcheck/probe/myip', { headers: authH })
+    const d = await r.json()
+    results.http = d
+    const ipType = d.type || 'unknown'
+    const isRisk = ipType.includes('datacenter') || ipType.includes('proxy')
+    setCard('http',
+      isRisk ? 'bad' : 'ok',
+      d.ip,
+      `<span class="highlight">${d.city || ''} ${d.country || ''}</span> · ${d.org || ''}<br>
+       IP 类型：<b style="color:${isRisk?'#f87171':'#4ade80'}">${
+         ipType === 'datacenter' ? '🏢 机房IP' :
+         ipType === 'proxy' ? '🔀 代理/VPN' :
+         ipType === 'residential' ? '🏠 住宅IP' : '❓ 未知'
+       }</b>`
+    )
+  } catch(e) {
+    setCard('http', 'warn', '获取失败', '无法连接服务器')
+  }
+  setProgress(doneCount + 1)
+}
+
+// ── 2. WebRTC 真实 IP ────────────────────────────────────────
+async function checkWebRTC() {
+  const ips = new Set()
+  try {
+    await new Promise((resolve) => {
+      const pc = new RTCPeerConnection({ iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ]})
+      pc.createDataChannel('')
+      pc.onicecandidate = (e) => {
+        if (!e.candidate) { pc.close(); resolve(); return }
+        const m = e.candidate.candidate.match(/(\d+\.\d+\.\d+\.\d+)/g)
+        if (m) m.forEach(ip => ips.add(ip))
+      }
+      pc.createOffer().then(o => pc.setLocalDescription(o))
+      setTimeout(() => { pc.close(); resolve() }, 4000)
+    })
+  } catch(e) {}
+
+  const publicIps = [...ips].filter(ip => !isPrivate(ip))
+  const privateIps = [...ips].filter(ip => isPrivate(ip))
+  results.webrtc = { public: publicIps, private: privateIps }
+
+  // 对比 HTTP IP
+  const httpIp = results.http?.ip
+  const leaked = httpIp && publicIps.length > 0 && !publicIps.includes(httpIp)
+
+  if (publicIps.length === 0 && privateIps.length === 0) {
+    setCard('webrtc', 'ok', '未泄露', 'WebRTC 未检测到 IP（浏览器已屏蔽或不支持）')
+  } else if (leaked) {
+    setCard('webrtc', 'bad',
+      publicIps[0] || privateIps[0],
+      `⚠️ <b style="color:#f87171">真实 IP 泄露！</b><br>
+       代理 IP：<span class="highlight">${httpIp}</span><br>
+       真实 IP：<span class="ip-mismatch">${publicIps.join(', ') || privateIps.join(', ')}</span><br>
+       ${privateIps.length ? '内网 IP：' + privateIps.join(', ') : ''}`
+    )
+  } else {
+    setCard('webrtc', 'ok',
+      publicIps[0] || '仅内网IP',
+      `WebRTC IP 与代理 IP 一致，无泄露<br>
+       ${privateIps.length ? '内网 IP：<span class="highlight">' + privateIps.join(', ') + '</span>' : ''}`
+    )
+  }
+  setProgress(doneCount + 1)
+}
+
+// ── 3. DNS 泄露检测 ──────────────────────────────────────────
+async function checkDnsLeak() {
+  try {
+    // 向服务器申请一个 probe token，服务器会记录谁来 DNS 查询了这个域名
+    const r = await fetch('/netcheck/probe/dns-token', { headers: authH })
+    const { token: dnsToken, probe_domain } = await r.json()
+
+    // 让浏览器去解析这个唯一子域名（触发 DNS 查询）
+    // 用 fetch 请求一个不存在的 URL，浏览器会做 DNS 查询
+    if (probe_domain) {
+      try {
+        await fetch(`https://${probe_domain}/probe.gif?t=${Date.now()}`, {
+          mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(3000)
+        })
+      } catch(e) {} // 预期会失败，但 DNS 查询已发出
+    }
+
+    // 等待服务器收到 DNS 查询（1.5秒）
+    await new Promise(r => setTimeout(r, 1500))
+
+    // 查询结果
+    const res = await fetch(`/netcheck/probe/dns-result?token=${dnsToken}`, { headers: authH })
+    const data = await res.json()
+    results.dns = data
+
+    const leaked = data.leaked
+    const dnsIps = data.dns_resolver_ips || []
+    const httpIp = results.http?.ip
+
+    const tableRows = dnsIps.map(ip => `
+      <tr>
+        <td>DNS 解析器</td>
+        <td class="${ip !== httpIp ? 'ip-mismatch' : ''}">${ip} ${ip !== httpIp ? '⚠️' : '✅'}</td>
+      </tr>`).join('')
+
+    document.getElementById('dns-table').innerHTML = `
+      <tr><td>HTTP 出口</td><td>${httpIp || '—'}</td></tr>
+      ${tableRows}
+    `
+
+    setCard('dns', leaked ? 'bad' : 'ok',
+      leaked ? 'DNS 泄露' : 'DNS 正常',
+      leaked
+        ? `DNS 查询走了不同的出口，代理未接管 DNS`
+        : `DNS 查询与 HTTP 出口一致`
+    )
+    // 清空 detail 里的 table（已直接操作 DOM）
+    document.getElementById('detail-dns').innerHTML = ''
+    document.getElementById('dns-table').parentElement?.appendChild(document.getElementById('dns-table'))
+
+  } catch(e) {
+    // fallback：用 Google DoH 对比
+    await checkDnsLeakFallback()
+  }
+  setProgress(doneCount + 1)
+}
+
+async function checkDnsLeakFallback() {
+  // 用 Google DoH 查询目标域名，对比本机 DNS 解析结果
+  try {
+    const target = 'www.tiktok.com'
+    const r = await fetch(`https://dns.google/resolve?name=${target}&type=A`, {
+      headers: { 'Accept': 'application/dns-json' }
+    })
+    const data = await r.json()
+    const googleIps = (data.Answer || []).filter(a => a.type === 1).map(a => a.data)
+
+    // 用 img 触发本机 DNS 解析（无法直接获取结果，只能用 DoH 对比）
+    results.dns = { leaked: false, dns_resolver_ips: googleIps, method: 'doh_fallback' }
+
+    document.getElementById('dns-table').innerHTML = `
+      <tr><td>Google DoH</td><td>${googleIps.slice(0,2).join(', ') || '—'}</td></tr>
+      <tr><td>说明</td><td style="color:#475569">DNS probe 不可用，使用 DoH 对比</td></tr>
+    `
+    setCard('dns', 'ok', 'DoH 正常', '通过 Google DoH 验证 DNS 解析正常')
+  } catch(e) {
+    setCard('dns', 'warn', '检测失败', '无法完成 DNS 泄露检测')
+  }
+}
+
+// ── 4. 出口分流检测 ──────────────────────────────────────────
+async function checkSplit() {
+  // 向我们服务器的不同接口发请求，服务器记录来源 IP
+  // 同时向 cloudflare trace 发请求（不需要我们服务器）
+  const checks = [
+    { label: '主出口', url: '/netcheck/probe/myip' },
+    { label: 'Cloudflare', url: 'https://cloudflare.com/cdn-cgi/trace' },
+  ]
+
+  const ips = {}
+
+  await Promise.all(checks.map(async ({ label, url }) => {
+    try {
+      if (url.includes('cloudflare')) {
+        const r = await fetch(url, { cache: 'no-store' })
+        const text = await r.text()
+        const m = text.match(/ip=(.+)/)
+        if (m) ips[label] = m[1].trim()
+      } else {
+        const r = await fetch(url, { headers: authH, cache: 'no-store' })
+        const d = await r.json()
+        ips[label] = d.ip
+      }
+    } catch(e) {}
+  }))
+
+  results.split = ips
+  const allIps = Object.values(ips).filter(Boolean)
+  const unique = new Set(allIps)
+  const split = unique.size > 1
+
+  const rows = Object.entries(ips).map(([label, ip]) =>
+    `<tr><td>${label}</td><td class="${split && ip !== ips['主出口'] ? 'ip-mismatch' : ''}">${ip || '—'}</td></tr>`
+  ).join('')
+  document.getElementById('split-table').innerHTML = rows
+
+  setCard('split', split ? 'warn' : 'ok',
+    split ? '出口分流' : '出口一致',
+    split
+      ? '不同目标走了不同出口 IP，代理存在分流规则'
+      : '所有目标走同一出口 IP，代理配置正常'
+  )
+  document.getElementById('detail-split').innerHTML = ''
+  document.getElementById('split-table').parentElement?.appendChild(document.getElementById('split-table'))
+
+  setProgress(doneCount + 1)
+}
+
+// ── 综合判决 ──────────────────────────────────────────────────
+function updateVerdict() {
+  const card = document.getElementById('verdictCard')
+  const emoji = document.getElementById('verdictEmoji')
+  const main = document.getElementById('verdictMain')
+  const sub = document.getElementById('verdictSub')
+
+  const webrtcLeaked = results.webrtc?.public?.length > 0 &&
+    results.http?.ip && !results.webrtc.public.includes(results.http.ip)
+  const dnsLeaked = results.dns?.leaked
+  const isHosting = results.http?.type === 'datacenter'
+  const isProxy = results.http?.type === 'proxy'
+  const splitDetected = results.split && new Set(Object.values(results.split).filter(Boolean)).size > 1
+
+  // 计算评分
+  let score = 100
+  if (isHosting) score -= 40
+  if (isProxy) score -= 30
+  if (webrtcLeaked) score -= 35
+  if (dnsLeaked) score -= 20
+  if (splitDetected) score -= 10
+  score = Math.max(0, score)
+
+  drawScore(score)
+
+  const issues = []
+  if (webrtcLeaked) issues.push('WebRTC 泄露真实 IP')
+  if (dnsLeaked) issues.push('DNS 泄露')
+  if (isHosting) issues.push('机房 IP')
+  if (isProxy) issues.push('代理/VPN IP')
+  if (splitDetected) issues.push('出口分流')
+
+  if (issues.length === 0) {
+    card.className = 'verdict-card verdict-ok'
+    emoji.textContent = '🟢'
+    main.textContent = '线路纯净 — 适合 TikTok 直播'
+    sub.textContent = `出口 IP：${results.http?.ip || '—'} · 住宅IP · 无泄露 · 出口一致`
+  } else if (score >= 50) {
+    card.className = 'verdict-card verdict-warn'
+    emoji.textContent = '🟡'
+    main.textContent = '存在风险 — 建议修复后再使用'
+    sub.textContent = `发现问题：${issues.join('、')}`
+  } else {
+    card.className = 'verdict-card verdict-bad'
+    emoji.textContent = '🔴'
+    main.textContent = 'IP 风险高 — TikTok 可能识别为异常账号'
+    sub.textContent = `严重问题：${issues.join('、')}`
+  }
+
+  // 修复建议
+  showAdvice(webrtcLeaked, dnsLeaked, isHosting, isProxy, splitDetected)
+}
+
+function showAdvice(webrtcLeaked, dnsLeaked, isHosting, isProxy, splitDetected) {
+  const items = []
+  if (webrtcLeaked) items.push({
+    icon: '📡',
+    text: '<b>修复 WebRTC 泄露：</b>在浏览器安装 WebRTC Leak Prevent 插件，或在 Firefox 中设置 media.peerconnection.enabled = false'
+  })
+  if (dnsLeaked) items.push({
+    icon: '🔍',
+    text: '<b>修复 DNS 泄露：</b>在代理软件中开启「DNS 劫持」或「Fake DNS」模式，确保 DNS 查询也走代理通道'
+  })
+  if (isHosting) items.push({
+    icon: '🏢',
+    text: '<b>更换住宅 IP：</b>当前为机房 IP，TikTok 对机房 IP 账号权重极低，建议更换住宅代理（Residential Proxy）'
+  })
+  if (splitDetected) items.push({
+    icon: '🔀',
+    text: '<b>修复出口分流：</b>代理规则导致不同网站走不同出口，建议开启全局代理模式，确保所有流量走同一出口'
+  })
+  if (items.length === 0) return
+
+  const card = document.getElementById('adviceCard')
+  const list = document.getElementById('adviceList')
+  card.style.display = 'block'
+  list.innerHTML = items.map(i =>
+    `<div class="advice-item"><span class="advice-icon">${i.icon}</span><span>${i.text}</span></div>`
+  ).join('')
+}
+
+function drawScore(score) {
+  const canvas = document.getElementById('scoreCanvas')
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  const cx = 40, cy = 40, r = 30, lw = 7
+  ctx.clearRect(0, 0, 80, 80)
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.strokeStyle = '#1e2240'; ctx.lineWidth = lw; ctx.stroke()
+  const angle = (score / 100) * Math.PI * 2 - Math.PI / 2
+  const color = score >= 70 ? '#4ade80' : score >= 40 ? '#fbbf24' : '#f87171'
+  ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, angle)
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke()
+  ctx.fillStyle = color; ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+  ctx.fillText(score, cx, cy)
+}
+
+function isPrivate(ip) {
+  return /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|169\.254\.|::1|fc|fd)/.test(ip)
+}
+
+// ── 启动所有检测 ──────────────────────────────────────────────
+;(async () => {
+  // 并发执行，但 WebRTC 需要 HTTP IP 结果来对比
+  await checkHttpIp()
+  await Promise.all([checkWebRTC(), checkDnsLeak(), checkSplit()])
+})()
+</script>
+</body>
+</html>

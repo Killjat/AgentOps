@@ -47,8 +47,15 @@ class NodeResult(BaseModel):
     # AI 分析
     path_quality: PathQuality = PathQuality.CLEAN
     risk_score: int = 0
+    purity_score: int = -1          # 0-100 综合纯净度评分（-1=未计算）
     analysis: str = ""
     recommendation: str = ""
+
+    # 多数据源定位对比
+    multi_source: Dict[str, Any] = {}   # {sources, country_consistent, is_hosting, is_vpn}
+
+    # 出口分流检测
+    outbound_split: Dict[str, Any] = {} # {main_ip, cloudflare_ip, tiktok_ip, split_detected}
 
     error: str = ""
     status: str = "pending"

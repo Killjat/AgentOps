@@ -139,6 +139,14 @@ if WEB_DIR.exists():
             "Pragma": "no-cache"
         })
 
+    @app.get("/probe", include_in_schema=False)
+    async def serve_probe():
+        content = (WEB_DIR / "probe.html").read_text()
+        return HTMLResponse(content=content, headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache"
+        })
+
     static_dir = WEB_DIR / "static"
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")

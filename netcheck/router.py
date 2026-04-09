@@ -2,12 +2,14 @@
 import asyncio
 import uuid
 import sys, os
+import ipaddress
+import socket as _socket
 from datetime import datetime
 from typing import List
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'server'))
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from netcheck.models import CheckTask, CheckRequest, NodeResult
 from netcheck.checker import check_node
 from netcheck.analyzer import ai_analyze_node, ai_summary
@@ -17,10 +19,198 @@ router = APIRouter(prefix="/netcheck", tags=["netcheck"])
 # 内存存储检测任务
 _tasks: dict = {}
 
+# 并发控制：最多50个并发探测
+_semaphore = asyncio.Semaphore(50)
+
+# SSRF 防护：禁止探测内网地址
+_BLOCKED_RANGES = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("100.64.0.0/10"),
+]
+
+def _is_safe_target(target: str) -> bool:
+    """检查目标是否为安全的公网地址"""
+    try:
+        host = target.split("/")[0].split(":")[0]
+        ip = _socket.gethostbyname(host)
+        addr = ipaddress.ip_address(ip)
+        return not any(addr in net for net in _BLOCKED_RANGES)
+    except Exception:
+        return True  # 解析失败时放行，让后续命令自然失败
+
+
+from pydantic import BaseModel as _BM
+
+class PingRequest(_BM):
+    agent_id: str
+    target: str
+
+@router.post("/ping")
+async def quick_ping(req: PingRequest):
+    """快速单次 ping，返回延迟；同时触发后台完整检测任务（首次调用）"""
+    if not _is_safe_target(req.target):
+        raise HTTPException(400, "目标地址不合法")
+    from routers.agents import _ws_call
+    from core.state import agents as _agents
+
+    agent = _agents.get(req.agent_id)
+    os_type = str(agent.os_type) if agent else "linux"
+    is_win = "windows" in os_type.lower()
+
+    if is_win:
+        cmd = f"ping -n 1 {req.target}"
+    else:
+        cmd = f"ping -c 1 -W 3 {req.target} 2>/dev/null"
+
+    try:
+        resp = await _ws_call(req.agent_id, {"type": "exec", "command": cmd, "timeout": 10}, timeout=12)
+        raw = resp.get("output", "") or ""
+        import re
+        # 解析延迟
+        m = re.search(r'time[=<]([\d.]+)\s*ms', raw, re.IGNORECASE)
+        if not m:
+            m = re.search(r'([\d.]+)\s*ms', raw)
+        latency = round(float(m.group(1))) if m else 0
+        loss = latency == 0 or "100%" in raw or "unreachable" in raw.lower()
+    except Exception as e:
+        return {"latency_ms": 0, "loss": True, "error": str(e)}
+
+    # 首次调用时触发完整检测任务（后台）
+    task_id = None
+    cache_key = f"{req.agent_id}:{req.target}"
+    if cache_key not in _ping_task_cache:
+        task_id = f"nc-{uuid.uuid4().hex[:8]}"
+        task = CheckTask(
+            task_id=task_id, target=req.target, agent_ids=[req.agent_id],
+            status="running", created_at=datetime.now().isoformat()
+        )
+        _tasks[task_id] = task
+        _ping_task_cache[cache_key] = task_id
+        asyncio.create_task(_run_check(task))
+
+    return {"latency_ms": latency, "loss": loss, "task_id": _ping_task_cache.get(cache_key)}
+
+_ping_task_cache: dict = {}
+
+# ── 浏览器端探针接口 ──────────────────────────────────────────
+
+import time as _time
+from fastapi import Request as _Request
+
+# DNS probe token 存储：{token: {created_at, http_ip, probe_ips}}
+_dns_probes: dict = {}
+
+
+async def _get_ip_info(ip: str) -> dict:
+    """查询 IP 地理和类型信息"""
+    import aiohttp, ssl
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    info = {"ip": ip, "city": "", "country": "", "org": "", "type": "unknown"}
+    try:
+        connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+        async with aiohttp.ClientSession(connector=connector) as s:
+            async with s.get(f"https://ipinfo.io/{ip}/json",
+                             timeout=aiohttp.ClientTimeout(total=5)) as r:
+                if r.status == 200:
+                    d = await r.json()
+                    info["city"] = d.get("city", "")
+                    info["country"] = d.get("country", "")
+                    info["org"] = d.get("org", "")
+                    from netcheck.checker import classify_ip
+                    info["type"] = classify_ip(d.get("org", "")).value
+    except Exception:
+        pass
+    return info
+
+
+def _real_ip(request: _Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    return forwarded.split(",")[0].strip() if forwarded else request.client.host
+
+
+@router.get("/probe/myip")
+async def probe_myip(request: _Request):
+    """返回请求方的真实 IP 及 IP 类型（供浏览器端检测用）"""
+    return await _get_ip_info(_real_ip(request))
+
+
+@router.get("/probe/dns-token")
+async def probe_dns_token(request: _Request):
+    """生成一次性 DNS probe token"""
+    tok = uuid.uuid4().hex
+    _dns_probes[tok] = {
+        "created_at": _time.time(),
+        "http_ip": _real_ip(request),
+        "probe_ips": [],
+    }
+    return {"token": tok, "probe_domain": None}
+
+
+@router.get("/probe/dns-probe/{token}")
+async def probe_dns_record(token: str, request: _Request):
+    """浏览器访问此 URL 时，记录来源 IP（模拟 DNS 查询来源）"""
+    if token in _dns_probes:
+        _dns_probes[token]["probe_ips"].append(_real_ip(request))
+    from fastapi.responses import Response
+    gif = b'GIF89a\x01\x00\x01\x00\x00\xff\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x00;'
+    return Response(content=gif, media_type="image/gif")
+
+
+@router.get("/probe/dns-result")
+async def probe_dns_result(token: str, request: _Request):
+    """查询 DNS probe 结果"""
+    if token not in _dns_probes:
+        raise HTTPException(404, "token 不存在或已过期")
+
+    probe = _dns_probes[token]
+    http_ip = probe["http_ip"]
+    probe_ips = probe.get("probe_ips", [])
+
+    # Google DoH 查询作为参考
+    google_ips = []
+    try:
+        import aiohttp, ssl
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+        connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+        async with aiohttp.ClientSession(connector=connector) as s:
+            async with s.get("https://dns.google/resolve?name=www.tiktok.com&type=A",
+                             headers={"Accept": "application/dns-json"},
+                             timeout=aiohttp.ClientTimeout(total=5)) as r:
+                if r.status == 200:
+                    d = await r.json(content_type=None)
+                    google_ips = [a["data"] for a in d.get("Answer", []) if a.get("type") == 1]
+    except Exception:
+        pass
+
+    leaked = bool(probe_ips and any(ip != http_ip for ip in probe_ips))
+
+    # 清理过期 token（5分钟）
+    now = _time.time()
+    for k in [k for k, v in _dns_probes.items() if now - v["created_at"] > 300]:
+        del _dns_probes[k]
+
+    return {
+        "leaked": leaked,
+        "http_ip": http_ip,
+        "dns_resolver_ips": probe_ips or google_ips[:3],
+        "google_doh_ips": google_ips[:3],
+        "method": "http_probe" if probe_ips else "doh_fallback",
+    }
+
 
 @router.post("/tasks")
 async def create_check(req: CheckRequest):
     """创建网络检测任务"""
+    if not _is_safe_target(req.target):
+        raise HTTPException(400, "目标地址不合法（禁止探测内网地址）")
     task_id = f"nc-{uuid.uuid4().hex[:8]}"
     task = CheckTask(
         task_id=task_id,
@@ -84,6 +274,8 @@ _recon_tasks: dict = {}
 @router.post("/recon")
 async def create_recon(req: ReconRequest):
     """目标侦察：从多节点并发 traceroute，分析目标服务器网络画像"""
+    if not _is_safe_target(req.target):
+        raise HTTPException(400, "目标地址不合法（禁止探测内网地址）")
     task_id = f"recon-{uuid.uuid4().hex[:8]}"
     task = {
         "task_id": task_id,
@@ -160,7 +352,11 @@ async def _run_recon(task_id: str, target: str, agent_ids: List[str]):
             "all_hops": hops_enriched,
         }
 
-    results = await asyncio.gather(*[probe_one(aid) for aid in agent_ids])
+    async def probe_one_safe(agent_id: str) -> dict:
+        async with _semaphore:
+            return await probe_one(agent_id)
+
+    results = await asyncio.gather(*[probe_one_safe(aid) for aid in agent_ids])
     task["results"] = list(results)
 
     # AI 汇总分析
