@@ -153,7 +153,7 @@ object AndroidNetTools {
     }
 
     private fun extractPingMs(pingOutput: String): Long {
-        val m = Regex("time[=<]([\\d.]+)\\s*ms", RegexOption.IGNORE_CASE).find(pingOutput)
+        val m = Regex("time[=<]([\\d.]+)\\s*ms", setOf(RegexOption.IGNORE_CASE)).find(pingOutput)
             ?: Regex("([\\d.]+)\\s*ms").find(pingOutput)
         return m?.groupValues?.get(1)?.toDoubleOrNull()?.toLong() ?: -1L
     }

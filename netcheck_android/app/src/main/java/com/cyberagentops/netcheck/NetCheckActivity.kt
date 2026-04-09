@@ -8,10 +8,7 @@ import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.*
 import okhttp3.*
 import org.json.JSONObject
-import java.io.IOException
-import java.net.HttpURLConnection
 import java.net.InetAddress
-import java.net.URL
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
@@ -207,7 +204,7 @@ class NetCheckActivity : AppCompatActivity() {
                 // 提取跳点 IP
                 val hopIp = Regex("From ([\\d.]+)").find(raw)?.groupValues?.get(1)
                     ?: Regex("bytes from ([\\d.]+)").find(raw)?.groupValues?.get(1)
-                val ms = Regex("time[=<]([\\d.]+)\\s*ms", RegexOption.IGNORE_CASE).find(raw)
+                val ms = Regex("time[=<]([\\d.]+)\\s*ms", setOf(RegexOption.IGNORE_CASE)).find(raw)
                     ?.groupValues?.get(1)?.toDoubleOrNull()?.toLong() ?: -1L
 
                 if (hopIp != null) {
