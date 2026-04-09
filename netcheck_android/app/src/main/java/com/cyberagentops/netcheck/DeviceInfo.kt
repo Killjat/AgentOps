@@ -60,26 +60,14 @@ object DeviceInfo {
     }
 
     private fun getCpuUsage(): Double {
-        // 优先用 top 命令获取系统级 CPU 使用率
+        // 纯读 /proc/stat，不依赖 shell 命令
         return try {
-            val result = CommandExecutor.exec("top -n 1 -b 2>/dev/null | grep -E '^[0-9]+%cpu'", 5)
-            if (result.success && result.output.isNotBlank()) {
-                // 格式: 800%cpu  20%user  720%idle ...
-                val idleMatch = Regex("(\\d+)%idle").find(result.output)
-                val totalMatch = Regex("(\\d+)%cpu").find(result.output)
-                if (idleMatch != null && totalMatch != null) {
-                    val idle = idleMatch.groupValues[1].toDouble()
-                    val total = totalMatch.groupValues[1].toDouble()
-                    if (total > 0) return Math.round((100.0 - idle / total * 100) * 10) / 10.0
-                }
-            }
-            // fallback: /proc/stat
             val stat1 = readCpuStat()
             if (stat1.size >= 4) {
                 SystemClock.sleep(300)
                 val stat2 = readCpuStat()
                 if (stat2.size >= 4) {
-                    val idle = stat2[3] - stat1[3]
+                    val idle  = stat2[3] - stat1[3]
                     val total = stat2.sum() - stat1.sum()
                     if (total > 0) return Math.round(100.0 * (1 - idle.toDouble() / total) * 10) / 10.0
                 }
