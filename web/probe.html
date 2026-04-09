@@ -3,212 +3,281 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IP 纯净度检测 — CyberAgentOps</title>
+<title>IP 纯净度检测 — CyberNetCheck</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#060810;color:#e2e8f0;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:40px 20px}
-.container{width:100%;max-width:860px}
-.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:32px}
-.title{font-size:20px;font-weight:800;color:#e2e8f0;display:flex;align-items:center;gap:10px}
-.back{font-size:12px;color:#334155;text-decoration:none}
-.back:hover{color:#7c6af7}
-
-/* 大判决卡 */
-.verdict-card{border-radius:16px;padding:28px 32px;display:flex;align-items:center;gap:24px;margin-bottom:24px;transition:all .3s}
-.verdict-ok{background:linear-gradient(135deg,#0a1f0a,#0d2a12);border:1px solid #1a5a2e}
-.verdict-warn{background:linear-gradient(135deg,#1f1a0a,#2a200a);border:1px solid #5a3a0a}
-.verdict-bad{background:linear-gradient(135deg,#1f0a0a,#2a0d0d);border:1px solid #5a1a1a}
-.verdict-pending{background:#0f1117;border:1px solid #1e2240}
-.verdict-emoji{font-size:52px;line-height:1;flex-shrink:0}
-.verdict-text{flex:1}
-.verdict-main{font-size:22px;font-weight:800;line-height:1.2;margin-bottom:6px}
-.verdict-ok .verdict-main{color:#4ade80}
-.verdict-warn .verdict-main{color:#fbbf24}
-.verdict-bad .verdict-main{color:#f87171}
-.verdict-pending .verdict-main{color:#334155}
-.verdict-sub{font-size:13px;opacity:.7;line-height:1.6}
-
-/* 检测项网格 */
-.checks-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:24px}
-.check-card{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:18px 20px;transition:border-color .3s}
-.check-card.ok{border-color:#1a5a2e}
-.check-card.warn{border-color:#5a3a0a}
-.check-card.bad{border-color:#5a1a1a}
-.check-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-.check-title{font-size:12px;font-weight:700;color:#94a3b8;letter-spacing:.5px;text-transform:uppercase}
-.check-status{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600}
-.status-ok{background:#0a1f0a;color:#4ade80}
-.status-warn{background:#1f1a0a;color:#fbbf24}
-.status-bad{background:#1f0a0a;color:#f87171}
-.status-checking{background:#0a0d14;color:#334155;animation:pulse 1.5s infinite}
-.check-value{font-size:20px;font-weight:800;color:#e2e8f0;margin-bottom:4px;font-family:monospace}
-.check-detail{font-size:11px;color:#475569;line-height:1.6}
-.check-detail .highlight{color:#94a3b8}
-
-/* IP 对比表 */
-.ip-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
-.ip-table td{padding:5px 0;border-bottom:1px solid #0a0d14;vertical-align:top}
-.ip-table td:first-child{color:#334155;width:100px}
-.ip-table td:last-child{font-family:monospace;color:#60a5fa}
-.ip-mismatch{color:#f87171!important}
-
-/* 进度条 */
-.progress-wrap{height:4px;background:#1e2240;border-radius:2px;margin-top:12px;overflow:hidden}
-.progress-bar{height:100%;border-radius:2px;background:linear-gradient(90deg,#5b4fcf,#7c6af7);transition:width .5s}
-
-/* 建议卡 */
-.advice-card{background:#0f1117;border:1px solid #2d3148;border-radius:12px;padding:18px 20px;margin-bottom:14px}
-.advice-title{font-size:11px;color:#7c6af7;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
-.advice-item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #0a0d14;font-size:13px;color:#94a3b8;line-height:1.6}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#060810;color:#e2e8f0;min-height:100vh}
+.page{max-width:900px;margin:0 auto;padding:32px 20px}
+.header{text-align:center;margin-bottom:40px}
+.header h1{font-size:28px;font-weight:800;color:#e2e8f0;margin-bottom:8px}
+.header p{font-size:14px;color:#475569}
+.step{margin-bottom:32px}
+.step-label{font-size:10px;color:#7c6af7;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.step-label::after{content:'';flex:1;height:1px;background:#1e2240}
+/* 大判决 */
+.verdict-big{border-radius:16px;padding:24px 28px;display:flex;align-items:center;gap:20px;margin-bottom:16px}
+.vb-ok{background:linear-gradient(135deg,#0a1f0a,#0d2a12);border:1px solid #1a5a2e}
+.vb-warn{background:linear-gradient(135deg,#1f1a0a,#2a200a);border:1px solid #5a3a0a}
+.vb-bad{background:linear-gradient(135deg,#1f0a0a,#2a0d0d);border:1px solid #5a1a1a}
+.vb-pending{background:#0f1117;border:1px solid #1e2240}
+.vb-emoji{font-size:44px;line-height:1;flex-shrink:0}
+.vb-body{flex:1}
+.vb-main{font-size:20px;font-weight:800;margin-bottom:5px}
+.vb-ok .vb-main{color:#4ade80}
+.vb-warn .vb-main{color:#fbbf24}
+.vb-bad .vb-main{color:#f87171}
+.vb-pending .vb-main{color:#334155}
+.vb-sub{font-size:13px;color:#64748b;line-height:1.6}
+/* 评分圆环 */
+.ring-wrap{text-align:center;flex-shrink:0}
+.ring-label{font-size:10px;color:#334155;margin-top:4px;letter-spacing:1px}
+/* 检测卡片网格 */
+.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px}
+.card{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:16px 18px;transition:border-color .3s}
+.card.ok{border-color:#1a5a2e}
+.card.warn{border-color:#5a3a0a}
+.card.bad{border-color:#5a1a1a}
+.card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.card-title{font-size:11px;font-weight:700;color:#64748b;letter-spacing:.5px;text-transform:uppercase}
+.badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+.badge-ok{background:#0a1f0a;color:#4ade80}
+.badge-warn{background:#1f1a0a;color:#fbbf24}
+.badge-bad{background:#1f0a0a;color:#f87171}
+.badge-ing{background:#0a0d14;color:#334155}
+.card-val{font-size:18px;font-weight:800;color:#e2e8f0;margin-bottom:4px;font-family:monospace}
+.card-detail{font-size:11px;color:#475569;line-height:1.7}
+.hl{color:#94a3b8}
+.red{color:#f87171}
+/* 路由侦察区 */
+.recon-box{background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:20px}
+.recon-input-row{display:flex;gap:10px;margin-bottom:16px}
+.recon-input{flex:1;background:#060810;border:1px solid #2d3148;border-radius:8px;color:#e2e8f0;padding:10px 14px;font-size:14px;outline:none;font-family:monospace}
+.recon-input:focus{border-color:#7c6af7}
+.recon-btn{padding:10px 20px;background:linear-gradient(135deg,#5b4fcf,#7c6af7);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.recon-btn:disabled{opacity:.4;cursor:not-allowed}
+/* 路由结果 */
+.route-result{margin-top:12px}
+.route-node-card{background:#0a0d14;border:1px solid #1e2240;border-radius:10px;padding:14px;margin-bottom:10px}
+.route-node-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.route-node-name{font-size:13px;font-weight:700;color:#e2e8f0}
+.route-stats{display:flex;gap:6px}
+.stat-pill{font-size:10px;background:#0f1117;border-radius:4px;padding:2px 7px;color:#475569}
+/* 路由路径可视化 */
+.hop-path{display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:8px}
+.hop-item{display:flex;flex-direction:column;align-items:center;gap:2px}
+.hop-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid}
+.hop-dot.dc{background:#1f0a0a;border-color:#5a1a1a}
+.hop-dot.res{background:#0a1f0a;border-color:#1a5a2e}
+.hop-dot.priv{background:#1f1a0a;border-color:#5a3a0a}
+.hop-dot.bb{background:#0a1527;border-color:#1a3a5a}
+.hop-dot.isp{background:#0f1117;border-color:#2d3148}
+.hop-dot.to{background:#0a0d14;border-color:#1e2240;opacity:.4}
+.hop-dot.target{background:#1a1527;border-color:#7c6af7;box-shadow:0 0 10px rgba(124,106,247,.4)}
+.hop-ms{font-size:9px;font-weight:700}
+.hop-loc{font-size:9px;color:#334155;max-width:50px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hop-arrow{color:#2d3148;font-size:12px;margin-top:-14px}
+/* 分析结论 */
+.analysis-flags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.flag{background:#1f0a0a;border:1px solid #3d1212;border-radius:6px;padding:3px 10px;font-size:11px;color:#f87171}
+.flag.green{background:#0a1f0a;border-color:#1a3a1a;color:#4ade80}
+/* CTA */
+.cta-box{background:linear-gradient(135deg,#1a1527,#0f1117);border:1px solid #2d3148;border-radius:14px;padding:24px 28px;text-align:center;margin-top:24px}
+.cta-title{font-size:18px;font-weight:800;color:#e2e8f0;margin-bottom:8px}
+.cta-sub{font-size:13px;color:#64748b;margin-bottom:20px;line-height:1.7}
+.cta-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.cta-btn-primary{padding:12px 28px;background:linear-gradient(135deg,#5b4fcf,#7c6af7);border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}
+.cta-btn-secondary{padding:12px 28px;background:#0f1117;border:1px solid #2d3148;border-radius:10px;color:#94a3b8;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
+/* 修复建议 */
+.advice{background:#0f1117;border:1px solid #2d3148;border-radius:12px;padding:16px 20px;margin-top:16px}
+.advice-title{font-size:10px;color:#7c6af7;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+.advice-item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #0a0d14;font-size:12px;color:#94a3b8;line-height:1.6}
 .advice-item:last-child{border-bottom:none}
-.advice-icon{flex-shrink:0;font-size:16px}
-
+/* 进度 */
+.progress{height:3px;background:#1e2240;border-radius:2px;margin-top:24px;overflow:hidden}
+.progress-bar{height:100%;background:linear-gradient(90deg,#5b4fcf,#7c6af7);transition:width .4s;border-radius:2px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.spin{display:inline-block;animation:spin 1s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
+.pulsing{animation:pulse 1.5s infinite}
 </style>
 </head>
 <body>
-<div class="container">
-  <div class="topbar">
-    <div class="title">🔬 IP 纯净度检测</div>
-    <a href="/" class="back">← 返回控制台</a>
+<div class="page">
+  <div class="header">
+    <h1>🔬 IP 纯净度检测</h1>
+    <p>自动检测您的网络环境，判断是否适合 TikTok 跨境直播</p>
   </div>
 
-  <!-- 大判决卡 -->
-  <div class="verdict-card" id="verdictCard">
-    <div class="verdict-emoji" id="verdictEmoji">⏳</div>
-    <div class="verdict-text">
-      <div class="verdict-main" id="verdictMain">正在检测中...</div>
-      <div class="verdict-sub" id="verdictSub">正在从多个维度分析您的网络环境，请稍候</div>
+  <!-- STEP 1: 自动检测 -->
+  <div class="step">
+    <div class="step-label">第一步 · 自动检测您的网络环境</div>
+
+    <!-- 大判决 -->
+    <div class="verdict-big vb-pending" id="verdictBox">
+      <div class="vb-emoji" id="verdictEmoji">⏳</div>
+      <div class="vb-body">
+        <div class="vb-main" id="verdictMain">正在检测中...</div>
+        <div class="vb-sub" id="verdictSub">正在从多个维度分析您的网络环境</div>
+      </div>
+      <div class="ring-wrap">
+        <canvas id="scoreCanvas" width="72" height="72"></canvas>
+        <div class="ring-label">纯净度</div>
+      </div>
     </div>
-    <div style="text-align:center;flex-shrink:0">
-      <canvas id="scoreCanvas" width="80" height="80"></canvas>
-      <div style="font-size:10px;color:#334155;margin-top:4px;letter-spacing:1px">纯净度评分</div>
+
+    <!-- 四项检测卡 -->
+    <div class="cards">
+      <div class="card" id="card-http">
+        <div class="card-head">
+          <div class="card-title">🌐 出口 IP</div>
+          <span class="badge badge-ing pulsing" id="badge-http">检测中</span>
+        </div>
+        <div class="card-val" id="val-http">—</div>
+        <div class="card-detail" id="detail-http">正在获取出口 IP...</div>
+      </div>
+      <div class="card" id="card-webrtc">
+        <div class="card-head">
+          <div class="card-title">📡 WebRTC 泄露</div>
+          <span class="badge badge-ing pulsing" id="badge-webrtc">检测中</span>
+        </div>
+        <div class="card-val" id="val-webrtc">—</div>
+        <div class="card-detail" id="detail-webrtc">正在检测真实 IP...</div>
+      </div>
+      <div class="card" id="card-dns">
+        <div class="card-head">
+          <div class="card-title">🔍 DNS 泄露</div>
+          <span class="badge badge-ing pulsing" id="badge-dns">检测中</span>
+        </div>
+        <div class="card-val" id="val-dns">—</div>
+        <div class="card-detail" id="detail-dns"></div>
+      </div>
+      <div class="card" id="card-split">
+        <div class="card-head">
+          <div class="card-title">🔀 出口分流</div>
+          <span class="badge badge-ing pulsing" id="badge-split">检测中</span>
+        </div>
+        <div class="card-val" id="val-split">—</div>
+        <div class="card-detail" id="detail-split"></div>
+      </div>
+    </div>
+
+    <!-- 修复建议（有问题时显示） -->
+    <div class="advice" id="adviceBox" style="display:none">
+      <div class="advice-title">💡 修复建议</div>
+      <div id="adviceList"></div>
     </div>
   </div>
 
-  <!-- 检测项 -->
-  <div class="checks-grid">
-    <!-- HTTP 出口 IP -->
-    <div class="check-card" id="card-http">
-      <div class="check-header">
-        <div class="check-title">🌐 HTTP 出口 IP</div>
-        <span class="check-status status-checking" id="status-http">检测中</span>
+  <!-- STEP 2: 路由侦察 -->
+  <div class="step" id="reconStep">
+    <div class="step-label">第二步 · 从我们的节点侦察您的 IP</div>
+    <div class="recon-box">
+      <div class="recon-input-row">
+        <input class="recon-input" id="reconIpInput" placeholder="输入 IP 地址（默认使用您的出口 IP）" />
+        <button class="recon-btn" id="reconBtn" onclick="startRecon()">🎯 开始侦察</button>
       </div>
-      <div class="check-value" id="val-http">—</div>
-      <div class="check-detail" id="detail-http">正在获取您的出口 IP 地址...</div>
-    </div>
-
-    <!-- WebRTC 真实 IP -->
-    <div class="check-card" id="card-webrtc">
-      <div class="check-header">
-        <div class="check-title">📡 WebRTC 真实 IP</div>
-        <span class="check-status status-checking" id="status-webrtc">检测中</span>
+      <div style="font-size:11px;color:#334155">
+        我们将从全球部署的节点对该 IP 进行 traceroute，分析路由路径和 IP 画像
       </div>
-      <div class="check-value" id="val-webrtc">—</div>
-      <div class="check-detail" id="detail-webrtc">正在通过 WebRTC 协议检测真实 IP...</div>
-    </div>
-
-    <!-- DNS 泄露 -->
-    <div class="check-card" id="card-dns">
-      <div class="check-header">
-        <div class="check-title">🔍 DNS 泄露检测</div>
-        <span class="check-status status-checking" id="status-dns">检测中</span>
-      </div>
-      <div class="check-value" id="val-dns">—</div>
-      <div class="check-detail" id="detail-dns">
-        <table class="ip-table" id="dns-table"></table>
-      </div>
-    </div>
-
-    <!-- 出口分流 -->
-    <div class="check-card" id="card-split">
-      <div class="check-header">
-        <div class="check-title">🔀 出口分流检测</div>
-        <span class="check-status status-checking" id="status-split">检测中</span>
-      </div>
-      <div class="check-value" id="val-split">—</div>
-      <div class="check-detail" id="detail-split">
-        <table class="ip-table" id="split-table"></table>
-      </div>
+      <div id="reconResult" class="route-result"></div>
     </div>
   </div>
 
-  <!-- 修复建议 -->
-  <div class="advice-card" id="adviceCard" style="display:none">
-    <div class="advice-title">💡 修复建议</div>
-    <div id="adviceList"></div>
+  <!-- STEP 3: CTA -->
+  <div class="cta-box" id="ctaBox" style="display:none">
+    <div class="cta-title">📱 想知道这个 IP 到 TikTok 的完整路径？</div>
+    <div class="cta-sub">
+      下载 CyberNetCheck App，在您的设备上直接执行检测<br>
+      traceroute 到 TikTok · 实时延迟监控 · 线路质量告警
+    </div>
+    <div class="cta-btns">
+      <a href="/download/agent/android" class="cta-btn-primary">📥 下载 Android App</a>
+      <a href="/netcheck-ui" class="cta-btn-secondary">🖥️ 使用 Web 检测工具</a>
+    </div>
   </div>
 
-  <!-- 进度 -->
-  <div class="progress-wrap">
-    <div class="progress-bar" id="progressBar" style="width:0%"></div>
-  </div>
-  <div style="text-align:center;font-size:11px;color:#334155;margin-top:8px" id="progressText">0 / 4 项检测完成</div>
+  <div class="progress"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
 </div>
 
 <script>
-// ── 状态 ──
-const results = { http: null, webrtc: null, dns: null, split: null }
+const API = ''
+const authH = {}  // 公开页面，不需要 token
+
+let myIp = ''
 let doneCount = 0
-const token = localStorage.getItem('cyber_token') || ''
-const authH = token ? { 'Authorization': `Bearer ${token}` } : {}
+const probeResults = { http: null, webrtc: null, dns: null, split: null }
+
+// ── 工具函数 ──────────────────────────────────────────────────
+function isPrivate(ip) {
+  return /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|169\.254\.)/.test(ip)
+}
 
 function setProgress(n) {
   doneCount = n
   document.getElementById('progressBar').style.width = (n / 4 * 100) + '%'
-  document.getElementById('progressText').textContent = `${n} / 4 项检测完成`
-  if (n === 4) updateVerdict()
 }
 
 function setCard(id, status, value, detail) {
   const card = document.getElementById('card-' + id)
-  const statusEl = document.getElementById('status-' + id)
-  const valEl = document.getElementById('val-' + id)
-  const detailEl = document.getElementById('detail-' + id)
-  card.className = 'check-card ' + status
-  statusEl.className = 'check-status status-' + status
-  statusEl.textContent = { ok: '✅ 正常', warn: '⚠️ 注意', bad: '❌ 泄露', checking: '检测中' }[status] || status
-  if (valEl) valEl.textContent = value
-  if (detailEl && typeof detail === 'string') detailEl.innerHTML = detail
+  const badge = document.getElementById('badge-' + id)
+  const val = document.getElementById('val-' + id)
+  const det = document.getElementById('detail-' + id)
+  card.className = 'card ' + (status === 'checking' ? '' : status)
+  badge.className = 'badge badge-' + (status === 'checking' ? 'ing pulsing' : status)
+  badge.textContent = { ok: '✅ 正常', warn: '⚠️ 注意', bad: '❌ 泄露', checking: '检测中' }[status] || status
+  if (val && value !== undefined) val.textContent = value
+  if (det && typeof detail === 'string') det.innerHTML = detail
 }
 
-// ── 1. HTTP 出口 IP ──────────────────────────────────────────
-async function checkHttpIp() {
+function drawRing(canvasId, score) {
+  const c = document.getElementById(canvasId)
+  if (!c) return
+  const ctx = c.getContext('2d')
+  const cx = 36, cy = 36, r = 28, lw = 6
+  ctx.clearRect(0, 0, 72, 72)
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.strokeStyle = '#1e2240'; ctx.lineWidth = lw; ctx.stroke()
+  if (score >= 0) {
+    const angle = (score / 100) * Math.PI * 2 - Math.PI / 2
+    const color = score >= 70 ? '#4ade80' : score >= 40 ? '#fbbf24' : '#f87171'
+    ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, angle)
+    ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke()
+    ctx.fillStyle = color; ctx.font = 'bold 15px sans-serif'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText(score, cx, cy)
+  }
+}
+
+// ── STEP 1: 四项检测 ──────────────────────────────────────────
+
+async function checkHttp() {
   try {
-    const r = await fetch('/netcheck/probe/myip', { headers: authH })
+    const r = await fetch(`${API}/netcheck/probe/myip`)
     const d = await r.json()
-    results.http = d
-    const ipType = d.type || 'unknown'
-    const isRisk = ipType.includes('datacenter') || ipType.includes('proxy')
-    setCard('http',
-      isRisk ? 'bad' : 'ok',
-      d.ip,
-      `<span class="highlight">${d.city || ''} ${d.country || ''}</span> · ${d.org || ''}<br>
-       IP 类型：<b style="color:${isRisk?'#f87171':'#4ade80'}">${
-         ipType === 'datacenter' ? '🏢 机房IP' :
-         ipType === 'proxy' ? '🔀 代理/VPN' :
-         ipType === 'residential' ? '🏠 住宅IP' : '❓ 未知'
-       }</b>`
-    )
+    probeResults.http = d
+    myIp = d.ip
+    // 自动填入侦察输入框
+    document.getElementById('reconIpInput').placeholder = `您的出口 IP：${d.ip}`
+
+    const isRisk = d.type === 'datacenter' || d.type === 'proxy'
+    const typeLabel = { datacenter: '🏢 机房IP', proxy: '🔀 代理/VPN', residential: '🏠 住宅IP', mobile: '📱 移动网络' }[d.type] || '❓ 未知'
+    setCard('http', isRisk ? 'bad' : 'ok', d.ip,
+      `<span class="hl">${d.city || ''} ${d.country || ''}</span> · ${(d.org || '').slice(0, 30)}<br>
+       类型：<b style="color:${isRisk ? '#f87171' : '#4ade80'}">${typeLabel}</b>`)
   } catch(e) {
     setCard('http', 'warn', '获取失败', '无法连接服务器')
   }
   setProgress(doneCount + 1)
 }
 
-// ── 2. WebRTC 真实 IP ────────────────────────────────────────
 async function checkWebRTC() {
   const ips = new Set()
   try {
-    await new Promise((resolve) => {
+    await new Promise(resolve => {
       const pc = new RTCPeerConnection({ iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
       ]})
       pc.createDataChannel('')
-      pc.onicecandidate = (e) => {
+      pc.onicecandidate = e => {
         if (!e.candidate) { pc.close(); resolve(); return }
         const m = e.candidate.candidate.match(/(\d+\.\d+\.\d+\.\d+)/g)
         if (m) m.forEach(ip => ips.add(ip))
@@ -218,268 +287,296 @@ async function checkWebRTC() {
     })
   } catch(e) {}
 
-  const publicIps = [...ips].filter(ip => !isPrivate(ip))
-  const privateIps = [...ips].filter(ip => isPrivate(ip))
-  results.webrtc = { public: publicIps, private: privateIps }
+  const pubIps = [...ips].filter(ip => !isPrivate(ip))
+  const privIps = [...ips].filter(ip => isPrivate(ip))
+  probeResults.webrtc = { public: pubIps, private: privIps }
 
-  // 对比 HTTP IP
-  const httpIp = results.http?.ip
-  const leaked = httpIp && publicIps.length > 0 && !publicIps.includes(httpIp)
-
-  if (publicIps.length === 0 && privateIps.length === 0) {
-    setCard('webrtc', 'ok', '未泄露', 'WebRTC 未检测到 IP（浏览器已屏蔽或不支持）')
+  const leaked = myIp && pubIps.length > 0 && !pubIps.includes(myIp)
+  if (pubIps.length === 0 && privIps.length === 0) {
+    setCard('webrtc', 'ok', '未泄露', '浏览器已屏蔽 WebRTC 或不支持')
   } else if (leaked) {
-    setCard('webrtc', 'bad',
-      publicIps[0] || privateIps[0],
-      `⚠️ <b style="color:#f87171">真实 IP 泄露！</b><br>
-       代理 IP：<span class="highlight">${httpIp}</span><br>
-       真实 IP：<span class="ip-mismatch">${publicIps.join(', ') || privateIps.join(', ')}</span><br>
-       ${privateIps.length ? '内网 IP：' + privateIps.join(', ') : ''}`
-    )
+    setCard('webrtc', 'bad', pubIps[0] || privIps[0],
+      `<span class="red">真实 IP 泄露！</span><br>代理 IP：<span class="hl">${myIp}</span><br>真实 IP：<span class="red">${pubIps.join(', ') || privIps.join(', ')}</span>`)
   } else {
-    setCard('webrtc', 'ok',
-      publicIps[0] || '仅内网IP',
-      `WebRTC IP 与代理 IP 一致，无泄露<br>
-       ${privateIps.length ? '内网 IP：<span class="highlight">' + privateIps.join(', ') + '</span>' : ''}`
-    )
+    setCard('webrtc', 'ok', pubIps[0] || '仅内网IP',
+      `与代理 IP 一致，无泄露${privIps.length ? '<br>内网：<span class="hl">' + privIps.join(', ') + '</span>' : ''}`)
   }
   setProgress(doneCount + 1)
 }
 
-// ── 3. DNS 泄露检测 ──────────────────────────────────────────
-async function checkDnsLeak() {
+async function checkDns() {
   try {
-    // 向服务器申请一个 probe token，服务器会记录谁来 DNS 查询了这个域名
-    const r = await fetch('/netcheck/probe/dns-token', { headers: authH })
-    const { token: dnsToken, probe_domain } = await r.json()
-
-    // 让浏览器去解析这个唯一子域名（触发 DNS 查询）
-    // 用 fetch 请求一个不存在的 URL，浏览器会做 DNS 查询
-    if (probe_domain) {
-      try {
-        await fetch(`https://${probe_domain}/probe.gif?t=${Date.now()}`, {
-          mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(3000)
-        })
-      } catch(e) {} // 预期会失败，但 DNS 查询已发出
-    }
-
-    // 等待服务器收到 DNS 查询（1.5秒）
-    await new Promise(r => setTimeout(r, 1500))
-
-    // 查询结果
-    const res = await fetch(`/netcheck/probe/dns-result?token=${dnsToken}`, { headers: authH })
-    const data = await res.json()
-    results.dns = data
-
-    const leaked = data.leaked
-    const dnsIps = data.dns_resolver_ips || []
-    const httpIp = results.http?.ip
-
-    const tableRows = dnsIps.map(ip => `
-      <tr>
-        <td>DNS 解析器</td>
-        <td class="${ip !== httpIp ? 'ip-mismatch' : ''}">${ip} ${ip !== httpIp ? '⚠️' : '✅'}</td>
-      </tr>`).join('')
-
-    document.getElementById('dns-table').innerHTML = `
-      <tr><td>HTTP 出口</td><td>${httpIp || '—'}</td></tr>
-      ${tableRows}
-    `
-
+    const r = await fetch(`${API}/netcheck/probe/dns-token`)
+    const { token } = await r.json()
+    // 触发 probe 请求（服务器记录来源 IP）
+    try {
+      await fetch(`${API}/netcheck/probe/dns-probe/${token}`, { cache: 'no-store' })
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, 800))
+    const res = await fetch(`${API}/netcheck/probe/dns-result?token=${token}`)
+    const d = await res.json()
+    probeResults.dns = d
+    const leaked = d.leaked
     setCard('dns', leaked ? 'bad' : 'ok',
       leaked ? 'DNS 泄露' : 'DNS 正常',
       leaked
-        ? `DNS 查询走了不同的出口，代理未接管 DNS`
-        : `DNS 查询与 HTTP 出口一致`
-    )
-    // 清空 detail 里的 table（已直接操作 DOM）
-    document.getElementById('detail-dns').innerHTML = ''
-    document.getElementById('dns-table').parentElement?.appendChild(document.getElementById('dns-table'))
-
+        ? `DNS 查询走了不同出口，代理未接管 DNS<br>HTTP IP：<span class="hl">${d.http_ip}</span>`
+        : `DNS 查询与 HTTP 出口一致`)
   } catch(e) {
-    // fallback：用 Google DoH 对比
-    await checkDnsLeakFallback()
+    setCard('dns', 'warn', '检测失败', '无法完成 DNS 检测')
   }
   setProgress(doneCount + 1)
 }
 
-async function checkDnsLeakFallback() {
-  // 用 Google DoH 查询目标域名，对比本机 DNS 解析结果
-  try {
-    const target = 'www.tiktok.com'
-    const r = await fetch(`https://dns.google/resolve?name=${target}&type=A`, {
-      headers: { 'Accept': 'application/dns-json' }
-    })
-    const data = await r.json()
-    const googleIps = (data.Answer || []).filter(a => a.type === 1).map(a => a.data)
-
-    // 用 img 触发本机 DNS 解析（无法直接获取结果，只能用 DoH 对比）
-    results.dns = { leaked: false, dns_resolver_ips: googleIps, method: 'doh_fallback' }
-
-    document.getElementById('dns-table').innerHTML = `
-      <tr><td>Google DoH</td><td>${googleIps.slice(0,2).join(', ') || '—'}</td></tr>
-      <tr><td>说明</td><td style="color:#475569">DNS probe 不可用，使用 DoH 对比</td></tr>
-    `
-    setCard('dns', 'ok', 'DoH 正常', '通过 Google DoH 验证 DNS 解析正常')
-  } catch(e) {
-    setCard('dns', 'warn', '检测失败', '无法完成 DNS 泄露检测')
-  }
-}
-
-// ── 4. 出口分流检测 ──────────────────────────────────────────
 async function checkSplit() {
-  // 向我们服务器的不同接口发请求，服务器记录来源 IP
-  // 同时向 cloudflare trace 发请求（不需要我们服务器）
-  const checks = [
-    { label: '主出口', url: '/netcheck/probe/myip' },
-    { label: 'Cloudflare', url: 'https://cloudflare.com/cdn-cgi/trace' },
-  ]
-
   const ips = {}
-
-  await Promise.all(checks.map(async ({ label, url }) => {
-    try {
-      if (url.includes('cloudflare')) {
-        const r = await fetch(url, { cache: 'no-store' })
-        const text = await r.text()
-        const m = text.match(/ip=(.+)/)
-        if (m) ips[label] = m[1].trim()
-      } else {
-        const r = await fetch(url, { headers: authH, cache: 'no-store' })
-        const d = await r.json()
-        ips[label] = d.ip
-      }
-    } catch(e) {}
-  }))
-
-  results.split = ips
-  const allIps = Object.values(ips).filter(Boolean)
-  const unique = new Set(allIps)
-  const split = unique.size > 1
-
-  const rows = Object.entries(ips).map(([label, ip]) =>
-    `<tr><td>${label}</td><td class="${split && ip !== ips['主出口'] ? 'ip-mismatch' : ''}">${ip || '—'}</td></tr>`
-  ).join('')
-  document.getElementById('split-table').innerHTML = rows
-
+  await Promise.all([
+    fetch(`${API}/netcheck/probe/myip`, { cache: 'no-store' })
+      .then(r => r.json()).then(d => { ips['主出口'] = d.ip }).catch(() => {}),
+    fetch('https://cloudflare.com/cdn-cgi/trace', { cache: 'no-store' })
+      .then(r => r.text()).then(t => { const m = t.match(/ip=(.+)/); if (m) ips['Cloudflare'] = m[1].trim() }).catch(() => {}),
+  ])
+  probeResults.split = ips
+  const vals = Object.values(ips).filter(Boolean)
+  const split = new Set(vals).size > 1
+  const rows = Object.entries(ips).map(([k, v]) =>
+    `<span class="hl">${k}：</span>${v || '—'}${split && v !== ips['主出口'] ? ' <span class="red">⚠️</span>' : ''}`
+  ).join('<br>')
   setCard('split', split ? 'warn' : 'ok',
-    split ? '出口分流' : '出口一致',
-    split
-      ? '不同目标走了不同出口 IP，代理存在分流规则'
-      : '所有目标走同一出口 IP，代理配置正常'
-  )
-  document.getElementById('detail-split').innerHTML = ''
-  document.getElementById('split-table').parentElement?.appendChild(document.getElementById('split-table'))
-
+    split ? '出口分流' : '出口一致', rows)
   setProgress(doneCount + 1)
 }
 
 // ── 综合判决 ──────────────────────────────────────────────────
 function updateVerdict() {
-  const card = document.getElementById('verdictCard')
-  const emoji = document.getElementById('verdictEmoji')
-  const main = document.getElementById('verdictMain')
-  const sub = document.getElementById('verdictSub')
+  const webrtcLeaked = probeResults.webrtc?.public?.length > 0 &&
+    myIp && !probeResults.webrtc.public.includes(myIp)
+  const dnsLeaked = probeResults.dns?.leaked
+  const isHosting = probeResults.http?.type === 'datacenter'
+  const isProxy = probeResults.http?.type === 'proxy'
+  const split = probeResults.split && new Set(Object.values(probeResults.split).filter(Boolean)).size > 1
 
-  const webrtcLeaked = results.webrtc?.public?.length > 0 &&
-    results.http?.ip && !results.webrtc.public.includes(results.http.ip)
-  const dnsLeaked = results.dns?.leaked
-  const isHosting = results.http?.type === 'datacenter'
-  const isProxy = results.http?.type === 'proxy'
-  const splitDetected = results.split && new Set(Object.values(results.split).filter(Boolean)).size > 1
-
-  // 计算评分
   let score = 100
   if (isHosting) score -= 40
   if (isProxy) score -= 30
   if (webrtcLeaked) score -= 35
   if (dnsLeaked) score -= 20
-  if (splitDetected) score -= 10
+  if (split) score -= 10
   score = Math.max(0, score)
 
-  drawScore(score)
+  drawRing('scoreCanvas', score)
+
+  const box = document.getElementById('verdictBox')
+  const emoji = document.getElementById('verdictEmoji')
+  const main = document.getElementById('verdictMain')
+  const sub = document.getElementById('verdictSub')
 
   const issues = []
-  if (webrtcLeaked) issues.push('WebRTC 泄露真实 IP')
+  if (webrtcLeaked) issues.push('WebRTC 泄露')
   if (dnsLeaked) issues.push('DNS 泄露')
-  if (isHosting) issues.push('机房 IP')
-  if (isProxy) issues.push('代理/VPN IP')
-  if (splitDetected) issues.push('出口分流')
+  if (isHosting) issues.push('机房IP')
+  if (isProxy) issues.push('代理IP')
+  if (split) issues.push('出口分流')
 
   if (issues.length === 0) {
-    card.className = 'verdict-card verdict-ok'
+    box.className = 'verdict-big vb-ok'
     emoji.textContent = '🟢'
     main.textContent = '线路纯净 — 适合 TikTok 直播'
-    sub.textContent = `出口 IP：${results.http?.ip || '—'} · 住宅IP · 无泄露 · 出口一致`
+    sub.textContent = `出口 IP：${myIp} · 住宅IP · 无泄露 · 出口一致`
   } else if (score >= 50) {
-    card.className = 'verdict-card verdict-warn'
+    box.className = 'verdict-big vb-warn'
     emoji.textContent = '🟡'
     main.textContent = '存在风险 — 建议修复后再使用'
     sub.textContent = `发现问题：${issues.join('、')}`
   } else {
-    card.className = 'verdict-card verdict-bad'
+    box.className = 'verdict-big vb-bad'
     emoji.textContent = '🔴'
     main.textContent = 'IP 风险高 — TikTok 可能识别为异常账号'
     sub.textContent = `严重问题：${issues.join('、')}`
   }
 
   // 修复建议
-  showAdvice(webrtcLeaked, dnsLeaked, isHosting, isProxy, splitDetected)
+  const advices = []
+  if (webrtcLeaked) advices.push({ icon: '📡', text: '<b>修复 WebRTC 泄露：</b>安装 WebRTC Leak Prevent 插件，或在代理软件中开启 TUN 模式' })
+  if (dnsLeaked) advices.push({ icon: '🔍', text: '<b>修复 DNS 泄露：</b>在代理软件中开启「DNS 劫持」或「Fake DNS」，确保 DNS 查询走代理通道' })
+  if (isHosting) advices.push({ icon: '🏢', text: '<b>更换住宅 IP：</b>机房 IP 对 TikTok 账号权重影响极大，建议更换住宅代理（Residential Proxy）' })
+  if (split) advices.push({ icon: '🔀', text: '<b>修复出口分流：</b>开启全局代理模式，确保所有流量走同一出口 IP' })
+
+  if (advices.length > 0) {
+    document.getElementById('adviceBox').style.display = 'block'
+    document.getElementById('adviceList').innerHTML = advices.map(a =>
+      `<div class="advice-item"><span style="font-size:16px;flex-shrink:0">${a.icon}</span><span>${a.text}</span></div>`
+    ).join('')
+  }
+
+  // 显示 CTA
+  document.getElementById('ctaBox').style.display = 'block'
+
+  // 自动触发路由侦察
+  if (myIp) {
+    setTimeout(() => startRecon(myIp), 500)
+  }
 }
 
-function showAdvice(webrtcLeaked, dnsLeaked, isHosting, isProxy, splitDetected) {
-  const items = []
-  if (webrtcLeaked) items.push({
-    icon: '📡',
-    text: '<b>修复 WebRTC 泄露：</b>在浏览器安装 WebRTC Leak Prevent 插件，或在 Firefox 中设置 media.peerconnection.enabled = false'
-  })
-  if (dnsLeaked) items.push({
-    icon: '🔍',
-    text: '<b>修复 DNS 泄露：</b>在代理软件中开启「DNS 劫持」或「Fake DNS」模式，确保 DNS 查询也走代理通道'
-  })
-  if (isHosting) items.push({
-    icon: '🏢',
-    text: '<b>更换住宅 IP：</b>当前为机房 IP，TikTok 对机房 IP 账号权重极低，建议更换住宅代理（Residential Proxy）'
-  })
-  if (splitDetected) items.push({
-    icon: '🔀',
-    text: '<b>修复出口分流：</b>代理规则导致不同网站走不同出口，建议开启全局代理模式，确保所有流量走同一出口'
-  })
-  if (items.length === 0) return
+// ── STEP 2: 路由侦察 ──────────────────────────────────────────
+let reconRunning = false
 
-  const card = document.getElementById('adviceCard')
-  const list = document.getElementById('adviceList')
-  card.style.display = 'block'
-  list.innerHTML = items.map(i =>
-    `<div class="advice-item"><span class="advice-icon">${i.icon}</span><span>${i.text}</span></div>`
-  ).join('')
+async function startRecon(autoIp) {
+  if (reconRunning) return
+  const input = document.getElementById('reconIpInput')
+  const targetIp = autoIp || input.value.trim() || myIp
+  if (!targetIp) return
+
+  reconRunning = true
+  const btn = document.getElementById('reconBtn')
+  btn.disabled = true
+  btn.textContent = '侦察中...'
+
+  const resultDiv = document.getElementById('reconResult')
+  resultDiv.innerHTML = `
+    <div style="text-align:center;padding:24px;color:#334155">
+      <div style="font-size:28px;margin-bottom:8px" class="pulsing">🎯</div>
+      <div style="font-size:13px">正在从我们的节点 traceroute ${targetIp}...</div>
+      <div style="font-size:11px;color:#1e2240;margin-top:4px">约需 30-45 秒</div>
+    </div>`
+
+  try {
+    const r = await fetch(`${API}/netcheck/probe/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_ip: targetIp })
+    })
+    if (!r.ok) throw new Error(await r.text())
+    const { task_id } = await r.json()
+
+    // 轮询结果
+    let data = null
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 3000))
+      const tr = await fetch(`${API}/netcheck/probe/scan/${task_id}`)
+      if (tr.ok) {
+        data = await tr.json()
+        if (data.status !== 'running') break
+      }
+    }
+
+    if (data && data.status === 'success') {
+      renderReconResult(data, targetIp)
+    } else {
+      resultDiv.innerHTML = '<div style="color:#f87171;padding:12px">侦察超时或失败，请重试</div>'
+    }
+  } catch(e) {
+    resultDiv.innerHTML = `<div style="color:#f87171;padding:12px">侦察失败：${e.message}</div>`
+  }
+
+  reconRunning = false
+  btn.disabled = false
+  btn.textContent = '🎯 开始侦察'
 }
 
-function drawScore(score) {
-  const canvas = document.getElementById('scoreCanvas')
-  if (!canvas) return
-  const ctx = canvas.getContext('2d')
-  const cx = 40, cy = 40, r = 30, lw = 7
-  ctx.clearRect(0, 0, 80, 80)
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2)
-  ctx.strokeStyle = '#1e2240'; ctx.lineWidth = lw; ctx.stroke()
-  const angle = (score / 100) * Math.PI * 2 - Math.PI / 2
-  const color = score >= 70 ? '#4ade80' : score >= 40 ? '#fbbf24' : '#f87171'
-  ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, angle)
-  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke()
-  ctx.fillStyle = color; ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-  ctx.fillText(score, cx, cy)
+function renderReconResult(data, targetIp) {
+  const analysis = data.analysis || {}
+  const results = data.results || []
+  const ipProfile = data.ip_profile || {}
+
+  const scoreColor = analysis.score >= 70 ? '#4ade80' : analysis.score >= 40 ? '#fbbf24' : '#f87171'
+
+  let html = `
+    <div style="display:flex;align-items:center;gap:16px;padding:14px 0;border-bottom:1px solid #1e2240;margin-bottom:14px">
+      <div style="text-align:center">
+        <div style="font-size:28px;font-weight:800;color:${scoreColor}">${analysis.score ?? '—'}</div>
+        <div style="font-size:10px;color:#334155">纯净度</div>
+      </div>
+      <div>
+        <div style="font-size:15px;font-weight:700;color:${scoreColor}">${analysis.verdict || '分析完成'}</div>
+        <div style="font-size:12px;color:#475569;margin-top:3px">
+          ${ipProfile.city || ''} ${ipProfile.country || ''} · ${(ipProfile.org || '').slice(0, 30)}
+          ${analysis.avg_latency ? ' · 平均延迟 ' + analysis.avg_latency + 'ms' : ''}
+          ${analysis.avg_hops ? ' · ' + analysis.avg_hops + ' 跳' : ''}
+        </div>
+      </div>
+    </div>`
+
+  // 风险标签
+  if (analysis.flags && analysis.flags.length) {
+    html += `<div class="analysis-flags">`
+    analysis.flags.forEach(f => {
+      const isGood = f.includes('住宅')
+      html += `<span class="flag ${isGood ? 'green' : ''}">${f}</span>`
+    })
+    html += `</div>`
+  }
+
+  // 各节点路由结果
+  results.forEach(r => {
+    if (r.status === 'failed') {
+      html += `<div class="route-node-card" style="margin-top:10px">
+        <div class="route-node-head">
+          <div class="route-node-name">${r.name} <span style="font-size:11px;color:#475569">${r.os_type}</span></div>
+          <span style="color:#f87171;font-size:12px">❌ ${r.error || '失败'}</span>
+        </div></div>`
+      return
+    }
+
+    html += `<div class="route-node-card" style="margin-top:10px">
+      <div class="route-node-head">
+        <div class="route-node-name">${r.name} <span style="font-size:11px;color:#475569">${r.os_type}</span></div>
+        <div class="route-stats">
+          <span class="stat-pill" style="color:#4ade80">${r.valid_hops} 有效</span>
+          <span class="stat-pill">${r.timeout_hops} 超时</span>
+          ${r.last_latency ? `<span class="stat-pill" style="color:${r.last_latency > 300 ? '#f87171' : r.last_latency > 150 ? '#fbbf24' : '#4ade80'}">${r.last_latency}ms</span>` : ''}
+        </div>
+      </div>`
+
+    // 最后3跳可视化
+    if (r.last3 && r.last3.length) {
+      html += `<div style="font-size:10px;color:#334155;margin-bottom:6px">最后 ${r.last3.length} 跳（最接近目标）</div>
+        <div class="hop-path">`
+      r.last3.forEach((hop, i) => {
+        const isTarget = i === r.last3.length - 1
+        const cls = isTarget ? 'target' : hopClass(hop.tag)
+        const emoji = isTarget ? '🎯' : hopEmoji(hop.tag)
+        const msColor = hop.avg > 200 ? '#f87171' : hop.avg > 100 ? '#fbbf24' : '#4ade80'
+        html += `
+          <div class="hop-item">
+            <div class="hop-dot ${cls}">${emoji}</div>
+            <div class="hop-ms" style="color:${msColor}">${hop.avg > 0 ? hop.avg + 'ms' : '—'}</div>
+            <div class="hop-loc">${hop.city || hop.country || hop.ip}</div>
+          </div>`
+        if (i < r.last3.length - 1) html += `<div class="hop-arrow">→</div>`
+      })
+      html += `</div>`
+    }
+    html += `</div>`
+  })
+
+  document.getElementById('reconResult').innerHTML = html
 }
 
-function isPrivate(ip) {
-  return /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|169\.254\.|::1|fc|fd)/.test(ip)
+function hopClass(tag) {
+  if (!tag) return 'isp'
+  if (tag.includes('机房')) return 'dc'
+  if (tag.includes('住宅')) return 'res'
+  if (tag.includes('内网') || tag.includes('CGNAT')) return 'priv'
+  if (tag.includes('骨干')) return 'bb'
+  if (tag === '超时') return 'to'
+  return 'isp'
+}
+function hopEmoji(tag) {
+  if (!tag) return '📡'
+  if (tag.includes('机房')) return '🏢'
+  if (tag.includes('住宅')) return '🏠'
+  if (tag.includes('内网')) return '🔒'
+  if (tag.includes('骨干')) return '🌐'
+  return '📡'
 }
 
-// ── 启动所有检测 ──────────────────────────────────────────────
+// ── 启动 ──────────────────────────────────────────────────────
 ;(async () => {
-  // 并发执行，但 WebRTC 需要 HTTP IP 结果来对比
-  await checkHttpIp()
-  await Promise.all([checkWebRTC(), checkDnsLeak(), checkSplit()])
+  drawRing('scoreCanvas', -1)
+  await checkHttp()
+  await Promise.all([checkWebRTC(), checkDns(), checkSplit()])
+  updateVerdict()
 })()
 </script>
 </body>

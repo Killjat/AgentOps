@@ -206,6 +206,207 @@ async def probe_dns_result(token: str, request: _Request):
     }
 
 
+# ── IP 反向侦察：用我们的 agent 节点 traceroute 目标 IP ──────
+
+from pydantic import BaseModel as _BM2
+
+class ScanRequest(_BM2):
+    target_ip: str          # 要探测的 IP（用户的出口 IP 或手动输入）
+    agent_ids: List[str] = []  # 为空时自动选取在线节点
+
+_scan_tasks: dict = {}
+
+@router.post("/probe/scan")
+async def probe_scan(req: ScanRequest, request: _Request):
+    """
+    用我们的 agent 节点 traceroute 目标 IP，分析路由画像。
+    用户进入网页时自动触发（target_ip = 用户出口 IP）。
+    也支持用户手动输入任意公网 IP。
+    """
+    # SSRF 防护
+    if not _is_safe_target(req.target_ip):
+        raise HTTPException(400, "目标 IP 不合法")
+
+    from core.state import agents as _agents
+
+    # 自动选取在线 agent（最多3个，优先选不同地区）
+    agent_ids = req.agent_ids
+    if not agent_ids:
+        online = [a for a in _agents.values() if a.status == "online"]
+        agent_ids = [a.agent_id for a in online[:3]]
+
+    if not agent_ids:
+        raise HTTPException(503, "暂无可用节点，请稍后重试")
+
+    task_id = f"scan-{uuid.uuid4().hex[:8]}"
+    _scan_tasks[task_id] = {
+        "task_id": task_id,
+        "target_ip": req.target_ip,
+        "status": "running",
+        "created_at": datetime.now().isoformat(),
+        "results": [],
+        "ip_profile": {},
+        "completed_at": "",
+    }
+    asyncio.create_task(_run_scan(task_id, req.target_ip, agent_ids))
+    return {"task_id": task_id, "status": "running", "agent_count": len(agent_ids)}
+
+
+@router.get("/probe/scan/{task_id}")
+async def get_scan(task_id: str):
+    if task_id not in _scan_tasks:
+        raise HTTPException(404, "任务不存在")
+    return _scan_tasks[task_id]
+
+
+async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
+    """后台执行：多节点 traceroute 目标 IP，分析路由画像"""
+    from core.state import agents as _agents
+    from routers.agents import _ws_call
+    from netcheck.checker import enrich_hops, parse_traceroute, is_private_ip
+
+    task = _scan_tasks[task_id]
+
+    # 1. 查询目标 IP 信息
+    ip_profile = await _get_ip_info(target_ip)
+    task["ip_profile"] = ip_profile
+
+    # 2. 多节点并发 traceroute
+    async def trace_one(agent_id: str) -> dict:
+        agent = _agents.get(agent_id)
+        os_type = str(agent.os_type) if agent else "linux"
+        name = (agent.name if agent else agent_id) or agent_id
+        is_win = "windows" in os_type.lower()
+        is_android = "android" in os_type.lower()
+
+        if is_win:
+            cmd = f"tracert -d -h 20 {target_ip}"
+        elif is_android:
+            cmd = f"ping -c 3 {target_ip}"
+        else:
+            cmd = f"traceroute -n -m 20 -w 2 {target_ip} 2>/dev/null || tracepath -n {target_ip} 2>/dev/null"
+
+        try:
+            resp = await _ws_call(agent_id, {"type": "exec", "command": cmd, "timeout": 45}, timeout=50)
+            raw = resp.get("output", "") or ""
+        except Exception as e:
+            return {"agent_id": agent_id, "name": name, "os_type": os_type,
+                    "status": "failed", "error": str(e), "hops": []}
+
+        hops_raw = parse_traceroute(raw)
+        hops_enriched = await enrich_hops(hops_raw)
+
+        valid = [h for h in hops_enriched if h["ip"] != "*" and not is_private_ip(h["ip"])]
+        private_count = sum(1 for h in hops_enriched if h["ip"] != "*" and is_private_ip(h["ip"]))
+        star_count = sum(1 for h in hops_enriched if h["ip"] == "*")
+
+        # 最后3跳（最接近目标的节点）
+        last3 = valid[-3:] if len(valid) >= 3 else valid
+
+        # 计算到目标的延迟（最后一跳）
+        last_latency = 0
+        for h in reversed(hops_enriched):
+            if h.get("avg", 0) > 0:
+                last_latency = h["avg"]
+                break
+
+        return {
+            "agent_id": agent_id,
+            "name": name,
+            "os_type": os_type,
+            "status": "success",
+            "total_hops": len(hops_enriched),
+            "valid_hops": len(valid),
+            "private_hops": private_count,
+            "timeout_hops": star_count,
+            "last3": last3,
+            "all_hops": hops_enriched,
+            "last_latency": last_latency,
+        }
+
+    async def trace_safe(agent_id: str) -> dict:
+        async with _semaphore:
+            return await trace_one(agent_id)
+
+    results = await asyncio.gather(*[trace_safe(aid) for aid in agent_ids])
+    task["results"] = list(results)
+
+    # 3. 综合分析：判断 IP 画像
+    task["analysis"] = _analyze_ip_profile(ip_profile, list(results))
+    task["status"] = "success"
+    task["completed_at"] = datetime.now().isoformat()
+
+
+def _analyze_ip_profile(ip_profile: dict, results: list) -> dict:
+    """
+    综合 IP 信息和 traceroute 结果，给出 IP 画像判断。
+    不用 AI，纯规则，快速返回。
+    """
+    ip_type = ip_profile.get("type", "unknown")
+    org = ip_profile.get("org", "")
+    country = ip_profile.get("country", "")
+
+    flags = []
+    score = 100
+
+    # IP 类型
+    if ip_type == "datacenter":
+        flags.append("🏢 机房IP — TikTok 账号权重低")
+        score -= 40
+    elif ip_type == "proxy":
+        flags.append("🔀 代理/VPN IP — 高风控风险")
+        score -= 50
+    elif ip_type == "residential":
+        flags.append("🏠 住宅IP — TikTok 友好")
+        score += 0
+
+    # 路由特征分析
+    all_hops = []
+    for r in results:
+        if r.get("status") == "success":
+            all_hops.extend(r.get("all_hops", []))
+
+    private_total = sum(1 for h in all_hops if h.get("ip") != "*" and
+                        any(h.get("ip","").startswith(p) for p in ["10.", "192.168.", "172."]))
+    if private_total >= 3:
+        flags.append(f"🕳️ 隧道代理特征（{private_total}个内网跳）")
+        score -= 25
+
+    # 延迟分析
+    latencies = [r.get("last_latency", 0) for r in results if r.get("last_latency", 0) > 0]
+    avg_latency = round(sum(latencies) / len(latencies)) if latencies else 0
+    if avg_latency > 500:
+        flags.append(f"🐌 延迟极高（{avg_latency}ms）— 代理服务器可能过载")
+        score -= 20
+    elif avg_latency > 200:
+        flags.append(f"⚠️ 延迟偏高（{avg_latency}ms）")
+        score -= 10
+
+    # 路径长度
+    hop_counts = [r.get("total_hops", 0) for r in results if r.get("status") == "success"]
+    avg_hops = round(sum(hop_counts) / len(hop_counts)) if hop_counts else 0
+    if avg_hops > 15:
+        flags.append(f"📏 路径过长（平均{avg_hops}跳）— 绕路严重")
+        score -= 15
+
+    score = max(0, min(100, score))
+
+    verdict = "适合 TikTok 直播" if score >= 70 else \
+              "存在风险，建议优化" if score >= 40 else \
+              "高风险，不建议用于 TikTok"
+
+    return {
+        "score": score,
+        "verdict": verdict,
+        "flags": flags,
+        "avg_latency": avg_latency,
+        "avg_hops": avg_hops,
+        "ip_type": ip_type,
+        "org": org,
+        "country": country,
+    }
+
+
 @router.post("/tasks")
 async def create_check(req: CheckRequest):
     """创建网络检测任务"""
