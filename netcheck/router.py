@@ -410,11 +410,8 @@ def _analyze_ip_profile(ip_profile: dict, results: list) -> dict:
         if r.get("status") == "success":
             all_hops.extend(r.get("all_hops", []))
 
-    private_total = sum(1 for h in all_hops if h.get("ip") != "*" and
-                        any(h.get("ip","").startswith(p) for p in ["10.", "192.168.", "172."]))
-    if private_total >= 3:
-        flags.append(f"🕳️ 隧道代理特征（{private_total}个内网跳）")
-        score -= 25
+    # 隧道代理检测已移除：从外部 traceroute 无法判断目标 IP 背后是否有隧道
+    # 路径中的内网跳是探测节点自身的网络结构，不代表目标 IP 的特征
 
     # 延迟分析
     latencies = [r.get("last_latency", 0) for r in results if r.get("last_latency", 0) > 0]

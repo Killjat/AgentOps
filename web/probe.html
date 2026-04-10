@@ -691,12 +691,8 @@ function extractIntel(results, targetIp, ipProfile) {
     if (expectedMax) locationVerified = avgLat <= expectedMax
   }
 
-  // 发现1：隧道代理
-  const privateHops = allHops.filter(h => h.ip && h.ip !== '*' && isPrivate(h.ip))
-  if (privateHops.length >= 3) {
-    tags.push({ text: '🕳️ 隧道代理', style: 'background:#1f1a0a;color:#fbbf24' })
-    findings.push({ icon: '🕳️', title: '隧道代理特征', detail: `检测到 ${privateHops.length} 个内网跳点（${privateHops.slice(0,2).map(h=>h.ip).join(', ')}...），流量经过多层 NAT 隧道，TikTok 可能识别为非真实用户` })
-  }
+  // 隧道代理检测已移除：从外部 traceroute 无法判断目标 IP 背后是否有隧道
+  // 路径中的内网跳是我们探测节点自身的网络结构，不代表目标 IP 的特征
 
   // 发现2：位置欺骗检测
   if (locationVerified === false) {
