@@ -33,7 +33,8 @@ DC_KEYWORDS = [
     "ovh", "choopa", "quadranet", "psychz", "hostwinds", "buyvm",
     "datacamp", "m247", "serverius", "combahton", "frantech",
     "arosscloud", "clouvider", "tzulo", "sharktech", "reliablesite",
-    "as14061", "as16509", "as15169", "as8075", "as45090", "as400619",
+    "cognetcloud", "cognet", "it7 networks", "it7net",
+    "as14061", "as16509", "as15169", "as8075", "as45090", "as400619", "as401701",
 ]
 
 RESIDENTIAL_KEYWORDS = [
