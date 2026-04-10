@@ -290,17 +290,31 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
         # - 目标是境外 IP → ping 一下，失败就跳过（Windows 无外网时自动跳过）
         if not target_is_cn:
             try:
-                chk = f"ping -n 1 -w 3000 {target_ip}" if is_win else f"ping -c 1 -W 3 {target_ip} 2>/dev/null"
-                chk_resp = await _ws_call(agent_id, {"type": "exec", "command": chk, "timeout": 8}, timeout=10)
+                # Windows ping 用 -w 1000（1秒超时），更快判断
+                chk = f"ping -n 1 -w 1000 {target_ip}" if is_win else f"ping -c 1 -W 2 {target_ip} 2>/dev/null"
+                chk_resp = await _ws_call(agent_id, {"type": "exec", "command": chk, "timeout": 6}, timeout=8)
                 chk_out = chk_resp.get("output", "") or ""
-                if "100% packet loss" in chk_out or "0 received" in chk_out or \
-                   (is_win and "请求超时" in chk_out and "TTL" not in chk_out):
+                unreachable = (
+                    "100% packet loss" in chk_out or
+                    "0 received" in chk_out or
+                    "Request timed out" in chk_out or
+                    "请求超时" in chk_out or
+                    "Destination host unreachable" in chk_out or
+                    "无法访问目标主机" in chk_out or
+                    (is_win and "TTL" not in chk_out and ("ms" not in chk_out))
+                )
+                if unreachable:
                     return {"agent_id": agent_id, "name": name, "os_type": os_type,
-                            "status": "failed", "error": f"无外网访问权限，跳过境外目标探测",
+                            "status": "failed", "error": "无外网访问权限，跳过境外目标探测",
                             "hops": [], "total_hops": 0, "valid_hops": 0, "timeout_hops": 0,
                             "private_hops": 0, "last3": [], "all_hops": [], "last_latency": 0}
             except Exception:
-                pass
+                # 预检超时也认为无法访问
+                if is_win:
+                    return {"agent_id": agent_id, "name": name, "os_type": os_type,
+                            "status": "failed", "error": "预检超时，可能无外网访问权限",
+                            "hops": [], "total_hops": 0, "valid_hops": 0, "timeout_hops": 0,
+                            "private_hops": 0, "last3": [], "all_hops": [], "last_latency": 0}
 
         if is_ipv6:
             # IPv6：traceroute6 或 ping6，取延迟为主
