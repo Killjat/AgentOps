@@ -131,7 +131,12 @@ async def _get_ip_info(ip: str) -> dict:
 
 def _real_ip(request: _Request) -> str:
     forwarded = request.headers.get("X-Forwarded-For", "")
-    return forwarded.split(",")[0].strip() if forwarded else request.client.host
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("X-Real-IP", "")
+    if real_ip:
+        return real_ip.strip()
+    return request.client.host
 
 
 @router.get("/probe/myip")
