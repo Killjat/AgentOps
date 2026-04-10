@@ -346,6 +346,26 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
     task["status"] = "success"
     task["completed_at"] = datetime.now().isoformat()
 
+    # 4. 存入数据库
+    try:
+        from netcheck.trace_db import save_traceroute
+        for r in results:
+            if r.get("status") == "success" and r.get("all_hops"):
+                save_traceroute(
+                    task_id=task_id,
+                    target=target_ip,
+                    target_type="ip",
+                    source="probe",
+                    agent_id=r.get("agent_id", ""),
+                    agent_name=r.get("name", ""),
+                    os_type=r.get("os_type", ""),
+                    hops=r.get("all_hops", []),
+                    last_latency_ms=r.get("last_latency", 0),
+                )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"save traceroute failed: {e}")
+
 
 def _analyze_ip_profile(ip_profile: dict, results: list) -> dict:
     """
@@ -599,3 +619,22 @@ async def _run_recon(task_id: str, target: str, agent_ids: List[str]):
 
     task["status"] = "success"
     task["completed_at"] = datetime.now().isoformat()
+
+    # 存入数据库
+    try:
+        from netcheck.trace_db import save_traceroute
+        for r in results:
+            if r.get("status") == "success" and r.get("all_hops"):
+                save_traceroute(
+                    task_id=task["task_id"],
+                    target=target,
+                    target_type="domain",
+                    source="recon",
+                    agent_id=r.get("agent_id", ""),
+                    agent_name=r.get("name", ""),
+                    os_type=r.get("os_type", ""),
+                    hops=r.get("all_hops", []),
+                )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"save recon traceroute failed: {e}")
