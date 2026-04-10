@@ -290,32 +290,44 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
         # - 目标是境外 IP → ping 一下，失败就跳过（Windows 无外网时自动跳过）
         if not target_is_cn:
             try:
-                # Android 用 ping -c 1 -w 3（Android 用 -w 秒数，不是 -W）
+                # 用 HTTP 请求判断外网连通性，比 ping 更可靠（很多服务器屏蔽 ICMP）
                 if is_android:
-                    chk = f"ping -c 1 -w 3 {target_ip} 2>/dev/null"
+                    # Android 用 OkHttp（curl 会被 AndroidNetTools 拦截为 OkHttp）
+                    chk = f"curl -s --max-time 5 -o /dev/null -w '%{{http_code}}' https://ipinfo.io/ip"
                 elif is_win:
                     chk = f"ping -n 1 -w 1000 {target_ip}"
                 else:
                     chk = f"ping -c 1 -W 2 {target_ip} 2>/dev/null"
-                chk_resp = await _ws_call(agent_id, {"type": "exec", "command": chk, "timeout": 6}, timeout=8)
+
+                chk_resp = await _ws_call(agent_id, {"type": "exec", "command": chk, "timeout": 8}, timeout=10)
                 chk_out = chk_resp.get("output", "") or ""
-                unreachable = (
-                    "100% packet loss" in chk_out or
-                    "0 received" in chk_out or
-                    "Request timed out" in chk_out or
-                    "请求超时" in chk_out or
-                    "Destination host unreachable" in chk_out or
-                    "无法访问目标主机" in chk_out or
-                    (is_win and "TTL" not in chk_out and ("ms" not in chk_out))
-                )
-                if unreachable:
-                    return {"agent_id": agent_id, "name": name, "os_type": os_type,
-                            "status": "failed", "error": "无外网访问权限，跳过境外目标探测",
-                            "hops": [], "total_hops": 0, "valid_hops": 0, "timeout_hops": 0,
-                            "private_hops": 0, "last3": [], "all_hops": [], "last_latency": 0}
+
+                if is_android:
+                    # HTTP 状态码不是 2xx/3xx 说明无法访问外网
+                    code = chk_out.strip()
+                    if not code or not code.isdigit() or int(code) >= 500:
+                        return {"agent_id": agent_id, "name": name, "os_type": os_type,
+                                "status": "failed", "error": "无外网访问权限，跳过境外目标探测",
+                                "hops": [], "total_hops": 0, "valid_hops": 0, "timeout_hops": 0,
+                                "private_hops": 0, "last3": [], "all_hops": [], "last_latency": 0}
+                else:
+                    unreachable = (
+                        "100% packet loss" in chk_out or
+                        "0 received" in chk_out or
+                        "Request timed out" in chk_out or
+                        "请求超时" in chk_out or
+                        "Destination host unreachable" in chk_out or
+                        "无法访问目标主机" in chk_out or
+                        (is_win and "TTL" not in chk_out and "ms" not in chk_out)
+                    )
+                    if unreachable:
+                        return {"agent_id": agent_id, "name": name, "os_type": os_type,
+                                "status": "failed", "error": "无外网访问权限，跳过境外目标探测",
+                                "hops": [], "total_hops": 0, "valid_hops": 0, "timeout_hops": 0,
+                                "private_hops": 0, "last3": [], "all_hops": [], "last_latency": 0}
             except Exception:
-                # 预检超时也认为无法访问（Windows 和 Android 都快速跳过）
-                if is_win or is_android:
+                # 预检超时也认为无法访问（Windows 快速跳过，Android 和 Linux 继续尝试）
+                if is_win:
                     return {"agent_id": agent_id, "name": name, "os_type": os_type,
                             "status": "failed", "error": "预检超时，跳过境外目标探测",
                             "hops": [], "total_hops": 0, "valid_hops": 0, "timeout_hops": 0,
