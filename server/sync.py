@@ -169,7 +169,12 @@ def merge_snapshot(remote: dict):
             local_ts = local.get("created_at", "") if local else ""
             if not local or remote_ts > local_ts:
                 try:
-                    task = SwarmTask(**remote_data)
+                    # 修复 enum 字符串：SwarmTaskStatus.SUCCESS → success
+                    d = dict(remote_data)
+                    for field in ("status",):
+                        if isinstance(d.get(field), str) and "." in d[field]:
+                            d[field] = d[field].split(".")[-1].lower()
+                    task = SwarmTask(**d)
                     save_swarm_task(task)
                 except Exception as e:
                     logger.warning(f"[sync] 合并 swarm_task {sid} 失败: {e}")
