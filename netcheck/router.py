@@ -290,8 +290,13 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
         # - 目标是境外 IP → ping 一下，失败就跳过（Windows 无外网时自动跳过）
         if not target_is_cn:
             try:
-                # Windows ping 用 -w 1000（1秒超时），更快判断
-                chk = f"ping -n 1 -w 1000 {target_ip}" if is_win else f"ping -c 1 -W 2 {target_ip} 2>/dev/null"
+                # Android 用 ping -c 1 -w 3（Android 用 -w 秒数，不是 -W）
+                if is_android:
+                    chk = f"ping -c 1 -w 3 {target_ip} 2>/dev/null"
+                elif is_win:
+                    chk = f"ping -n 1 -w 1000 {target_ip}"
+                else:
+                    chk = f"ping -c 1 -W 2 {target_ip} 2>/dev/null"
                 chk_resp = await _ws_call(agent_id, {"type": "exec", "command": chk, "timeout": 6}, timeout=8)
                 chk_out = chk_resp.get("output", "") or ""
                 unreachable = (
@@ -309,10 +314,10 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
                             "hops": [], "total_hops": 0, "valid_hops": 0, "timeout_hops": 0,
                             "private_hops": 0, "last3": [], "all_hops": [], "last_latency": 0}
             except Exception:
-                # 预检超时也认为无法访问
-                if is_win:
+                # 预检超时也认为无法访问（Windows 和 Android 都快速跳过）
+                if is_win or is_android:
                     return {"agent_id": agent_id, "name": name, "os_type": os_type,
-                            "status": "failed", "error": "预检超时，可能无外网访问权限",
+                            "status": "failed", "error": "预检超时，跳过境外目标探测",
                             "hops": [], "total_hops": 0, "valid_hops": 0, "timeout_hops": 0,
                             "private_hops": 0, "last3": [], "all_hops": [], "last_latency": 0}
 
