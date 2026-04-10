@@ -617,21 +617,38 @@ function renderReconResult(data, targetIp) {
         </div>
       </div>`:''}
       <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:400px">
+        <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:480px">
           <thead><tr style="color:#334155;background:#0a0d14">
             <td style="padding:5px 10px;width:24px">#</td>
             <td style="padding:5px 10px">IP 地址</td>
             <td style="padding:5px 10px">物理位置</td>
             <td style="padding:5px 10px">运营商 / ASN</td>
             <td style="padding:5px 10px;text-align:right">延迟</td>
+            <td style="padding:5px 10px">角色</td>
           </tr></thead>
           <tbody>
             ${allHops.map((h,i)=>{
-              if(h.ip==='*') return `<tr style="border-bottom:1px solid #0a0d14"><td style="padding:4px 10px;color:#1e2240">${i+1}</td><td colspan="4" style="padding:4px 10px;color:#1e2240;font-family:monospace">* * *</td></tr>`
+              if(h.ip==='*') return `<tr style="border-bottom:1px solid #0a0d14"><td style="padding:4px 10px;color:#1e2240">${i+1}</td><td colspan="5" style="padding:4px 10px;color:#1e2240;font-family:monospace">* * *</td></tr>`
               const isTgt=h.ip===targetIp||i===allHops.length-1
               const isP=isPrivate(h.ip)
-              const rc=isTgt?'#a78bfa':isP?'#fbbf24':'#64748b'
-              const rb=isTgt?'#1a1527':isP?'#1f1a0a':'transparent'
+              const isFirst=i===0
+              // 角色判断
+              const totalHops=allHops.filter(x=>x.ip&&x.ip!=='*').length
+              const publicIdx=allHops.filter((x,j)=>j<=i&&x.ip&&x.ip!=='*'&&!isPrivate(x.ip)).length
+              let role='', roleStyle=''
+              if(isTgt){
+                role='🎯 目标IP'; roleStyle='color:#a78bfa;font-weight:600'
+              } else if(isP){
+                role='节点内网'; roleStyle='color:#334155'
+              } else if(isFirst||(i<=2&&!isPrivate(h.ip))){
+                role='探测节点出口'; roleStyle='color:#60a5fa'
+              } else if(i>=allHops.length-3&&!isTgt){
+                role='目标上游路由'; roleStyle='color:#fbbf24;font-weight:600'
+              } else {
+                role='互联网骨干'; roleStyle='color:#475569'
+              }
+              const rc=isTgt?'#a78bfa':isP?'#334155':'#64748b'
+              const rb=isTgt?'#1a1527':isP?'transparent':'transparent'
               const asn=h.org?h.org.split(' ')[0]:''
               const org=h.org?h.org.split(' ').slice(1).join(' ').slice(0,20):''
               const loc=[h.city,h.country].filter(Boolean).join(', ')||(isP?'内网':'—')
@@ -642,6 +659,7 @@ function renderReconResult(data, targetIp) {
                 <td style="padding:4px 10px;color:${rc}">${loc}</td>
                 <td style="padding:4px 10px;color:#475569">${asn} <span style="color:#334155">${org}</span></td>
                 <td style="padding:4px 10px;text-align:right;color:${latc}">${h.avg>0?h.avg+'ms':'—'}</td>
+                <td style="padding:4px 10px;font-size:9px;${roleStyle}">${role}</td>
               </tr>`
             }).join('')}
           </tbody>
