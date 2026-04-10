@@ -293,7 +293,8 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
                 # 用 HTTP 请求判断外网连通性，比 ping 更可靠（很多服务器屏蔽 ICMP）
                 if is_android:
                     # Android 用 OkHttp（curl 会被 AndroidNetTools 拦截为 OkHttp）
-                    chk = f"curl -s --max-time 5 -o /dev/null -w '%{{http_code}}' https://ipinfo.io/ip"
+                    # 直接请求 ipinfo，有返回就说明有外网
+                    chk = f"curl -s --max-time 5 https://ipinfo.io/ip"
                 elif is_win:
                     chk = f"ping -n 1 -w 1000 {target_ip}"
                 else:
@@ -303,9 +304,8 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
                 chk_out = chk_resp.get("output", "") or ""
 
                 if is_android:
-                    # HTTP 状态码不是 2xx/3xx 说明无法访问外网
-                    code = chk_out.strip()
-                    if not code or not code.isdigit() or int(code) >= 500:
+                    # 有返回内容（IP 地址）就说明有外网，错误信息包含 "error" 或 "Unable" 说明无网络
+                    if not chk_out.strip() or "error" in chk_out.lower() or "unable" in chk_out.lower() or "failed" in chk_out.lower():
                         return {"agent_id": agent_id, "name": name, "os_type": os_type,
                                 "status": "failed", "error": "无外网访问权限，跳过境外目标探测",
                                 "hops": [], "total_hops": 0, "valid_hops": 0, "timeout_hops": 0,
