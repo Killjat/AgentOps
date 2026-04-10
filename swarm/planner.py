@@ -39,7 +39,17 @@ PLAN_PROMPT = """你是一个多 Agent 任务调度专家。
 - 每个子任务的 instruction 必须是可以一步完成的操作，例如"用curl抓取URL并用grep提取标题"而不是分成"抓取"和"解析"两步
 - 如果任务需要抓取并解析数据，必须在一条指令中完成，例如：curl抓取后用grep/sed/awk直接提取所需内容
 - 只能给 status 为 online 的 Agent 分配任务，offline 的 Agent 不得出现在 subtasks 中
-- Android 设备运行在 Termux 环境，只能执行 shell 命令，可用工具包括：curl、wget、ping、nslookup、traceroute、getprop、cat /proc/*、df、ps、ss、ip addr 等；不能执行任何 UI 操作，不能打开浏览器，不能访问需要 root 权限的路径；查询 WiFi 信息用 /system/bin/cmd wifi status，不要用 dumpsys wifi
+- Android 设备运行原生 APK（非 Termux），命令通过 AndroidNetTools 原生实现，支持以下命令：
+  - `traceroute TARGET`：TTL 递增 ping 实现，返回路由路径
+  - `ping -c N TARGET`：系统 ping 命令，真实 ICMP
+  - `nslookup TARGET`：Java InetAddress DNS 解析
+  - `curl -s https://ipinfo.io/json`：OkHttp 实现，获取出口 IP 信息
+  - `curl -s https://cloudflare.com/cdn-cgi/trace`：获取 Cloudflare 出口信息
+  - `ifconfig` 或 `ip addr`：获取网络接口信息
+  - `getprop ro.product.model`：获取设备型号
+  - `df`、`ps`：磁盘和进程信息
+  - 不支持：awk、sed、grep、wget、root 命令、UI 操作
+  - Android 的 traceroute 命令格式：`traceroute -n TARGET`（会被自动转换为 TTL ping 实现）
 - Windows 设备只能使用 PowerShell 或 cmd 原生命令，不能使用 awk、sed、grep、curl（用 Invoke-WebRequest 替代）等 Linux 工具；ping 用 ping -n，查网络用 netstat、ipconfig
 - 生成的 shell 命令必须完整，不能截断，命令长度没有限制
 - traceroute 任务只用 `traceroute -n www.example.com` 不加任何 grep/awk 过滤，让原始输出返回
