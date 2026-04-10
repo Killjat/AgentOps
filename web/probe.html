@@ -669,13 +669,6 @@ function renderReconResult(data, targetIp) {
     </div>`
   })
 
-  results.filter(r=>r.status==='failed').forEach(r=>{
-    html+=`<div style="background:#0a0d14;border:1px solid #1e2240;border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
-      <span style="font-size:12px;color:#475569">${r.name}</span>
-      <span style="font-size:11px;color:#334155">❌ ${(r.error||'探测失败').slice(0,50)}</span>
-    </div>`
-  })
-
   html += `</div>`
   document.getElementById('reconResult').innerHTML = html
 }
