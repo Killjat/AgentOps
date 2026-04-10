@@ -524,79 +524,155 @@ function renderReconResult(data, targetIp) {
   const analysis = data.analysis || {}
   const results = data.results || []
   const ipProfile = data.ip_profile || {}
-
   const scoreColor = analysis.score >= 70 ? '#4ade80' : analysis.score >= 40 ? '#fbbf24' : '#f87171'
 
-  let html = `
-    <div class="recon-summary">
-      <div style="text-align:center;min-width:50px">
-        <div style="font-size:28px;font-weight:800;color:${scoreColor}">${analysis.score ?? '—'}</div>
-        <div style="font-size:10px;color:#334155">纯净度</div>
-      </div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:15px;font-weight:700;color:${scoreColor}">${analysis.verdict || '分析完成'}</div>
-        <div style="font-size:12px;color:#475569;margin-top:3px;word-break:break-all">
-          ${ipProfile.city || ''} ${ipProfile.country || ''} · ${(ipProfile.org || '').slice(0, 30)}
-          ${analysis.avg_latency ? ' · 平均延迟 ' + analysis.avg_latency + 'ms' : ''}
-          ${analysis.avg_hops ? ' · ' + analysis.avg_hops + ' 跳' : ''}
+  // ── 从所有节点的跳点数据中提取情报 ──
+  const intel = extractIntel(results, targetIp, ipProfile)
+
+  let html = `<div style="margin-top:12px">`
+
+  // 1. IP 情报摘要卡
+  html += `
+    <div style="background:#0f1117;border:1px solid ${scoreColor}33;border-radius:12px;padding:16px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
+        <div style="text-align:center;flex-shrink:0">
+          <div style="font-size:32px;font-weight:900;color:${scoreColor};line-height:1">${analysis.score ?? '—'}</div>
+          <div style="font-size:9px;color:#334155;letter-spacing:1px;margin-top:2px">纯净度</div>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:16px;font-weight:700;color:${scoreColor};margin-bottom:4px">${analysis.verdict || '分析完成'}</div>
+          <div style="font-size:12px;color:#64748b">${targetIp} · ${ipProfile.city || ''} ${ipProfile.country || ''} · ${(ipProfile.org || '').slice(0,25)}</div>
         </div>
       </div>
+
+      <!-- 情报标签 -->
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+        ${intel.tags.map(t => `<span style="padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;${t.style}">${t.text}</span>`).join('')}
+      </div>
+
+      <!-- 关键发现 -->
+      ${intel.findings.length ? `
+      <div style="border-top:1px solid #1e2240;padding-top:10px">
+        <div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">🔍 关键发现</div>
+        ${intel.findings.map(f => `
+          <div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #0a0d14;font-size:12px">
+            <span style="flex-shrink:0">${f.icon}</span>
+            <span style="color:#94a3b8">${f.text}</span>
+          </div>`).join('')}
+      </div>` : ''}
     </div>`
 
-  // 风险标签
-  if (analysis.flags && analysis.flags.length) {
-    html += `<div class="analysis-flags">`
-    analysis.flags.forEach(f => {
-      const isGood = f.includes('住宅')
-      html += `<span class="flag ${isGood ? 'green' : ''}">${f}</span>`
+  // 2. 各节点探测结果（简化版）
+  const successResults = results.filter(r => r.status === 'success' && r.valid_hops > 0)
+  if (successResults.length) {
+    html += `<div style="font-size:10px;color:#334155;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">📡 多节点探测结果</div>`
+    successResults.forEach(r => {
+      const latColor = !r.last_latency ? '#334155' : r.last_latency > 300 ? '#f87171' : r.last_latency > 150 ? '#fbbf24' : '#4ade80'
+      html += `
+        <div style="background:#0a0d14;border:1px solid #1e2240;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div style="font-size:12px;font-weight:600;color:#e2e8f0">${r.name} <span style="color:#475569;font-weight:400">${r.os_type}</span></div>
+            <div style="display:flex;gap:6px;align-items:center">
+              ${r.last_latency ? `<span style="font-size:12px;font-weight:700;color:${latColor}">${r.last_latency}ms</span>` : ''}
+              <span style="font-size:10px;color:#334155">${r.valid_hops}跳</span>
+            </div>
+          </div>
+          ${r.last3 && r.last3.length ? `
+          <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+            ${r.last3.map((hop, i) => {
+              const isLast = i === r.last3.length - 1
+              const tagStyle = isLast ? 'background:#1a1527;border:1px solid #7c6af7;color:#a78bfa' :
+                hop.tag?.includes('机房') ? 'background:#1f0a0a;border:1px solid #5a1a1a;color:#f87171' :
+                hop.tag?.includes('骨干') ? 'background:#0a1527;border:1px solid #1a3a5a;color:#60a5fa' :
+                'background:#0f1117;border:1px solid #2d3148;color:#64748b'
+              return `<span style="padding:2px 8px;border-radius:4px;font-size:10px;font-family:monospace;${tagStyle}">${isLast ? '🎯 ' : ''}${hop.city || hop.country || hop.ip}</span>${i < r.last3.length-1 ? '<span style="color:#334155;font-size:10px">→</span>' : ''}`
+            }).join('')}
+          </div>` : ''}
+        </div>`
     })
-    html += `</div>`
   }
 
-  // 各节点路由结果
-  results.forEach(r => {
-    if (r.status === 'failed') {
-      html += `<div class="route-node-card" style="margin-top:10px">
-        <div class="route-node-head">
-          <div class="route-node-name">${r.name} <span style="font-size:11px;color:#475569">${r.os_type}</span></div>
-          <span style="color:#f87171;font-size:12px">❌ ${r.error || '失败'}</span>
-        </div></div>`
-      return
-    }
+  // 失败的节点
+  const failedResults = results.filter(r => r.status === 'failed')
+  if (failedResults.length) {
+    html += failedResults.map(r => `
+      <div style="background:#0a0d14;border:1px solid #1e2240;border-radius:8px;padding:8px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:12px;color:#475569">${r.name}</span>
+        <span style="font-size:11px;color:#334155">❌ ${(r.error || '失败').slice(0,40)}</span>
+      </div>`).join('')
+  }
 
-    html += `<div class="route-node-card" style="margin-top:10px">
-      <div class="route-node-head">
-        <div class="route-node-name">${r.name} <span style="font-size:11px;color:#475569">${r.os_type}</span></div>
-        <div class="route-stats">
-          <span class="stat-pill" style="color:#4ade80">${r.valid_hops} 有效</span>
-          <span class="stat-pill">${r.timeout_hops} 超时</span>
-          ${r.last_latency ? `<span class="stat-pill" style="color:${r.last_latency > 300 ? '#f87171' : r.last_latency > 150 ? '#fbbf24' : '#4ade80'}">${r.last_latency}ms</span>` : ''}
-        </div>
-      </div>`
-
-    // 最后3跳可视化
-    if (r.last3 && r.last3.length) {
-      html += `<div style="font-size:10px;color:#334155;margin-bottom:6px">最后 ${r.last3.length} 跳（最接近目标）</div>
-        <div class="hop-path">`
-      r.last3.forEach((hop, i) => {
-        const isTarget = i === r.last3.length - 1
-        const cls = isTarget ? 'target' : hopClass(hop.tag)
-        const emoji = isTarget ? '🎯' : hopEmoji(hop.tag)
-        const msColor = hop.avg > 200 ? '#f87171' : hop.avg > 100 ? '#fbbf24' : '#4ade80'
-        html += `
-          <div class="hop-item">
-            <div class="hop-dot ${cls}">${emoji}</div>
-            <div class="hop-ms" style="color:${msColor}">${hop.avg > 0 ? hop.avg + 'ms' : '—'}</div>
-            <div class="hop-loc">${hop.city || hop.country || hop.ip}</div>
-          </div>`
-        if (i < r.last3.length - 1) html += `<div class="hop-arrow">→</div>`
-      })
-      html += `</div>`
-    }
-    html += `</div>`
-  })
-
+  html += `</div>`
   document.getElementById('reconResult').innerHTML = html
+}
+
+// ── IP 情报提取（核心逻辑）──────────────────────────────────
+function extractIntel(results, targetIp, ipProfile) {
+  const tags = []
+  const findings = []
+  const allHops = results.flatMap(r => r.all_hops || [])
+  const validHops = allHops.filter(h => h.ip && h.ip !== '*' && !isPrivate(h.ip))
+
+  // IP 类型标签
+  const ipType = ipProfile.type || 'unknown'
+  if (ipType === 'datacenter') tags.push({ text: '🏢 机房IP', style: 'background:#1f0a0a;color:#f87171' })
+  else if (ipType === 'residential') tags.push({ text: '🏠 住宅IP', style: 'background:#0a1f0a;color:#4ade80' })
+  else if (ipType === 'proxy') tags.push({ text: '🔀 代理IP', style: 'background:#1f0a1f;color:#e879f9' })
+  else tags.push({ text: '❓ 未知类型', style: 'background:#1a1d27;color:#64748b' })
+
+  // 地理位置标签
+  if (ipProfile.country) tags.push({ text: `📍 ${ipProfile.city || ''} ${ipProfile.country}`, style: 'background:#0a1527;color:#60a5fa' })
+
+  // 运营商标签
+  if (ipProfile.org) {
+    const org = ipProfile.org.split(' ').slice(1).join(' ').slice(0, 20)
+    tags.push({ text: org, style: 'background:#1a1d27;color:#475569' })
+  }
+
+  // 发现1：隧道代理检测
+  const privateHops = allHops.filter(h => h.ip && h.ip !== '*' && isPrivate(h.ip))
+  if (privateHops.length >= 3) {
+    findings.push({ icon: '🕳️', text: `检测到 ${privateHops.length} 个内网跳点 — 存在隧道代理特征，TikTok 可能识别为非真实用户` })
+    tags.push({ text: '🕳️ 隧道代理', style: 'background:#1f1a0a;color:#fbbf24' })
+  }
+
+  // 发现2：延迟异常（声称在某地但延迟不符）
+  const latencies = results.filter(r => r.last_latency > 0).map(r => r.last_latency)
+  const avgLat = latencies.length ? Math.round(latencies.reduce((a,b)=>a+b,0)/latencies.length) : 0
+  if (avgLat > 0) {
+    const country = ipProfile.country || ''
+    if (country === 'US' && avgLat > 250) {
+      findings.push({ icon: '⚠️', text: `声称美国 IP 但平均延迟 ${avgLat}ms，物理位置可能不在美国` })
+    } else if (country === 'HK' && avgLat > 100) {
+      findings.push({ icon: '⚠️', text: `声称香港 IP 但平均延迟 ${avgLat}ms，可能存在绕路` })
+    }
+    tags.push({ text: `⏱ ${avgLat}ms`, style: `background:#0a0d14;color:${avgLat>300?'#f87171':avgLat>150?'#fbbf24':'#4ade80'}` })
+  }
+
+  // 发现3：共享出口检测（多节点最后一跳相同）
+  const lastHops = results.filter(r => r.last3 && r.last3.length > 0).map(r => r.last3[r.last3.length-1]?.ip).filter(Boolean)
+  const uniqueLastHops = new Set(lastHops)
+  if (lastHops.length >= 2 && uniqueLastHops.size === 1) {
+    findings.push({ icon: '🔗', text: `所有节点到达同一出口路由器 ${[...uniqueLastHops][0]} — 路由路径一致，IP 位置可信` })
+  } else if (lastHops.length >= 2 && uniqueLastHops.size > 1) {
+    findings.push({ icon: '🌐', text: `不同节点到达不同出口节点 — 目标 IP 可能有多个接入点或 Anycast` })
+  }
+
+  // 发现4：骨干网节点识别
+  const backboneHops = validHops.filter(h => h.tag?.includes('骨干'))
+  if (backboneHops.length > 0) {
+    const backboneOrgs = [...new Set(backboneHops.map(h => h.org?.split(' ').slice(1).join(' ').slice(0,15)).filter(Boolean))]
+    if (backboneOrgs.length) {
+      findings.push({ icon: '🌐', text: `路由经过骨干网：${backboneOrgs.join('、')}` })
+    }
+  }
+
+  // 发现5：机房 IP 的具体机房
+  if (ipType === 'datacenter' && ipProfile.org) {
+    findings.push({ icon: '🏢', text: `机房托管：${ipProfile.org} — TikTok 对机房 IP 账号权重极低，建议更换住宅代理` })
+  }
+
+  return { tags, findings }
 }
 
 function hopClass(tag) {
