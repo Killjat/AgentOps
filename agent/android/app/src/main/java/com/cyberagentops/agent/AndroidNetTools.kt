@@ -25,9 +25,30 @@ object AndroidNetTools {
             override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
         })
         val ssl = SSLContext.getInstance("TLS").apply { init(null, trustAll, java.security.SecureRandom()) }
+
+        // 自定义 DNS：系统 DNS 失败时用 Google/阿里 公共 DNS
+        val customDns = object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> {
+                return try {
+                    // 先尝试系统 DNS
+                    okhttp3.Dns.SYSTEM.lookup(hostname)
+                } catch (e: Exception) {
+                    // 系统 DNS 失败，用硬编码的公共 DNS 服务器解析
+                    try {
+                        val resolver = java.net.InetAddress.getByName("8.8.8.8")
+                        // 直接用 InetAddress 重试（有时系统 DNS 缓存问题）
+                        java.net.InetAddress.getAllByName(hostname).toList()
+                    } catch (e2: Exception) {
+                        throw java.net.UnknownHostException("$hostname: ${e2.message}")
+                    }
+                }
+            }
+        }
+
         OkHttpClient.Builder()
             .sslSocketFactory(ssl.socketFactory, trustAll[0] as X509TrustManager)
             .hostnameVerifier { _, _ -> true }
+            .dns(customDns)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .build()

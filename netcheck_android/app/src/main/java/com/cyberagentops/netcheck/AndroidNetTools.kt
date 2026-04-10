@@ -25,9 +25,20 @@ object AndroidNetTools {
             override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
         })
         val ssl = SSLContext.getInstance("TLS").apply { init(null, trustAll, java.security.SecureRandom()) }
+        val customDns = object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> {
+                return try {
+                    okhttp3.Dns.SYSTEM.lookup(hostname)
+                } catch (e: Exception) {
+                    try { java.net.InetAddress.getAllByName(hostname).toList() }
+                    catch (e2: Exception) { throw java.net.UnknownHostException("$hostname: ${e2.message}") }
+                }
+            }
+        }
         OkHttpClient.Builder()
             .sslSocketFactory(ssl.socketFactory, trustAll[0] as X509TrustManager)
             .hostnameVerifier { _, _ -> true }
+            .dns(customDns)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .build()
