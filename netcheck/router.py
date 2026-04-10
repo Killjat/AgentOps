@@ -281,6 +281,20 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
         is_win = "windows" in os_type.lower()
         is_android = "android" in os_type.lower()
 
+        # 外网连通性预检
+        try:
+            chk = f"ping -n 1 -w 3000 {target_ip}" if is_win else f"ping -c 1 -W 3 {target_ip} 2>/dev/null"
+            chk_resp = await _ws_call(agent_id, {"type": "exec", "command": chk, "timeout": 8}, timeout=10)
+            chk_out = chk_resp.get("output", "") or ""
+            if "100% packet loss" in chk_out or "0 received" in chk_out or \
+               (is_win and "请求超时" in chk_out and "TTL" not in chk_out):
+                return {"agent_id": agent_id, "name": name, "os_type": os_type,
+                        "status": "failed", "error": f"无法访问外网（ping {target_ip} 失败）",
+                        "hops": [], "total_hops": 0, "valid_hops": 0, "timeout_hops": 0,
+                        "private_hops": 0, "last3": [], "all_hops": [], "last_latency": 0}
+        except Exception:
+            pass
+
         if is_ipv6:
             # IPv6：traceroute6 或 ping6，取延迟为主
             if is_win:
@@ -544,6 +558,24 @@ async def _run_recon(task_id: str, target: str, agent_ids: List[str]):
         name = (agent.name if agent else agent_id) or agent_id
         is_win = "windows" in os_type.lower()
         is_android = "android" in os_type.lower()
+
+        # 外网连通性预检：先 ping 目标，失败直接跳过
+        try:
+            if is_win:
+                check_cmd = f"ping -n 1 -w 3000 {target}"
+            else:
+                check_cmd = f"ping -c 1 -W 3 {target} 2>/dev/null"
+            check_resp = await _ws_call(agent_id, {"type": "exec", "command": check_cmd, "timeout": 8}, timeout=10)
+            check_out = check_resp.get("output", "") or ""
+            # 判断是否可达
+            if "100% packet loss" in check_out or "100% 丢失" in check_out or \
+               ("transmitted" in check_out and "0 received" in check_out) or \
+               (is_win and "请求超时" in check_out and "TTL" not in check_out):
+                return {"agent_id": agent_id, "name": name, "os_type": os_type,
+                        "status": "failed", "error": f"无法访问外网（ping {target} 失败）", "hops": [],
+                        "total_hops": 0, "valid_hops": 0, "timeout_hops": 0, "last5": [], "all_hops": []}
+        except Exception:
+            pass  # 预检失败不阻止，继续尝试 traceroute
 
         if is_win:
             cmd = f"tracert -d -h 20 {target}"
