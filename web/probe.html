@@ -541,6 +541,7 @@ function renderReconResult(data, targetIp) {
           </div>
           <div style="flex:1;min-width:0">
             <div style="font-size:18px;font-weight:800;color:${sc};margin-bottom:6px">${analysis.verdict||'分析完成'}</div>
+            ${analysis.flags&&analysis.flags.length?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">${analysis.flags.map(f=>`<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:#1f0a0a;color:#f87171;border:1px solid #3d1212">${f}</span>`).join('')}</div>`:''}
             <div style="font-size:13px;font-family:monospace;color:#60a5fa;margin-bottom:4px">${targetIp}</div>
             <div style="font-size:12px;color:#64748b">${[ipProfile.city,ipProfile.country].filter(Boolean).join(', ')||'位置未知'}</div>
             <div style="font-size:11px;color:#475569;margin-top:2px">${ipProfile.org||''}</div>
