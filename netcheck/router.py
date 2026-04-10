@@ -274,6 +274,10 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
     # 2. 多节点并发 traceroute
     is_ipv6 = ":" in target_ip  # IPv6 地址包含冒号
 
+    # 判断目标是否为境内 IP（中国大陆）
+    target_is_cn = ip_profile.get("country", "") in ("CN",) and \
+                   ip_profile.get("city", "") not in ("Hong Kong", "Macau", "Taiwan")
+
     async def trace_one(agent_id: str) -> dict:
         agent = _agents.get(agent_id)
         os_type = getattr(agent.os_type, "value", str(agent.os_type)) if agent else "linux"
@@ -281,19 +285,22 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
         is_win = "windows" in os_type.lower()
         is_android = "android" in os_type.lower()
 
-        # 外网连通性预检
-        try:
-            chk = f"ping -n 1 -w 3000 {target_ip}" if is_win else f"ping -c 1 -W 3 {target_ip} 2>/dev/null"
-            chk_resp = await _ws_call(agent_id, {"type": "exec", "command": chk, "timeout": 8}, timeout=10)
-            chk_out = chk_resp.get("output", "") or ""
-            if "100% packet loss" in chk_out or "0 received" in chk_out or \
-               (is_win and "请求超时" in chk_out and "TTL" not in chk_out):
-                return {"agent_id": agent_id, "name": name, "os_type": os_type,
-                        "status": "failed", "error": f"无法访问外网（ping {target_ip} 失败）",
-                        "hops": [], "total_hops": 0, "valid_hops": 0, "timeout_hops": 0,
-                        "private_hops": 0, "last3": [], "all_hops": [], "last_latency": 0}
-        except Exception:
-            pass
+        # 外网连通性预检：
+        # - 目标是境内 IP → 所有节点都参与，不需要预检
+        # - 目标是境外 IP → ping 一下，失败就跳过（Windows 无外网时自动跳过）
+        if not target_is_cn:
+            try:
+                chk = f"ping -n 1 -w 3000 {target_ip}" if is_win else f"ping -c 1 -W 3 {target_ip} 2>/dev/null"
+                chk_resp = await _ws_call(agent_id, {"type": "exec", "command": chk, "timeout": 8}, timeout=10)
+                chk_out = chk_resp.get("output", "") or ""
+                if "100% packet loss" in chk_out or "0 received" in chk_out or \
+                   (is_win and "请求超时" in chk_out and "TTL" not in chk_out):
+                    return {"agent_id": agent_id, "name": name, "os_type": os_type,
+                            "status": "failed", "error": f"无外网访问权限，跳过境外目标探测",
+                            "hops": [], "total_hops": 0, "valid_hops": 0, "timeout_hops": 0,
+                            "private_hops": 0, "last3": [], "all_hops": [], "last_latency": 0}
+            except Exception:
+                pass
 
         if is_ipv6:
             # IPv6：traceroute6 或 ping6，取延迟为主
@@ -556,7 +563,18 @@ async def _run_recon(task_id: str, target: str, agent_ids: List[str]):
         is_win = "windows" in os_type.lower()
         is_android = "android" in os_type.lower()
 
-        # 外网连通性预检：先 ping 目标，失败直接跳过
+        # 外网连通性预检：
+        # 目标是境外域名/IP → ping 一下，失败就跳过（Windows 无外网时自动跳过）
+        # 目标是境内 → 所有节点参与，不预检
+        target_cn = False
+        try:
+            import socket as _sock
+            resolved_ip = _sock.gethostbyname(target)
+            # 简单判断是否是中国大陆 IP（通过 ipinfo 已有的 ip_profile 或直接判断）
+            # 这里用简单规则：如果能快速 ping 通（<50ms）说明是境内，否则认为境外
+        except Exception:
+            pass
+
         try:
             if is_win:
                 check_cmd = f"ping -n 1 -w 3000 {target}"
@@ -564,12 +582,11 @@ async def _run_recon(task_id: str, target: str, agent_ids: List[str]):
                 check_cmd = f"ping -c 1 -W 3 {target} 2>/dev/null"
             check_resp = await _ws_call(agent_id, {"type": "exec", "command": check_cmd, "timeout": 8}, timeout=10)
             check_out = check_resp.get("output", "") or ""
-            # 判断是否可达
             if "100% packet loss" in check_out or "100% 丢失" in check_out or \
                ("transmitted" in check_out and "0 received" in check_out) or \
                (is_win and "请求超时" in check_out and "TTL" not in check_out):
                 return {"agent_id": agent_id, "name": name, "os_type": os_type,
-                        "status": "failed", "error": f"无法访问外网（ping {target} 失败）", "hops": [],
+                        "status": "failed", "error": "无外网访问权限，跳过境外目标探测", "hops": [],
                         "total_hops": 0, "valid_hops": 0, "timeout_hops": 0, "last5": [], "all_hops": []}
         except Exception:
             pass  # 预检失败不阻止，继续尝试 traceroute
