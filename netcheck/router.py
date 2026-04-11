@@ -720,3 +720,210 @@ async def _run_recon(task_id: str, target: str, agent_ids: List[str]):
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning(f"save recon traceroute failed: {e}")
+
+
+# ── 威胁情报查询 ──────────────────────────────────────────────
+
+@router.get("/threat/{ip}")
+async def get_threat_intel(ip: str):
+    """查询 IP 威胁情报（AbuseIPDB + VirusTotal）"""
+    if not _is_safe_target(ip):
+        raise HTTPException(400, "目标地址不合法")
+    from netcheck.threat_intel import get_threat_intel as _get_intel
+    return await _get_intel(ip)
+
+
+# ── FOFA IP 导入 ──────────────────────────────────────────────
+
+@router.get("/fofa/search")
+async def fofa_search(q: str, size: int = 50):
+    """从 FOFA 查询 IP 列表，供 batch-scan 使用"""
+    import base64, aiohttp, os
+    email = os.getenv("FOFA_EMAIL", "")
+    key = os.getenv("FOFA_KEY", "")
+    if not email or not key:
+        raise HTTPException(500, "未配置 FOFA API")
+    if size > 200:
+        size = 200
+
+    qb64 = base64.b64encode(q.encode()).decode()
+    url = f"https://fofa.info/api/v1/search/all?email={email}&key={key}&qbase64={qb64}&size={size}&fields=ip,port,country,org"
+
+    import ssl
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+        async with aiohttp.ClientSession(connector=connector) as s:
+            async with s.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                d = await r.json()
+                if d.get("error"):
+                    raise HTTPException(400, d.get("errmsg", "FOFA error"))
+                # 去重 IP
+                ips = list(dict.fromkeys(row[0] for row in d.get("results", []) if row and row[0]))
+                return {
+                    "total": d.get("size", 0),
+                    "returned": len(ips),
+                    "ips": ips,
+                    "query": q,
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e)[:100])
+
+
+# ── 数据统计展示 ──────────────────────────────────────────────
+
+def _table_exists(cursor, table_name: str) -> bool:
+    r = cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,)).fetchone()
+    return r is not None
+
+@router.get("/stats")
+async def get_stats():
+    """返回数据库统计数据，供展示页使用"""
+    from netcheck.trace_db import get_conn
+    with get_conn() as db:
+        c = db.cursor()
+
+        # 总体统计
+        total_tasks = c.execute("SELECT COUNT(*) FROM traceroute_tasks").fetchone()[0]
+        total_hops = c.execute("SELECT COUNT(*) FROM traceroute_hops").fetchone()[0]
+        total_ips = c.execute("SELECT COUNT(*) FROM ip_profiles").fetchone()[0]
+        total_targets = c.execute("SELECT COUNT(DISTINCT target) FROM traceroute_tasks").fetchone()[0]
+        total_countries = c.execute("SELECT COUNT(DISTINCT country) FROM ip_profiles WHERE country != ''").fetchone()[0]
+
+        # ASN 分布（出现最多的上游）
+        asn_rows = c.execute("""
+            SELECT asn, org, COUNT(*) as cnt FROM traceroute_hops
+            WHERE asn != '' AND is_private=0
+            GROUP BY asn ORDER BY cnt DESC LIMIT 10
+        """).fetchall()
+        asn_dist = [{"asn": r[0], "org": (r[1] or "").split(" ", 1)[-1][:30], "count": r[2]} for r in asn_rows]
+
+        # IP 类型分布
+        tag_rows = c.execute("""
+            SELECT tag, COUNT(DISTINCT ip) as cnt FROM ip_profiles
+            WHERE tag != '' GROUP BY tag ORDER BY cnt DESC
+        """).fetchall()
+        tag_dist = [{"tag": r[0], "count": r[1]} for r in tag_rows]
+
+        # 国家分布
+        country_rows = c.execute("""
+            SELECT country, COUNT(DISTINCT ip) as cnt FROM ip_profiles
+            WHERE country != '' GROUP BY country ORDER BY cnt DESC LIMIT 10
+        """).fetchall()
+        country_dist = [{"country": r[0], "count": r[1]} for r in country_rows]
+
+        # 最近10条探测记录
+        recent_rows = c.execute("""
+            SELECT t.target, t.agent_name, t.os_type, t.total_hops, t.created_at,
+                   h.country, h.city, h.org, h.tag
+            FROM traceroute_tasks t
+            LEFT JOIN traceroute_hops h ON h.task_id=t.task_id AND h.is_last_hop=1
+            ORDER BY t.created_at DESC LIMIT 15
+        """).fetchall()
+        recent = [{
+            "target": r[0], "agent": r[1] or "", "os": r[2] or "",
+            "hops": r[3], "time": r[4][:16] if r[4] else "",
+            "country": r[5] or "", "city": r[6] or "",
+            "org": (r[7] or "")[:25], "tag": r[8] or ""
+        } for r in recent_rows]
+
+        # 节点参与统计
+        node_rows = c.execute("""
+            SELECT agent_name, os_type, COUNT(*) as cnt
+            FROM traceroute_tasks GROUP BY agent_id ORDER BY cnt DESC
+        """).fetchall()
+        nodes = [{"name": r[0] or "unknown", "os": r[1] or "", "count": r[2]} for r in node_rows]
+
+        # ASN 集群分析结果
+        import json as _json
+        cluster_rows = c.execute("""
+            SELECT key, value FROM analysis_results WHERE type='asn_cluster'
+            ORDER BY json_extract(value, '$.hop_count') DESC LIMIT 10
+        """).fetchall() if _table_exists(c, 'analysis_results') else []
+        asn_clusters = [_json.loads(r[1]) for r in cluster_rows]
+
+        # 调度器任务状态
+        job_rows = c.execute(
+            "SELECT name, last_run FROM scheduler_jobs ORDER BY last_run DESC"
+        ).fetchall() if _table_exists(c, 'scheduler_jobs') else []
+        scheduler_jobs = [{"name": r[0], "last_run": r[1][:16] if r[1] else ""} for r in job_rows]
+
+        # 队列状态
+        from netcheck.queue import queue_stats
+        q_stats = queue_stats()
+
+    return {
+        "summary": {
+            "total_tasks": total_tasks,
+            "total_hops": total_hops,
+            "total_ips": total_ips,
+            "total_targets": total_targets,
+            "total_countries": total_countries,
+        },
+        "queue": q_stats,
+        "asn_distribution": asn_dist,
+        "tag_distribution": tag_dist,
+        "country_distribution": country_dist,
+        "recent_scans": recent,
+        "nodes": nodes,
+        "asn_clusters": asn_clusters,
+        "scheduler_jobs": scheduler_jobs,
+    }
+
+
+@router.get("/ip-profiles")
+async def get_ip_profiles(tag: str = "", country: str = "", asn: str = "", limit: int = 50):
+    """按条件查询 IP 画像列表"""
+    from netcheck.trace_db import get_conn
+    with get_conn() as db:
+        c = db.cursor()
+        where = []
+        params = []
+        if tag:
+            where.append("tag LIKE ?")
+            params.append(f"%{tag}%")
+        if country:
+            where.append("country=?")
+            params.append(country)
+        if asn:
+            where.append("asn=?")
+            params.append(asn)
+        sql = "SELECT ip, asn, org, country, city, tag, seen_count, first_seen, last_seen FROM ip_profiles"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY seen_count DESC LIMIT ?"
+        params.append(limit)
+        rows = c.execute(sql, params).fetchall()
+        return [{"ip": r[0], "asn": r[1], "org": r[2], "country": r[3],
+                 "city": r[4], "tag": r[5], "seen_count": r[6],
+                 "first_seen": (r[7] or "")[:10], "last_seen": (r[8] or "")[:10]} for r in rows]
+
+
+# ── 路径收敛分析 ──────────────────────────────────────────────
+
+@router.get("/convergence/summary")
+async def get_convergence_summary():
+    """获取路径收敛分析汇总"""
+    from netcheck.convergence import get_convergence_summary
+    return get_convergence_summary()
+
+
+@router.post("/convergence/analyze")
+async def trigger_analysis():
+    """手动触发批量收敛分析"""
+    import asyncio
+    from netcheck.convergence import run_batch_analysis
+    asyncio.create_task(asyncio.to_thread(run_batch_analysis, 2))
+    return {"status": "started"}
+
+
+@router.get("/convergence/target/{ip}")
+async def get_target_convergence(ip: str):
+    """查询单个 IP 的收敛分析结果"""
+    from netcheck.convergence import analyze_target
+    return analyze_target(ip)

@@ -204,12 +204,31 @@ class BaseAgent(abc.ABC):
                     delay = 1  # 连上了，重置退避
                     print(f"[{_ts()}] OK connected, Agent ID: {self.agent_id}")
 
-                    # 注册
-                    await ws.send(json.dumps({
+                    # 注册（支持 AGENT_TOKEN 环境变量或同目录 agent.conf 文件）
+                    import os as _os, pathlib as _pl, sys as _sys
+                    reg_msg = {
                         "type": "register",
                         "agent_id": self.agent_id,
                         "os_info": self.get_os_info(),
-                    }))
+                    }
+                    # 读取 token：优先环境变量，其次可执行文件同目录的 agent.conf
+                    agent_token = _os.getenv("AGENT_TOKEN", "")
+                    if not agent_token:
+                        # PyInstaller 打包后用 sys.executable，普通运行用 __file__
+                        exe_dir = _pl.Path(_sys.executable).parent if getattr(_sys, 'frozen', False) else _pl.Path(_os.path.abspath(__file__)).parent
+                        conf_path = exe_dir / "agent.conf"
+                        if conf_path.exists():
+                            for line in conf_path.read_text().splitlines():
+                                line = line.strip()
+                                if line.startswith("AGENT_TOKEN="):
+                                    agent_token = line.split("=", 1)[1].strip()
+                                elif line.startswith("SERVER_URL="):
+                                    url = line.split("=", 1)[1].strip()
+                                    if url and not self.server_url:
+                                        self.server_url = url
+                    if agent_token:
+                        reg_msg["agent_token"] = agent_token
+                    await ws.send(json.dumps(reg_msg))
 
                     # 定时上报指标（每 30 秒）
                     async def metrics_loop():

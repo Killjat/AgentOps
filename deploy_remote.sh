@@ -31,7 +31,7 @@ tar --exclude='.git' \
     --exclude='hosts.yaml' \
     --exclude='users.json' \
     -czf /tmp/cyberagentops.tar.gz \
-    agent/ server/ web/ swarm/ netcheck/ requirements.txt .env.example
+    agent/ server/ web/ swarm/ netcheck/ scripts/ requirements.txt .env.example
 
 # 2. 上传
 echo "[2/4] 上传文件..."

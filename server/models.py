@@ -94,6 +94,7 @@ class AgentInfo(BaseModel):
     created_at: str
     last_seen: Optional[str] = None
     metrics: Optional[dict] = None
+    agent_token: Optional[str] = None  # 用户自安装时的关联 token
 
 
 class TaskRequest(BaseModel):

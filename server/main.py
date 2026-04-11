@@ -46,6 +46,14 @@ async def lifespan(app: FastAPI):
         init_db()
         _load_persistent_data()
         logger.info("[lifespan] 数据加载完成")
+
+        # 启动自动化分析调度器
+        try:
+            from netcheck.scheduler import start_scheduler
+            await start_scheduler()
+            logger.info("[lifespan] 分析调度器已启动")
+        except Exception as e:
+            logger.warning(f"[lifespan] 调度器启动失败: {e}")
     except Exception as e:
         logger.error(f"[lifespan] 数据加载失败: {e}")
         import traceback
@@ -154,6 +162,80 @@ if WEB_DIR.exists():
             "Cache-Control": "no-store, no-cache, must-revalidate",
             "Pragma": "no-cache"
         })
+
+    @app.get("/batch-scan", include_in_schema=False)
+    async def serve_batch_scan():
+        content = (WEB_DIR / "batch_scan.html").read_text()
+        return HTMLResponse(content=content, headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache"
+        })
+
+    @app.get("/insights", include_in_schema=False)
+    async def serve_insights():
+        content = (WEB_DIR / "insights.html").read_text()
+        return HTMLResponse(content=content, headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache"
+        })
+
+    # ── 一键安装脚本 ──────────────────────────────────────────
+    SERVER_URL_PUBLIC = os.getenv("SERVER_URL", "https://47.111.28.162:8443")
+    AGENT_BASE_URL = "https://github.com/Killjat/agentops/releases/latest/download"
+
+    @app.get("/agent/package/{platform}")
+    async def agent_package(platform: str, token: str = ""):
+        """打包下载：二进制 + agent.conf，用户解压双击即可"""
+        import secrets as _sec, zipfile, io
+        from fastapi.responses import StreamingResponse
+        from pathlib import Path as _Path
+        if not token:
+            token = _sec.token_hex(8)
+
+        platform_map = {
+            "mac":     ("cyberagent-mac",         "cyberagent-mac"),
+            "linux":   ("cyberagent-linux",        "cyberagent-linux"),
+            "windows": ("cyberagent-windows.exe",  "cyberagent.exe"),
+        }
+        if platform not in platform_map:
+            return {"error": "unsupported platform"}
+
+        bin_name, local_name = platform_map[platform]
+
+        # 优先从服务器缓存目录读取，其次从 agent/dist 读取
+        search_paths = [
+            _Path("/opt/cyberagentops/agent_binaries") / bin_name,
+            _Path(__file__).parent.parent / "agent" / "dist" / bin_name,
+        ]
+        binary_data = None
+        for p in search_paths:
+            if p.exists():
+                binary_data = p.read_bytes()
+                break
+
+        if not binary_data:
+            raise HTTPException(404, f"Agent binary not found. Please build first.")
+
+        # 生成 agent.conf
+        conf = f"SERVER_URL={SERVER_URL_PUBLIC}\nAGENT_TOKEN={token}\n"
+
+        # 打包 zip
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("agent.conf", conf)
+            info = zipfile.ZipInfo(local_name)
+            info.external_attr = 0o755 << 16
+            zf.writestr(info, binary_data)
+            if platform != "windows":
+                readme = f"1. 解压此 zip\n2. 双击 {local_name} 运行（Mac 首次右键→打开）\n3. 返回浏览器等待连接\n"
+                zf.writestr("README.txt", readme)
+
+        buf.seek(0)
+        return StreamingResponse(
+            buf,
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename=cyberstroll-agent-{platform}.zip"}
+        )
 
     static_dir = WEB_DIR / "static"
     if static_dir.exists():

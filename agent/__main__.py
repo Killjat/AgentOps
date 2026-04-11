@@ -21,6 +21,22 @@ def main():
 
     # 自动检测或手动指定 Agent 类型
     agent_type = args.type
+
+    # 从 agent.conf 读取配置（优先级低于命令行参数和环境变量）
+    import os, pathlib, sys as _sys
+    exe_dir = pathlib.Path(_sys.executable).parent if getattr(_sys, 'frozen', False) else pathlib.Path(__file__).parent
+    conf_path = exe_dir / "agent.conf"
+    conf_server = ""
+    if conf_path.exists():
+        for line in conf_path.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("SERVER_URL=") and not args.server:
+                conf_server = line.split("=", 1)[1].strip()
+            elif line.startswith("AGENT_TOKEN="):
+                os.environ.setdefault("AGENT_TOKEN", line.split("=", 1)[1].strip())
+
+    # 最终 server_url：命令行 > 环境变量 > agent.conf > 默认
+    server_url = args.server or os.getenv("SERVER_URL", "") or conf_server or "https://47.111.28.162:8443"
     if agent_type == "auto":
         os_name = platform.system().lower()
         if "windows" in os_name:
@@ -35,7 +51,7 @@ def main():
         from .windows import WindowsAgent
         agent = WindowsAgent(
             agent_id=args.agent_id,
-            server_url=args.server,
+            server_url=server_url,
             port=args.port,
             host=args.host,
         )
@@ -43,7 +59,7 @@ def main():
         from .linux import LinuxAgent
         agent = LinuxAgent(
             agent_id=args.agent_id,
-            server_url=args.server,
+            server_url=server_url,
             port=args.port,
             host=args.host,
         )

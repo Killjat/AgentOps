@@ -25,13 +25,38 @@ object AndroidNetTools {
             override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
         })
         val ssl = SSLContext.getInstance("TLS").apply { init(null, trustAll, java.security.SecureRandom()) }
+        // 自定义 DNS：系统 DNS 失败时用 Google DoH（DNS over HTTPS）解析，绕过代理 DNS 问题
         val customDns = object : okhttp3.Dns {
             override fun lookup(hostname: String): List<java.net.InetAddress> {
                 return try {
                     okhttp3.Dns.SYSTEM.lookup(hostname)
                 } catch (e: Exception) {
-                    try { java.net.InetAddress.getAllByName(hostname).toList() }
-                    catch (e2: Exception) { throw java.net.UnknownHostException("$hostname: ${e2.message}") }
+                    // 系统 DNS 失败（常见于手机开代理但 DNS 未走代理通道）
+                    // 用 Google DoH 解析
+                    try {
+                        val dohUrl = "https://8.8.8.8/resolve?name=$hostname&type=A"
+                        val req = Request.Builder().url(dohUrl)
+                            .header("Accept", "application/dns-json").build()
+                        val resp = OkHttpClient.Builder()
+                            .sslSocketFactory(ssl.socketFactory, trustAll[0] as X509TrustManager)
+                            .hostnameVerifier { _, _ -> true }
+                            .connectTimeout(5, TimeUnit.SECONDS).build()
+                            .newCall(req).execute()
+                        val body = resp.body?.string() ?: throw Exception("empty")
+                        val json = org.json.JSONObject(body)
+                        val answers = json.optJSONArray("Answer") ?: throw Exception("no answer")
+                        val ips = mutableListOf<java.net.InetAddress>()
+                        for (i in 0 until answers.length()) {
+                            val a = answers.getJSONObject(i)
+                            if (a.optInt("type") == 1) {
+                                ips.add(java.net.InetAddress.getByName(a.optString("data")))
+                            }
+                        }
+                        if (ips.isEmpty()) throw Exception("no A record")
+                        ips
+                    } catch (e2: Exception) {
+                        throw java.net.UnknownHostException("$hostname: DNS failed (${e2.message})")
+                    }
                 }
             }
         }

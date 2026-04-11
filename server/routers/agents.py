@@ -213,9 +213,12 @@ async def ws_agent_endpoint(websocket: WebSocket, agent_id: str):
 
                 if msg_type == "register":
                     os_info = msg.get("os_info", {})
+                    agent_token = msg.get("agent_token", "")
                     if agent_id in agents:
                         agents[agent_id].status = AgentStatus.ONLINE
                         agents[agent_id].last_seen = datetime.now().isoformat()
+                        if agent_token:
+                            agents[agent_id].agent_token = agent_token
                     else:
                         os_name = os_info.get("os", "").lower()
                         if "windows" in os_name:
@@ -240,6 +243,7 @@ async def ws_agent_endpoint(websocket: WebSocket, agent_id: str):
                             status=AgentStatus.ONLINE,
                             created_at=datetime.now().isoformat(),
                             last_seen=datetime.now().isoformat(),
+                            agent_token=agent_token if agent_token else None,
                         )
                         agents[agent_id] = new_agent
                         _save_agents()
@@ -518,3 +522,90 @@ async def ping_agent(agent_id: str):
     info.last_seen = datetime.now().isoformat()
     _save_agents()
     return {"online": bool(result), "info": result}
+
+
+@router.get("/by-token/{token}")
+async def get_agent_by_token(token: str):
+    """通过 agent_token 查询对应的 agent（用于用户自安装场景）"""
+    for a in agents.values():
+        if a.agent_token == token:
+            return {"found": True, "agent_id": a.agent_id, "status": a.status,
+                    "name": a.name, "os_type": str(a.os_type)}
+    return {"found": False}
+
+
+@router.get("/download/{platform}")
+async def download_agent_package(platform: str, token: str = ""):
+    """生成带 token 的启动脚本，供用户下载"""
+    import secrets, os
+    from fastapi.responses import PlainTextResponse
+    if not token:
+        token = secrets.token_hex(8)
+
+    server_url = os.getenv("SERVER_URL", "https://47.111.28.162:8443")
+    base_url = "https://github.com/Killjat/agentops/releases/latest/download"
+
+    if platform == "mac":
+        script = f"""#!/bin/bash
+# CyberStroll Agent - Mac 启动脚本
+DIR="$(cd "$(dirname "$0")" && pwd)"
+BIN="$DIR/cyberagent-mac"
+
+if [ ! -f "$BIN" ]; then
+  echo "正在下载 Agent..."
+  curl -fsSL "{base_url}/cyberagent-mac" -o "$BIN"
+  chmod +x "$BIN"
+fi
+
+echo "启动 Agent..."
+export SERVER_URL="{server_url}"
+export AGENT_TOKEN="{token}"
+nohup "$BIN" > "$DIR/agent.log" 2>&1 &
+echo "✅ Agent 已启动 (PID=$!)"
+echo "   请返回浏览器页面，等待连接确认..."
+"""
+        filename = "start-agent.sh"
+        return PlainTextResponse(script, headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+    elif platform == "windows":
+        script = f"""@echo off
+REM CyberStroll Agent - Windows 启动脚本
+set DIR=%~dp0
+set BIN=%DIR%cyberagent-windows.exe
+
+if not exist "%BIN%" (
+  echo 正在下载 Agent...
+  powershell -Command "Invoke-WebRequest -Uri '{base_url}/cyberagent-windows.exe' -OutFile '%BIN%'"
+)
+
+echo 启动 Agent...
+set SERVER_URL={server_url}
+set AGENT_TOKEN={token}
+start /B "" "%BIN%" > "%DIR%agent.log" 2>&1
+echo Agent 已启动，请返回浏览器页面等待连接确认...
+timeout /t 3
+"""
+        filename = "start-agent.bat"
+        return PlainTextResponse(script, headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+    elif platform == "linux":
+        script = f"""#!/bin/bash
+DIR="$(cd "$(dirname "$0")" && pwd)"
+BIN="$DIR/cyberagent-linux"
+
+if [ ! -f "$BIN" ]; then
+  echo "正在下载 Agent..."
+  curl -fsSL "{base_url}/cyberagent-linux" -o "$BIN"
+  chmod +x "$BIN"
+fi
+
+echo "启动 Agent..."
+export SERVER_URL="{server_url}"
+export AGENT_TOKEN="{token}"
+nohup "$BIN" > "$DIR/agent.log" 2>&1 &
+echo "✅ Agent 已启动 (PID=$!)"
+"""
+        filename = "start-agent.sh"
+        return PlainTextResponse(script, headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+    return {"error": "unsupported platform"}

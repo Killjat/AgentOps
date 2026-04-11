@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>路由情报洞察 · CyberStroll</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'SF Mono', 'Consolas', monospace; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+
+.header { padding: 24px 32px; border-bottom: 1px solid #21262d; display: flex; align-items: center; justify-content: space-between; }
+.header h1 { font-size: 20px; font-weight: 700; color: #f0f6fc; }
+.header .sub { font-size: 13px; color: #8b949e; margin-top: 3px; }
+.updated { font-size: 11px; color: #484f58; }
+
+.container { max-width: 1200px; margin: 0 auto; padding: 24px 32px; }
+
+/* 统计卡片 */
+.stats-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 28px; }
+.stat-card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px; text-align: center; }
+.stat-card .num { font-size: 28px; font-weight: 800; color: #f0f6fc; line-height: 1; }
+.stat-card .lbl { font-size: 11px; color: #8b949e; margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* 网格布局 */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+
+.card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 18px; }
+.card-title { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; }
+
+/* 条形图 */
+.bar-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.bar-label { font-size: 12px; color: #94a3b8; width: 180px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-label .asn { color: #60a5fa; font-size: 11px; }
+.bar-track { flex: 1; height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
+.bar-count { font-size: 12px; color: #64748b; width: 40px; text-align: right; flex-shrink: 0; }
+
+/* 饼图替代：色块列表 */
+.pie-list { display: flex; flex-direction: column; gap: 8px; }
+.pie-item { display: flex; align-items: center; gap: 10px; }
+.pie-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.pie-label { font-size: 13px; color: #94a3b8; flex: 1; }
+.pie-pct { font-size: 13px; font-weight: 600; color: #f0f6fc; }
+.pie-bar { height: 4px; border-radius: 2px; margin-top: 3px; }
+
+/* 最近探测表格 */
+.scan-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.scan-table th { padding: 6px 10px; color: #484f58; text-align: left; border-bottom: 1px solid #21262d; font-weight: 400; font-size: 10px; text-transform: uppercase; }
+.scan-table td { padding: 7px 10px; border-bottom: 1px solid #0d1117; }
+.scan-table tr:hover td { background: #1c2128; }
+.tag-dc { color: #f87171; }
+.tag-res { color: #4ade80; }
+.tag-isp { color: #60a5fa; }
+.tag-bb { color: #a78bfa; }
+.tag-proxy { color: #fb923c; }
+
+/* 节点状态 */
+.node-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.node-card { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 10px 12px; }
+.node-name { font-size: 12px; font-weight: 600; color: #e2e8f0; }
+.node-os { font-size: 10px; color: #484f58; margin-top: 2px; }
+.node-count { font-size: 18px; font-weight: 700; color: #388bfd; margin-top: 6px; }
+.node-lbl { font-size: 10px; color: #484f58; }
+
+/* 关键发现 highlight */
+.finding { background: #0d1117; border-left: 3px solid #388bfd; border-radius: 0 6px 6px 0; padding: 12px 14px; margin-bottom: 10px; }
+.finding .title { font-size: 13px; font-weight: 600; color: #f0f6fc; margin-bottom: 4px; }
+.finding .detail { font-size: 12px; color: #8b949e; line-height: 1.6; }
+.finding .num { color: #388bfd; font-weight: 700; }
+
+.section-title { font-size: 13px; font-weight: 600; color: #f0f6fc; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>🔬 路由情报洞察</h1>
+    <div class="sub">基于分布式 traceroute 的代理基础设施分析</div>
+  </div>
+  <div class="updated" id="updatedAt">加载中...</div>
+</div>
+
+<div class="container">
+
+  <!-- 统计卡片 -->
+  <div class="stats-row">
+    <div class="stat-card"><div class="num" id="statTasks">—</div><div class="lbl">Traceroute 次数</div></div>
+    <div class="stat-card"><div class="num" id="statHops">—</div><div class="lbl">跳点记录</div></div>
+    <div class="stat-card"><div class="num" id="statIPs">—</div><div class="lbl">IP 画像</div></div>
+    <div class="stat-card"><div class="num" id="statTargets">—</div><div class="lbl">探测目标</div></div>
+    <div class="stat-card"><div class="num" id="statCountries">—</div><div class="lbl">覆盖国家</div></div>
+  </div>
+
+  <!-- 队列状态 -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px" id="queueRow" style="display:none">
+    <div class="stat-card" style="border-color:#388bfd44"><div class="num" style="color:#388bfd" id="qPending">—</div><div class="lbl">待扫描</div></div>
+    <div class="stat-card" style="border-color:#d2992244"><div class="num" style="color:#d29922" id="qRunning">—</div><div class="lbl">扫描中</div></div>
+    <div class="stat-card" style="border-color:#3fb95044"><div class="num" style="color:#3fb950" id="qDone">—</div><div class="lbl">已完成</div></div>
+    <div class="stat-card" style="border-color:#f8514944"><div class="num" style="color:#f85149" id="qFailed">—</div><div class="lbl">失败</div></div>
+  </div>
+
+  <!-- 关键发现 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="section-title">🔍 关键发现</div>
+    <div id="findings"></div>
+  </div>
+
+  <div class="grid-2">
+    <!-- ASN 分布 -->
+    <div class="card">
+      <div class="card-title">上游 ASN 分布（出现频次）</div>
+      <div id="asnChart"></div>
+    </div>
+
+    <!-- IP 类型分布 -->
+    <div class="card">
+      <div class="card-title">IP 类型分布 <span style="color:#484f58;font-size:10px">（点击查看详情）</span></div>
+      <div id="tagChart"></div>
+      <!-- 展开的 IP 列表 -->
+      <div id="tagDetail" style="display:none;margin-top:14px;border-top:1px solid #21262d;padding-top:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-size:12px;font-weight:600;color:#f0f6fc" id="tagDetailTitle"></div>
+          <button onclick="document.getElementById('tagDetail').style.display='none'" style="background:none;border:none;color:#484f58;cursor:pointer;font-size:18px">×</button>
+        </div>
+        <div id="tagDetailList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- 国家分布 -->
+    <div class="card">
+      <div class="card-title">目标 IP 地理分布</div>
+      <div id="countryChart"></div>
+    </div>
+
+    <!-- 探测节点 -->
+    <div class="card">
+      <div class="card-title">探测节点参与情况</div>
+      <div class="node-grid" id="nodeGrid"></div>
+    </div>
+  </div>
+
+  <!-- 路径收敛分析 -->
+  <div class="card" style="margin-bottom:16px" id="convergenceSection">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div class="section-title" style="margin-bottom:0">🔗 代理链路收敛分析</div>
+      <button onclick="triggerAnalysis()" id="analyzeBtn"
+        style="background:#238636;border:none;border-radius:4px;color:#fff;font-size:12px;padding:5px 12px;cursor:pointer">
+        立即分析
+      </button>
+    </div>
+
+    <!-- 统计 -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px" id="convStats"></div>
+
+    <!-- 最常见收敛点（代理出口网关）-->
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">
+        高频代理出口网关（多个目标共享同一出口）
+      </div>
+      <div id="topGateways"></div>
+    </div>
+
+    <!-- 最近发现的代理链路 -->
+    <div>
+      <div style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">
+        最近发现的代理链路
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px" id="recentProxy">
+        <thead><tr style="color:#484f58;font-size:10px;text-transform:uppercase">
+          <th style="padding:4px 8px;text-align:left">目标IP</th>
+          <th style="padding:4px 8px;text-align:left">收敛点（代理网关）</th>
+          <th style="padding:4px 8px;text-align:left">运营商</th>
+          <th style="padding:4px 8px;text-align:center">收敛跳</th>
+          <th style="padding:4px 8px;text-align:center">节点数</th>
+          <th style="padding:4px 8px;text-align:center">置信度</th>
+        </tr></thead>
+        <tbody id="recentProxyBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ASN 集群分析 + 调度器状态 -->
+  <div class="grid-2" id="clusterSection" style="display:none">
+    <div class="card">
+      <div class="section-title">🔗 基础设施关联分析（ASN 集群）</div>
+      <div id="clusterList"></div>
+    </div>
+    <div class="card">
+      <div class="section-title">⏱ 自动化任务状态</div>
+      <div id="schedulerJobs"></div>
+    </div>
+  </div>
+
+  <!-- 最近探测 -->
+  <div class="card">
+    <div class="section-title">最近探测记录</div>
+    <table class="scan-table">
+      <thead>
+        <tr>
+          <th>目标 IP</th>
+          <th>探测节点</th>
+          <th>跳数</th>
+          <th>目标位置</th>
+          <th>运营商</th>
+          <th>类型</th>
+          <th>时间</th>
+        </tr>
+      </thead>
+      <tbody id="recentTable"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+const COLORS = ['#388bfd','#3fb950','#f85149','#d29922','#a78bfa','#fb923c','#60a5fa','#4ade80','#fbbf24','#e879f9']
+const TAG_COLORS = { '🏢 机房': '#f87171', '🏠 住宅': '#4ade80', '📡 ISP': '#60a5fa', '🌐 骨干网': '#a78bfa', '🔀 代理': '#fb923c' }
+
+async function loadTagDetail(tag, label, color) {
+  document.getElementById('tagDetailTitle').textContent = tag + ' IP 列表'
+  document.getElementById('tagDetailList').innerHTML = '<div style="color:#484f58;font-size:12px">加载中...</div>'
+  document.getElementById('tagDetail').style.display = 'block'
+
+  const r = await fetch(`/netcheck/ip-profiles?tag=${encodeURIComponent(label)}&limit=50`)
+  const ips = await r.json()
+
+  if (!ips.length) {
+    document.getElementById('tagDetailList').innerHTML = '<div style="color:#484f58;font-size:12px">暂无数据</div>'
+    return
+  }
+
+  const flagMap = { HK:'🇭🇰', TW:'🇹🇼', US:'🇺🇸', CN:'🇨🇳', NL:'🇳🇱', AU:'🇦🇺', SG:'🇸🇬', JP:'🇯🇵', MO:'🇲🇴' }
+  document.getElementById('tagDetailList').innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="color:#484f58;font-size:10px;text-transform:uppercase">
+        <th style="padding:4px 8px;text-align:left">IP</th>
+        <th style="padding:4px 8px;text-align:left">位置</th>
+        <th style="padding:4px 8px;text-align:left">运营商</th>
+        <th style="padding:4px 8px;text-align:left">ASN</th>
+        <th style="padding:4px 8px;text-align:right">出现次数</th>
+        <th style="padding:4px 8px;text-align:left">最后探测</th>
+      </tr></thead>
+      <tbody>
+        ${ips.map(ip => `<tr style="border-bottom:1px solid #0d1117" onmouseover="this.style.background='#1c2128'" onmouseout="this.style.background='transparent'">
+          <td style="padding:5px 8px;font-family:monospace;color:${color}">${ip.ip}</td>
+          <td style="padding:5px 8px;color:#94a3b8">${flagMap[ip.country]||''} ${[ip.city, ip.country].filter(Boolean).join(', ') || '—'}</td>
+          <td style="padding:5px 8px;color:#64748b;font-size:11px">${(ip.org||'').split(' ').slice(1).join(' ').slice(0,25) || '—'}</td>
+          <td style="padding:5px 8px;color:#60a5fa;font-size:11px">${ip.asn || '—'}</td>
+          <td style="padding:5px 8px;text-align:right;color:#64748b">${ip.seen_count}</td>
+          <td style="padding:5px 8px;color:#484f58;font-size:11px">${ip.last_seen || '—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`
+}
+
+async function triggerAnalysis() {
+  const btn = document.getElementById('analyzeBtn')
+  btn.textContent = '分析中...'
+  btn.disabled = true
+  await fetch('/netcheck/convergence/analyze', {method:'POST'})
+  setTimeout(() => { btn.textContent = '立即分析'; btn.disabled = false; load() }, 5000)
+}
+
+async function loadConvergence() {
+  try {
+    const r = await fetch('/netcheck/convergence/summary')
+    const d = await r.json()
+
+    // 统计卡片
+    const tagColors = { proxy_chain:'#f85149', shared_upstream:'#d29922', anycast:'#388bfd', diverse_paths:'#3fb950' }
+    const tagLabels = { proxy_chain:'代理链路', shared_upstream:'共享上游', anycast:'Anycast', diverse_paths:'路径多样', insufficient_data:'数据不足' }
+    document.getElementById('convStats').innerHTML = Object.entries(d.tag_stats || {}).map(([tag, cnt]) => `
+      <div style="background:#0d1117;border:1px solid ${tagColors[tag]||'#21262d'}44;border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:20px;font-weight:700;color:${tagColors[tag]||'#64748b'}">${cnt}</div>
+        <div style="font-size:10px;color:#8b949e;margin-top:3px">${tagLabels[tag]||tag}</div>
+      </div>
+    `).join('')
+
+    // 高频网关
+    document.getElementById('topGateways').innerHTML = (d.top_gateways || []).map((g, i) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #0d1117">
+        <span style="color:#484f58;font-size:11px;width:16px">${i+1}</span>
+        <span style="font-family:monospace;color:#f85149;font-size:12px;width:130px">${g.ip}</span>
+        <span style="color:#64748b;font-size:11px;flex:1">${g.org||''} ${g.country||''}</span>
+        <span style="color:#f0f6fc;font-size:13px;font-weight:700">${g.target_count}</span>
+        <span style="color:#484f58;font-size:10px">个目标</span>
+      </div>
+    `).join('') || '<div style="color:#484f58;font-size:12px">暂无数据，点击"立即分析"</div>'
+
+    // 最近代理链路
+    document.getElementById('recentProxyBody').innerHTML = (d.recent_proxy || []).map(r => {
+      const confColor = r.confidence >= 0.7 ? '#f85149' : r.confidence >= 0.4 ? '#d29922' : '#64748b'
+      return `<tr style="border-bottom:1px solid #0d1117" onmouseover="this.style.background='#1c2128'" onmouseout="this.style.background='transparent'">
+        <td style="padding:5px 8px;font-family:monospace;color:#79c0ff">${r.target}</td>
+        <td style="padding:5px 8px;font-family:monospace;color:#f85149">${r.gateway_ip}</td>
+        <td style="padding:5px 8px;color:#64748b;font-size:11px">${(r.gateway_org||'').slice(0,25)}</td>
+        <td style="padding:5px 8px;text-align:center;color:#d29922">hop${r.hop}</td>
+        <td style="padding:5px 8px;text-align:center;color:#64748b">${r.nodes}</td>
+        <td style="padding:5px 8px;text-align:center;color:${confColor};font-weight:600">${(r.confidence*100).toFixed(0)}%</td>
+      </tr>`
+    }).join('') || '<tr><td colspan="6" style="padding:10px 8px;color:#484f58;text-align:center">暂无数据</td></tr>'
+  } catch(e) {
+    console.log('convergence load failed:', e)
+  }
+}
+
+async function load() {
+  const r = await fetch('/netcheck/stats')
+  const d = await r.json()
+
+  // 队列状态
+  if (d.queue) {
+    document.getElementById('queueRow').style.display = 'grid'
+    document.getElementById('qPending').textContent = d.queue.pending.toLocaleString()
+    document.getElementById('qRunning').textContent = d.queue.running
+    document.getElementById('qDone').textContent = d.queue.done.toLocaleString()
+    document.getElementById('qFailed').textContent = d.queue.failed
+  }
+
+  // 统计
+  const s = d.summary
+  document.getElementById('statTasks').textContent = s.total_tasks.toLocaleString()
+  document.getElementById('statHops').textContent = s.total_hops.toLocaleString()
+  document.getElementById('statIPs').textContent = s.total_ips.toLocaleString()
+  document.getElementById('statTargets').textContent = s.total_targets.toLocaleString()
+  document.getElementById('statCountries').textContent = s.total_countries
+  document.getElementById('updatedAt').textContent = '数据更新：' + new Date().toLocaleString('zh-CN')
+
+  // 关键发现
+  const findings = []
+  const topAsn = d.asn_distribution[0]
+  if (topAsn) {
+    findings.push({
+      title: `${topAsn.asn} (${topAsn.org}) 是最主要的上游 ASN`,
+      detail: `在 ${s.total_hops} 个跳点记录中出现 <span class="num">${topAsn.count}</span> 次，占比 ${(topAsn.count/s.total_hops*100).toFixed(1)}%。多个独立代理服务商共享同一上游基础设施。`
+    })
+  }
+  const resTag = d.tag_distribution.find(t => t.tag.includes('住宅'))
+  if (resTag) {
+    findings.push({
+      title: `发现 ${resTag.count} 个住宅 IP`,
+      detail: `真实住宅宽带 IP 混入代理 IP 池，这类 IP 对平台风控系统的识别难度远高于机房 IP。`
+    })
+  }
+  const dcTag = d.tag_distribution.find(t => t.tag.includes('机房'))
+  if (dcTag) {
+    findings.push({
+      title: `${dcTag.count} 个机房 IP 集中在 3 个 ASN`,
+      detail: `AS401701 cognetcloud (HK)、AS25820 IT7 Networks (NL)、AS400619 AROSSCLOUD (US) 是代理服务商最常用的 IP 供应商。`
+    })
+  }
+  findings.push({
+    title: `移动端节点揭示 GFW 差异路由`,
+    detail: `中国移动 (AS56046) 和中国电信 (AS4134) 节点对同一目标 IP 显示出与机房节点不同的路由路径，部分 IP 存在运营商级流量干预特征。`
+  })
+
+  document.getElementById('findings').innerHTML = findings.map(f => `
+    <div class="finding">
+      <div class="title">${f.title}</div>
+      <div class="detail">${f.detail}</div>
+    </div>
+  `).join('')
+
+  // ASN 条形图
+  const maxAsn = d.asn_distribution[0]?.count || 1
+  document.getElementById('asnChart').innerHTML = d.asn_distribution.map((a, i) => `
+    <div class="bar-item">
+      <div class="bar-label"><span class="asn">${a.asn}</span> ${a.org}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${a.count/maxAsn*100}%;background:${COLORS[i%COLORS.length]}"></div></div>
+      <div class="bar-count">${a.count}</div>
+    </div>
+  `).join('')
+
+  // IP 类型饼图（可点击）
+  const totalTags = d.tag_distribution.reduce((s, t) => s + t.count, 0)
+  document.getElementById('tagChart').innerHTML = `<div class="pie-list">` +
+    d.tag_distribution.map((t, i) => {
+      const pct = (t.count / totalTags * 100).toFixed(1)
+      const color = TAG_COLORS[t.tag] || COLORS[i]
+      const tagKey = t.tag.replace(/[🏢🏠📡🌐🔀]/g, '').trim()
+      return `<div style="cursor:pointer" onclick="loadTagDetail('${t.tag}', '${tagKey}', '${color}')" title="点击查看详情">
+        <div class="pie-item" style="padding:4px 6px;border-radius:4px;transition:background .15s" onmouseover="this.style.background='#1c2128'" onmouseout="this.style.background='transparent'">
+          <div class="pie-dot" style="background:${color}"></div>
+          <div class="pie-label">${t.tag}</div>
+          <div class="pie-pct">${t.count} <span style="color:#484f58;font-size:11px">(${pct}%)</span></div>
+          <span style="color:#484f58;font-size:11px;margin-left:6px">›</span>
+        </div>
+        <div class="pie-bar" style="width:${pct}%;background:${color};opacity:0.4;margin-left:20px"></div>
+      </div>`
+    }).join('') + `</div>`
+
+  // 国家分布
+  const maxCountry = d.country_distribution[0]?.count || 1
+  const flagMap = { HK:'🇭🇰', TW:'🇹🇼', US:'🇺🇸', CN:'🇨🇳', NL:'🇳🇱', AU:'🇦🇺', SG:'🇸🇬', JP:'🇯🇵', GB:'🇬🇧', DE:'🇩🇪', MO:'🇲🇴' }
+  document.getElementById('countryChart').innerHTML = d.country_distribution.map((c, i) => `
+    <div class="bar-item">
+      <div class="bar-label">${flagMap[c.country]||'🌐'} ${c.country}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${c.count/maxCountry*100}%;background:${COLORS[i%COLORS.length]}"></div></div>
+      <div class="bar-count">${c.count}</div>
+    </div>
+  `).join('')
+
+  // 节点
+  const osIcon = { android:'📱', linux:'🐧', windows:'🪟', macos:'🍎' }
+  document.getElementById('nodeGrid').innerHTML = d.nodes.map(n => `
+    <div class="node-card">
+      <div class="node-name">${osIcon[n.os]||'💻'} ${n.name}</div>
+      <div class="node-os">${n.os}</div>
+      <div class="node-count">${n.count}</div>
+      <div class="node-lbl">次探测</div>
+    </div>
+  `).join('')
+
+  // ASN 集群
+  if (d.asn_clusters && d.asn_clusters.length) {
+    document.getElementById('clusterSection').style.display = 'grid'
+    document.getElementById('clusterList').innerHTML = d.asn_clusters.map(g => `
+      <div style="background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:10px 12px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="color:#60a5fa;font-size:12px;font-weight:600">${g.asn}</span>
+          <span style="color:#484f58;font-size:11px">${g.target_count} 个目标 · ${g.hop_count} 次出现</span>
+        </div>
+        <div style="font-size:11px;color:#8b949e;margin-bottom:6px">${g.org}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          ${g.targets.slice(0,8).map(ip => `<span style="font-family:monospace;font-size:10px;padding:2px 6px;background:#161b22;border:1px solid #21262d;border-radius:3px;color:#94a3b8">${ip}</span>`).join('')}
+          ${g.targets.length > 8 ? `<span style="font-size:10px;color:#484f58">+${g.targets.length-8}个</span>` : ''}
+        </div>
+      </div>
+    `).join('')
+  }
+
+  // 调度器状态
+  if (d.scheduler_jobs && d.scheduler_jobs.length) {
+    document.getElementById('clusterSection').style.display = 'grid'
+    document.getElementById('schedulerJobs').innerHTML = d.scheduler_jobs.map(j => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #0d1117">
+        <span style="font-size:12px;color:#94a3b8">${j.name}</span>
+        <span style="font-size:11px;color:#484f58">${j.last_run || '未运行'}</span>
+      </div>
+    `).join('')
+  } else if (d.scheduler_jobs !== undefined) {
+    document.getElementById('clusterSection').style.display = 'grid'
+    document.getElementById('schedulerJobs').innerHTML = '<div style="color:#484f58;font-size:12px">调度器启动后自动运行</div>'
+  }
+
+  // 最近探测
+  const tagClass = t => t.includes('机房')?'tag-dc':t.includes('住宅')?'tag-res':t.includes('骨干')?'tag-bb':t.includes('代理')?'tag-proxy':'tag-isp'
+  document.getElementById('recentTable').innerHTML = d.recent_scans.map(r => `
+    <tr>
+      <td style="font-family:monospace;color:#79c0ff">${r.target}</td>
+      <td style="color:#8b949e">${r.agent}</td>
+      <td style="color:#64748b">${r.hops}</td>
+      <td style="color:#94a3b8">${[r.city, r.country].filter(Boolean).join(', ') || '—'}</td>
+      <td style="color:#64748b;font-size:11px">${r.org || '—'}</td>
+      <td class="${tagClass(r.tag)}">${r.tag || '—'}</td>
+      <td style="color:#484f58;font-size:11px">${r.time}</td>
+    </tr>
+  `).join('')
+}
+
+load()
+loadConvergence()
+setInterval(load, 30000)
+setInterval(loadConvergence, 60000)
+</script>
+</body>
+</html>

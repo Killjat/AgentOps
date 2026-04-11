@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>批量 IP 探测 · CyberAgentOps</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'SF Mono', 'Consolas', monospace; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+
+.header { padding: 20px 32px; border-bottom: 1px solid #21262d; display: flex; align-items: center; gap: 16px; }
+.header h1 { font-size: 18px; font-weight: 600; color: #f0f6fc; }
+.header .sub { font-size: 13px; color: #8b949e; }
+
+.layout { display: grid; grid-template-columns: 360px 1fr; gap: 0; height: calc(100vh - 65px); }
+
+/* 左侧输入面板 */
+.input-panel { border-right: 1px solid #21262d; padding: 24px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+.input-panel h2 { font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+
+textarea {
+  width: 100%; height: 200px; background: #161b22; border: 1px solid #30363d;
+  border-radius: 6px; color: #e6edf3; font-family: inherit; font-size: 13px;
+  padding: 12px; resize: vertical; outline: none; line-height: 1.6;
+}
+textarea:focus { border-color: #388bfd; }
+textarea::placeholder { color: #484f58; }
+
+.options { display: flex; flex-direction: column; gap: 10px; }
+.option-row { display: flex; align-items: center; justify-content: space-between; }
+.option-row label { font-size: 13px; color: #8b949e; }
+select, input[type=number] {
+  background: #161b22; border: 1px solid #30363d; border-radius: 4px;
+  color: #e6edf3; font-size: 13px; padding: 4px 8px; outline: none;
+}
+select:focus, input[type=number]:focus { border-color: #388bfd; }
+
+.node-list { display: flex; flex-direction: column; gap: 6px; }
+.node-item { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.node-item input[type=checkbox] { accent-color: #388bfd; }
+.node-dot { width: 7px; height: 7px; border-radius: 50%; background: #3fb950; flex-shrink: 0; }
+.node-dot.offline { background: #484f58; }
+
+.btn-submit {
+  width: 100%; padding: 10px; background: #238636; border: none; border-radius: 6px;
+  color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s;
+}
+.btn-submit:hover { background: #2ea043; }
+.btn-submit:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat-box { background: #161b22; border: 1px solid #21262d; border-radius: 6px; padding: 10px; text-align: center; }
+.stat-box .num { font-size: 22px; font-weight: 700; color: #f0f6fc; }
+.stat-box .lbl { font-size: 11px; color: #8b949e; margin-top: 2px; }
+
+/* 右侧结果面板 */
+.result-panel { overflow-y: auto; padding: 24px; }
+.result-panel h2 { font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; }
+
+.target-grid { display: flex; flex-direction: column; gap: 12px; }
+
+.target-card {
+  background: #161b22; border: 1px solid #21262d; border-radius: 8px; overflow: hidden;
+  transition: border-color 0.2s;
+}
+.target-card.running { border-color: #388bfd44; }
+.target-card.success { border-color: #3fb95044; }
+.target-card.failed  { border-color: #f8514944; }
+
+.card-header {
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  cursor: pointer; user-select: none;
+}
+.card-header:hover { background: #1c2128; }
+
+.status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.status-dot.pending  { background: #484f58; }
+.status-dot.running  { background: #388bfd; animation: pulse 1s infinite; }
+.status-dot.success  { background: #3fb950; }
+.status-dot.failed   { background: #f85149; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.card-target { font-size: 14px; font-weight: 600; color: #f0f6fc; flex: 1; }
+.card-meta { font-size: 12px; color: #8b949e; }
+.card-score { font-size: 13px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+.score-high { background: #1a4731; color: #3fb950; }
+.score-mid  { background: #3d2b00; color: #d29922; }
+.score-low  { background: #3d1a1a; color: #f85149; }
+
+.card-body { padding: 0 16px 16px; display: none; }
+.card-body.open { display: block; }
+
+.node-results { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.node-result { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 10px 12px; }
+.node-result-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.node-name { font-size: 12px; font-weight: 600; color: #79c0ff; }
+.node-latency { font-size: 12px; color: #8b949e; }
+
+.hops-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.hop-tag {
+  font-size: 11px; padding: 2px 6px; border-radius: 3px;
+  background: #21262d; color: #8b949e; white-space: nowrap;
+}
+.hop-tag.last { background: #1a4731; color: #3fb950; font-weight: 600; }
+.hop-tag.private { background: #1c2128; color: #484f58; }
+
+.analysis-box { margin-top: 10px; padding: 10px; background: #0d1117; border-radius: 6px; border-left: 3px solid #388bfd; }
+.analysis-box .flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.flag-tag { font-size: 12px; padding: 3px 8px; background: #21262d; border-radius: 4px; color: #e6edf3; }
+
+.empty-state { text-align: center; padding: 80px 20px; color: #484f58; }
+.empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+.empty-state p { font-size: 14px; }
+
+.progress-bar { height: 3px; background: #21262d; border-radius: 2px; margin-bottom: 16px; overflow: hidden; }
+.progress-fill { height: 100%; background: #388bfd; border-radius: 2px; transition: width 0.3s; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>🔍 批量 IP 探测</h1>
+    <div class="sub">多节点并发 traceroute，结果自动入库分析</div>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- 左侧 -->
+  <div class="input-panel">
+    <div>
+      <h2>目标列表</h2>
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <input id="fofaQuery" type="text" placeholder='FOFA 查询，如: country="CN" && port="443"'
+          style="flex:1;background:#161b22;border:1px solid #30363d;border-radius:4px;color:#e6edf3;font-size:12px;padding:5px 8px;outline:none">
+        <input id="fofaSize" type="number" value="50" min="1" max="200"
+          style="width:52px;background:#161b22;border:1px solid #30363d;border-radius:4px;color:#e6edf3;font-size:12px;padding:5px 6px;outline:none">
+        <button onclick="importFromFofa()" style="background:#1f6feb;border:none;border-radius:4px;color:#fff;font-size:12px;padding:5px 10px;cursor:pointer;white-space:nowrap">导入</button>
+      </div>
+      <textarea id="targetInput" placeholder="每行一个 IP 或域名，例如：
+1.1.1.1
+8.8.8.8
+tiktok.com
+104.245.96.248"></textarea>
+    </div>
+
+    <div class="options">
+      <h2>探测选项</h2>
+      <div class="option-row">
+        <label>并发数</label>
+        <input type="number" id="concurrency" value="3" min="1" max="10" style="width:60px">
+      </div>
+      <div class="option-row">
+        <label>每目标节点数</label>
+        <input type="number" id="nodeCount" value="3" min="1" max="8" style="width:60px">
+      </div>
+    </div>
+
+    <div>
+      <h2 style="margin-bottom:10px">探测节点</h2>
+      <div class="node-list" id="nodeList">
+        <div style="color:#484f58;font-size:13px">加载中...</div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat-box"><div class="num" id="statTotal">0</div><div class="lbl">总计</div></div>
+      <div class="stat-box"><div class="num" id="statDone">0</div><div class="lbl">完成</div></div>
+      <div class="stat-box"><div class="num" id="statFail">0</div><div class="lbl">失败</div></div>
+    </div>
+
+    <button class="btn-submit" id="btnSubmit" onclick="startScan()">开始探测</button>
+  </div>
+
+  <!-- 右侧 -->
+  <div class="result-panel">
+    <h2>探测结果</h2>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+    <div class="target-grid" id="resultGrid">
+      <div class="empty-state">
+        <div class="icon">🌐</div>
+        <p>输入 IP 或域名，点击开始探测</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let token = localStorage.getItem('token') || '';
+let onlineAgents = [];
+let scanState = { total: 0, done: 0, fail: 0 };
+
+async function authHeaders() {
+  if (!token) {
+    const r = await fetch(`${API}/auth/login`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({username:'admin', password:'admin123'})
+    });
+    const d = await r.json();
+    token = d.token || '';
+    localStorage.setItem('token', token);
+  }
+  return { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+}
+
+async function importFromFofa() {
+  const q = document.getElementById('fofaQuery').value.trim()
+  if (!q) { alert('请输入 FOFA 查询语句'); return }
+  const size = parseInt(document.getElementById('fofaSize').value) || 50
+  const btn = document.querySelector('button[onclick="importFromFofa()"]')
+  btn.textContent = '查询中...'
+  btn.disabled = true
+  try {
+    const h = await authHeaders()
+    const r = await fetch(`${API}/netcheck/fofa/search?q=${encodeURIComponent(q)}&size=${size}`, { headers: h })
+    const d = await r.json()
+    if (d.detail) throw new Error(d.detail)
+    const existing = document.getElementById('targetInput').value.trim()
+    const newIps = d.ips.join('\n')
+    document.getElementById('targetInput').value = existing ? existing + '\n' + newIps : newIps
+    btn.textContent = `✅ 导入 ${d.ips.length} 个`
+    setTimeout(() => { btn.textContent = '导入'; btn.disabled = false }, 2000)
+  } catch(e) {
+    alert('FOFA 查询失败: ' + e.message)
+    btn.textContent = '导入'
+    btn.disabled = false
+  }
+}
+
+async function loadAgents() {
+  try {
+    const h = await authHeaders();
+    const r = await fetch(`${API}/agents`, { headers: h });
+    const agents = await r.json();
+    onlineAgents = agents.filter(a => a.status === 'online');
+
+    const list = document.getElementById('nodeList');
+    list.innerHTML = onlineAgents.map(a => `
+      <label class="node-item">
+        <input type="checkbox" value="${a.agent_id}" checked>
+        <span class="node-dot"></span>
+        <span>${a.name || a.agent_id}</span>
+        <span style="color:#484f58;font-size:11px;margin-left:auto">${a.os_type || ''}</span>
+      </label>
+    `).join('') || '<div style="color:#484f58;font-size:13px">暂无在线节点</div>';
+  } catch(e) {
+    document.getElementById('nodeList').innerHTML = '<div style="color:#f85149;font-size:13px">加载失败</div>';
+  }
+}
+
+function getSelectedAgents() {
+  return [...document.querySelectorAll('#nodeList input[type=checkbox]:checked')].map(c => c.value);
+}
+
+function parseTargets() {
+  return document.getElementById('targetInput').value
+    .split('\n')
+    .map(s => s.trim())
+    .filter(s => s && !s.startsWith('#'));
+}
+
+function scoreClass(s) {
+  if (s >= 70) return 'score-high';
+  if (s >= 40) return 'score-mid';
+  return 'score-low';
+}
+
+function renderCard(target, state) {
+  const card = document.getElementById(`card-${CSS.escape(target)}`);
+  if (!card) return;
+
+  const header = card.querySelector('.card-header');
+  const body = card.querySelector('.card-body');
+  const dot = card.querySelector('.status-dot');
+  const meta = card.querySelector('.card-meta');
+  const scoreEl = card.querySelector('.card-score');
+
+  dot.className = `status-dot ${state.status}`;
+  card.className = `target-card ${state.status}`;
+
+  if (state.status === 'running') {
+    meta.textContent = '探测中...';
+    scoreEl.textContent = '';
+    scoreEl.className = 'card-score';
+  } else if (state.status === 'success' && state.data) {
+    const d = state.data;
+    const profile = d.ip_profile || {};
+    const analysis = d.analysis || {};
+    const score = analysis.score ?? '-';
+    meta.textContent = `${profile.city || ''} ${profile.country || ''} · ${profile.org || ''}`.trim();
+    scoreEl.textContent = score !== '-' ? `${score}分` : '';
+    scoreEl.className = `card-score ${scoreClass(score)}`;
+
+    // 渲染节点结果
+    const results = (d.results || []).filter(r => r.status === 'success');
+    body.innerHTML = `
+      <div class="node-results">
+        ${results.map(r => {
+          const last3 = r.last3 || [];
+          return `
+          <div class="node-result">
+            <div class="node-result-header">
+              <span class="node-name">${r.name || r.agent_id}</span>
+              <span class="node-latency">${r.last_latency ? r.last_latency + 'ms' : ''}</span>
+              <span style="color:#484f58;font-size:11px;margin-left:auto">${r.total_hops || 0}跳</span>
+            </div>
+            <div class="hops-list">
+              ${last3.map((h, i) => `
+                <span class="hop-tag ${i === last3.length-1 ? 'last' : ''}">
+                  ${h.ip}${h.city ? ' · '+h.city : ''}${h.country ? ' '+h.country : ''}
+                </span>
+              `).join('<span style="color:#484f58;padding:0 2px">→</span>')}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      ${analysis.flags && analysis.flags.length ? `
+      <div class="analysis-box">
+        <div style="font-size:12px;color:#8b949e">${analysis.verdict || ''}</div>
+        <div class="flags">${analysis.flags.map(f => `<span class="flag-tag">${f}</span>`).join('')}</div>
+      </div>` : ''}
+    `;
+  } else if (state.status === 'failed') {
+    meta.textContent = state.error || '探测失败';
+    scoreEl.textContent = '';
+  }
+}
+
+async function pollScan(target, taskId, cardState) {
+  const maxWait = 90;
+  const interval = 3;
+  let waited = 0;
+
+  while (waited < maxWait) {
+    await new Promise(r => setTimeout(r, interval * 1000));
+    waited += interval;
+    try {
+      const h = await authHeaders();
+      const r = await fetch(`${API}/netcheck/probe/scan/${taskId}`, { headers: h });
+      const d = await r.json();
+      if (d.status === 'success' || d.status === 'failed') {
+        cardState.status = d.status === 'success' ? 'success' : 'failed';
+        cardState.data = d;
+        cardState.error = d.error || '';
+        renderCard(target, cardState);
+        return d.status === 'success';
+      }
+    } catch(e) {}
+  }
+  cardState.status = 'failed';
+  cardState.error = '超时';
+  renderCard(target, cardState);
+  return false;
+}
+
+async function startScan() {
+  const targets = parseTargets();
+  if (!targets.length) { alert('请输入至少一个目标'); return; }
+
+  const selectedAgents = getSelectedAgents();
+  if (!selectedAgents.length) { alert('请选择至少一个探测节点'); return; }
+
+  const nodeCount = parseInt(document.getElementById('nodeCount').value) || 3;
+  const concurrency = parseInt(document.getElementById('concurrency').value) || 3;
+  const agentIds = selectedAgents.slice(0, nodeCount);
+
+  // 初始化状态
+  scanState = { total: targets.length, done: 0, fail: 0 };
+  document.getElementById('statTotal').textContent = targets.length;
+  document.getElementById('statDone').textContent = 0;
+  document.getElementById('statFail').textContent = 0;
+  document.getElementById('progressFill').style.width = '0%';
+  document.getElementById('btnSubmit').disabled = true;
+
+  // 渲染空卡片
+  const grid = document.getElementById('resultGrid');
+  grid.innerHTML = targets.map(t => `
+    <div class="target-card pending" id="card-${CSS.escape(t)}">
+      <div class="card-header" onclick="toggleCard('${t}')">
+        <span class="status-dot pending"></span>
+        <span class="card-target">${t}</span>
+        <span class="card-meta">等待中</span>
+        <span class="card-score"></span>
+      </div>
+      <div class="card-body"></div>
+    </div>
+  `).join('');
+
+  const cardStates = {};
+  targets.forEach(t => cardStates[t] = { status: 'pending' });
+
+  // 并发控制
+  const queue = [...targets];
+  const workers = Array(concurrency).fill(null).map(async () => {
+    while (queue.length) {
+      const target = queue.shift();
+      if (!target) break;
+
+      cardStates[target].status = 'running';
+      renderCard(target, cardStates[target]);
+
+      try {
+        const h = await authHeaders();
+        const r = await fetch(`${API}/netcheck/probe/scan`, {
+          method: 'POST', headers: h,
+          body: JSON.stringify({ target_ip: target, agent_ids: agentIds })
+        });
+        const d = await r.json();
+        if (d.task_id) {
+          const ok = await pollScan(target, d.task_id, cardStates[target]);
+          if (ok) scanState.done++; else scanState.fail++;
+        } else {
+          cardStates[target].status = 'failed';
+          cardStates[target].error = d.detail || '提交失败';
+          renderCard(target, cardStates[target]);
+          scanState.fail++;
+        }
+      } catch(e) {
+        cardStates[target].status = 'failed';
+        cardStates[target].error = e.message;
+        renderCard(target, cardStates[target]);
+        scanState.fail++;
+      }
+
+      document.getElementById('statDone').textContent = scanState.done;
+      document.getElementById('statFail').textContent = scanState.fail;
+      const pct = Math.round((scanState.done + scanState.fail) / scanState.total * 100);
+      document.getElementById('progressFill').style.width = pct + '%';
+    }
+  });
+
+  await Promise.all(workers);
+  document.getElementById('btnSubmit').disabled = false;
+}
+
+function toggleCard(target) {
+  const card = document.getElementById(`card-${CSS.escape(target)}`);
+  const body = card.querySelector('.card-body');
+  body.classList.toggle('open');
+}
+
+loadAgents();
+</script>
+</body>
+</html>

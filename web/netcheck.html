@@ -220,6 +220,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
             {{ a.name || a.agent_id.slice(0,8) }} · {{ a.os_type }}
           </option>
         </select>
+        <!-- 安装自己的 Agent -->
+        <div v-if="!myAgent" style="margin-top:8px;padding:10px;background:#0a0d14;border:1px dashed #2d3148;border-radius:8px">
+          <div style="font-size:11px;color:#475569;margin-bottom:8px">用自己的网络测试，结果更准确</div>
+          <div style="display:flex;gap:6px">
+            <button @click="downloadAgent('mac')" style="flex:1;padding:5px;background:#1a1527;border:1px solid #2d3148;border-radius:6px;color:#a78bfa;font-size:11px;cursor:pointer">🍎 Mac</button>
+            <button @click="downloadAgent('windows')" style="flex:1;padding:5px;background:#1a1527;border:1px solid #2d3148;border-radius:6px;color:#60a5fa;font-size:11px;cursor:pointer">🪟 Win</button>
+            <button @click="downloadAgent('linux')" style="flex:1;padding:5px;background:#1a1527;border:1px solid #2d3148;border-radius:6px;color:#4ade80;font-size:11px;cursor:pointer">🐧 Linux</button>
+          </div>
+          <div v-if="installToken" style="margin-top:8px;font-size:10px;color:#334155">
+            等待连接中 <span style="animation:pulse 1s infinite;display:inline-block">●</span>
+          </div>
+        </div>
+        <div v-else style="margin-top:8px;padding:8px 10px;background:#0a1f0a;border:1px solid #1a5a2e;border-radius:8px;font-size:11px;color:#4ade80">
+          ✅ 你的 Agent 已连接：{{ myAgent.name || myAgent.agent_id.slice(0,10) }}
+        </div>
       </div>
       <div>
         <div class="label">检测模式</div>
@@ -560,6 +575,8 @@ createApp({
     const selectedAgent = ref('')
     const agents = ref([])
     const mode = ref('once')
+    const installToken = ref(localStorage.getItem('agent_install_token') || '')
+    const myAgent = ref(null)
     const running = ref(false)
     const started = ref(false)
     const currentAgent = ref('')
@@ -1051,10 +1068,42 @@ createApp({
       return findings
     }
 
-    onMounted(() => { loadAgents(); setInterval(loadAgents, 30000) })
+    onMounted(() => {
+      loadAgents()
+      setInterval(loadAgents, 30000)
+      // 如果有 installToken，轮询检测 agent 是否上线
+      if (installToken.value) pollMyAgent()
+    })
+
+    async function downloadAgent(platform) {
+      const token = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10)
+      installToken.value = token
+      localStorage.setItem('agent_install_token', token)
+      // 下载 zip 包（二进制 + agent.conf）
+      window.location.href = `/agent/package/${platform}?token=${token}`
+      // 开始轮询
+      setTimeout(pollMyAgent, 5000)
+    }
+
+    let pollTimer = null
+    async function pollMyAgent() {
+      if (!installToken.value) return
+      try {
+        const r = await fetch(`/agents/by-token/${installToken.value}`)
+        const d = await r.json()
+        if (d.found && d.status === 'online') {
+          myAgent.value = d
+          selectedAgent.value = d.agent_id
+          clearTimeout(pollTimer)
+          return
+        }
+      } catch(e) {}
+      pollTimer = setTimeout(pollMyAgent, 3000)
+    }
 
     return {
       tab, target, selectedAgent, agents, mode, running, started, currentAgent, presets,
+      installToken, myAgent, downloadAgent,
       latencyChart, jitterChart, scoreRing, radarCanvas,
       purityRing, purityData,
       hops, ipInfo, riskFlags, dnsLeak, stats,

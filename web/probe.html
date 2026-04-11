@@ -670,7 +670,106 @@ function renderReconResult(data, targetIp) {
   })
 
   html += `</div>`
+
+  // 威胁情报占位块（异步加载）
+  html += `
+  <div id="threatIntelBox" style="background:#0f1117;border:1px solid #1e2240;border-radius:12px;padding:14px;margin-top:12px">
+    <div style="font-size:10px;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px">🛡️ 威胁情报历史</div>
+    <div id="threatIntelContent" style="color:#334155;font-size:12px">查询中...</div>
+  </div>`
+
   document.getElementById('reconResult').innerHTML = html
+
+  // 异步加载威胁情报
+  loadThreatIntel(targetIp)
+}
+
+async function loadThreatIntel(ip) {
+  const box = document.getElementById('threatIntelContent')
+  if (!box) return
+  try {
+    const r = await fetch(`/netcheck/threat/${ip}`)
+    const d = await r.json()
+    if (!d || d.detail) {
+      box.innerHTML = '<span style="color:#334155">暂无数据</span>'
+      return
+    }
+
+    const levelColor = d.risk_level === 'malicious' ? '#f87171' : d.risk_level === 'suspicious' ? '#fbbf24' : '#4ade80'
+    const levelText = d.risk_level === 'malicious' ? '高危' : d.risk_level === 'suspicious' ? '可疑' : '干净'
+
+    let html = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <span style="padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;background:${levelColor}22;color:${levelColor};border:1px solid ${levelColor}44">${levelText}</span>
+      <span style="font-size:11px;color:#475569">综合威胁评估</span>
+    </div>`
+
+    // 风险标签
+    if (d.risk_tags?.length) {
+      html += `<div style="display:flex;flex-direction:column;gap:5px;margin-bottom:10px">`
+      d.risk_tags.forEach(t => {
+        html += `<div style="font-size:12px;color:#94a3b8;padding:4px 0;border-bottom:1px solid #0a0d14">${t}</div>`
+      })
+      html += `</div>`
+    }
+
+    // AbuseIPDB
+    const ab = d.abuseipdb
+    if (ab?.available) {
+      const abColor = ab.abuse_score >= 80 ? '#f87171' : ab.abuse_score >= 25 ? '#fbbf24' : '#4ade80'
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #0a0d14">
+        <span style="font-size:11px;color:#64748b">AbuseIPDB 滥用评分</span>
+        <span style="font-size:13px;font-weight:700;color:${abColor}">${ab.abuse_score}/100</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #0a0d14">
+        <span style="font-size:11px;color:#64748b">举报次数（近90天）</span>
+        <span style="font-size:12px;color:#94a3b8">${ab.total_reports} 次 / ${ab.distinct_users} 个用户</span>
+      </div>`
+      if (ab.last_reported) {
+        html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #0a0d14">
+          <span style="font-size:11px;color:#64748b">最后举报时间</span>
+          <span style="font-size:12px;color:#94a3b8">${ab.last_reported.slice(0,10)}</span>
+        </div>`
+      }
+      if (ab.categories?.length) {
+        html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #0a0d14">
+          <span style="font-size:11px;color:#64748b">举报类型</span>
+          <span style="font-size:11px;color:#94a3b8">${ab.categories.join(' · ')}</span>
+        </div>`
+      }
+    } else if (ab && !ab.available) {
+      html += `<div style="font-size:11px;color:#334155;padding:4px 0">AbuseIPDB：${ab.reason || '未配置'}</div>`
+    }
+
+    // VirusTotal
+    const vt = d.virustotal
+    if (vt?.available && !vt.not_found) {
+      const vtColor = vt.malicious >= 5 ? '#f87171' : vt.malicious >= 1 ? '#fbbf24' : '#4ade80'
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #0a0d14">
+        <span style="font-size:11px;color:#64748b">VirusTotal 恶意引擎</span>
+        <span style="font-size:13px;font-weight:700;color:${vtColor}">${vt.malicious} / ${vt.malicious+vt.suspicious+vt.harmless+vt.undetected}</span>
+      </div>`
+      if (vt.tags?.length) {
+        html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #0a0d14">
+          <span style="font-size:11px;color:#64748b">标签</span>
+          <span style="font-size:11px;color:#94a3b8">${vt.tags.join(' · ')}</span>
+        </div>`
+      }
+      if (vt.last_analysis_date) {
+        html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0">
+          <span style="font-size:11px;color:#64748b">最后分析时间</span>
+          <span style="font-size:12px;color:#94a3b8">${vt.last_analysis_date}</span>
+        </div>`
+      }
+    } else if (vt?.not_found) {
+      html += `<div style="font-size:11px;color:#334155;padding:4px 0">VirusTotal：无记录</div>`
+    } else if (vt && !vt.available) {
+      html += `<div style="font-size:11px;color:#334155;padding:4px 0">VirusTotal：${vt.reason || '未配置'}</div>`
+    }
+
+    box.innerHTML = html
+  } catch(e) {
+    box.innerHTML = `<span style="color:#334155">查询失败: ${e.message}</span>`
+  }
 }
 
 // ── IP 情报提取（核心逻辑）──────────────────────────────────

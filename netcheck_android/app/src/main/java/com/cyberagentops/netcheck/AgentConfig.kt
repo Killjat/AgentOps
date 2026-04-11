@@ -23,10 +23,13 @@ object AgentConfig {
         val prefs = prefs(context)
         var id = prefs.getString(KEY_AGENT_ID, "") ?: ""
         if (id.isEmpty()) {
-            id = "android-" + android.provider.Settings.Secure.getString(
-                context.contentResolver,
-                android.provider.Settings.Secure.ANDROID_ID
-            ).take(8)
+            // 用硬件信息生成稳定 ID，不依赖 ANDROID_ID（ANDROID_ID 随签名变化）
+            val raw = "${android.os.Build.MODEL}-${android.os.Build.HARDWARE}-${android.os.Build.BOARD}"
+            val hash = java.security.MessageDigest.getInstance("MD5")
+                .digest(raw.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+                .take(8)
+            id = "android-$hash"
             prefs.edit().putString(KEY_AGENT_ID, id).apply()
         }
         return id
