@@ -14,7 +14,7 @@ jobs:
           - os: ubuntu-latest
             name: linux
             output: cyberagent-linux
-          - os: macos-latest
+          - os: macos-13
             name: macos
             output: cyberagent-mac
           - os: windows-latest
