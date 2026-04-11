@@ -224,7 +224,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <div v-if="!myAgent" style="margin-top:8px;padding:10px;background:#0a0d14;border:1px dashed #2d3148;border-radius:8px">
           <div style="font-size:11px;color:#475569;margin-bottom:8px">用自己的网络测试，结果更准确</div>
           <div style="display:flex;gap:6px">
-            <button @click="downloadAgent('mac')" style="flex:1;padding:5px;background:#1a1527;border:1px solid #2d3148;border-radius:6px;color:#a78bfa;font-size:11px;cursor:pointer">🍎 Mac</button>
+            <button @click="downloadAgent('mac')" style="flex:1;padding:5px;background:#1a1527;border:1px solid #2d3148;border-radius:6px;color:#a78bfa;font-size:11px;cursor:pointer">🍎 Mac ARM</button>
+            <button @click="downloadAgent('mac-intel')" style="flex:1;padding:5px;background:#1a1527;border:1px solid #2d3148;border-radius:6px;color:#a78bfa;font-size:11px;cursor:pointer">🍎 Mac Intel</button>
             <button @click="downloadAgent('windows')" style="flex:1;padding:5px;background:#1a1527;border:1px solid #2d3148;border-radius:6px;color:#60a5fa;font-size:11px;cursor:pointer">🪟 Win</button>
             <button @click="downloadAgent('linux')" style="flex:1;padding:5px;background:#1a1527;border:1px solid #2d3148;border-radius:6px;color:#4ade80;font-size:11px;cursor:pointer">🐧 Linux</button>
           </div>
@@ -1079,9 +1080,8 @@ createApp({
       const token = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10)
       installToken.value = token
       localStorage.setItem('agent_install_token', token)
-      // 下载 zip 包（二进制 + agent.conf）
+      // mac 自动检测架构（通过 navigator.userAgent 无法准确判断，提供两个选项）
       window.location.href = `/agent/package/${platform}?token=${token}`
-      // 开始轮询
       setTimeout(pollMyAgent, 5000)
     }
 

@@ -184,7 +184,7 @@ if WEB_DIR.exists():
     AGENT_BASE_URL = "https://github.com/Killjat/agentops/releases/latest/download"
 
     @app.get("/agent/package/{platform}")
-    async def agent_package(platform: str, token: str = ""):
+    async def agent_package(platform: str, token: str = "", arch: str = ""):
         """打包下载：二进制 + agent.conf，用户解压双击即可"""
         import secrets as _sec, zipfile, io
         from fastapi.responses import StreamingResponse
@@ -192,11 +192,17 @@ if WEB_DIR.exists():
         if not token:
             token = _sec.token_hex(8)
 
+        # mac 根据 arch 参数选择版本
         platform_map = {
             "mac":     ("cyberagent-mac",         "cyberagent-mac"),
+            "mac-intel": ("cyberagent-mac-intel",  "cyberagent-mac"),
             "linux":   ("cyberagent-linux",        "cyberagent-linux"),
             "windows": ("cyberagent-windows.exe",  "cyberagent.exe"),
         }
+        # mac 自动选架构
+        if platform == "mac" and arch == "x86_64":
+            platform = "mac-intel"
+
         if platform not in platform_map:
             return {"error": "unsupported platform"}
 

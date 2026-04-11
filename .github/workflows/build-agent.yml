@@ -14,9 +14,14 @@ jobs:
           - os: ubuntu-latest
             name: linux
             output: cyberagent-linux
-          - os: macos-13
+          - os: macos-latest
             name: macos
             output: cyberagent-mac
+            arch: arm64
+          - os: macos-latest
+            name: macos-intel
+            output: cyberagent-mac-intel
+            arch: x86_64
           - os: windows-latest
             name: windows
             output: cyberagent-windows.exe
@@ -37,6 +42,10 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: |
           cd agent
+          ARCH_ARG=""
+          if [ -n "${{ matrix.arch }}" ]; then
+            ARCH_ARG="--target-arch ${{ matrix.arch }}"
+          fi
           pyinstaller \
             --onefile \
             --name ${{ matrix.output }} \
@@ -50,6 +59,7 @@ jobs:
             --hidden-import windows \
             --hidden-import android \
             --hidden-import base \
+            $ARCH_ARG \
             agent.py
 
       - name: Build (Windows)
