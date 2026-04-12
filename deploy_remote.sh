@@ -30,6 +30,10 @@ tar --exclude='.git' \
     --exclude='.env' \
     --exclude='hosts.yaml' \
     --exclude='users.json' \
+    --exclude='agent/dist' \
+    --exclude='agent/build' \
+    --exclude='agent/android' \
+    --exclude='netcheck_android' \
     -czf /tmp/cyberagentops.tar.gz \
     agent/ server/ web/ swarm/ netcheck/ scripts/ requirements.txt .env.example
 
@@ -47,6 +51,11 @@ cd $REMOTE_DIR
 tar -xzf /tmp/cyberagentops.tar.gz --strip-components=0
 rm /tmp/cyberagentops.tar.gz
 pip3 install -r requirements.txt -q 2>/dev/null
+
+# 同步 nginx 配置（cyberagentops 主配置）
+cp $REMOTE_DIR/deploy/nginx.conf /etc/nginx/sites-available/cyberagentops
+ln -sf /etc/nginx/sites-available/cyberagentops /etc/nginx/sites-enabled/cyberagentops
+nginx -t && systemctl reload nginx 2>/dev/null || true
 
 # 更新 systemd 服务文件
 cat > /etc/systemd/system/cyberagentops.service << EOF

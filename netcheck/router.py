@@ -48,10 +48,11 @@ from pydantic import BaseModel as _BM
 class PingRequest(_BM):
     agent_id: str
     target: str
+    mode: str = "direct"   # direct=裸连  proxy=走系统代理
 
 @router.post("/ping")
 async def quick_ping(req: PingRequest):
-    """快速单次 ping，返回延迟；同时触发后台完整检测任务（首次调用）"""
+    """快速单次延迟检测，优先用 HTTP，fallback 到 ping"""
     if not _is_safe_target(req.target):
         raise HTTPException(400, "目标地址不合法")
     from routers.agents import _ws_call
@@ -61,26 +62,83 @@ async def quick_ping(req: PingRequest):
     os_type = getattr(agent.os_type, "value", str(agent.os_type)) if agent else "linux"
     is_win = "windows" in os_type.lower()
 
-    if is_win:
-        cmd = f"ping -n 1 {req.target}"
+    # 优先用 HTTP 测延迟（更准确，不受 ICMP 屏蔽影响）
+    target = req.target
+    mode = req.mode  # direct / proxy
+    if not target.startswith("http"):
+        http_target = f"https://{target}"
     else:
-        cmd = f"ping -c 1 -W 3 {req.target} 2>/dev/null"
+        http_target = target
+
+    if mode == "proxy":
+        # 走系统代理：先探测系统代理端口，再用 curl -x 走代理
+        if is_win:
+            # Windows：读注册表代理
+            detect_cmd = "powershell -Command \"(Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings').ProxyServer\""
+        else:
+            # Mac/Linux：读系统代理（Clash 默认 7890，V2Ray 默认 10809）
+            detect_cmd = "networksetup -getwebproxy Wi-Fi 2>/dev/null || echo 'port:7890'"
+
+        try:
+            proxy_resp = await _ws_call(req.agent_id, {"type": "exec", "command": detect_cmd, "timeout": 5}, timeout=7)
+            proxy_raw = proxy_resp.get("output", "") or ""
+            # 提取代理端口
+            import re as _re
+            port_m = _re.search(r'(?:Port|port|:)\s*(\d{4,5})', proxy_raw)
+            proxy_port = port_m.group(1) if port_m else "7890"
+            proxy_addr = f"http://127.0.0.1:{proxy_port}"
+        except Exception:
+            proxy_addr = "http://127.0.0.1:7890"
+
+        if is_win:
+            cmd = f"powershell -Command \"$s=Get-Date; try{{Invoke-WebRequest -Uri '{http_target}' -Proxy '{proxy_addr}' -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop | Out-Null; [int](New-TimeSpan -Start $s -End (Get-Date)).TotalMilliseconds}} catch{{0}}\""
+        else:
+            cmd = f"curl -o /dev/null -s -w '%{{time_total}}' --max-time 5 --connect-timeout 3 -x {proxy_addr} {http_target} 2>/dev/null"
+    else:
+        # 裸连：强制不走代理
+        if is_win:
+            cmd = f"powershell -Command \"$s=Get-Date; try{{Invoke-WebRequest -Uri '{http_target}' -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop | Out-Null; [int](New-TimeSpan -Start $s -End (Get-Date)).TotalMilliseconds}} catch{{0}}\""
+        else:
+            cmd = f"curl -o /dev/null -s -w '%{{time_total}}' --max-time 5 --connect-timeout 3 --noproxy '*' {http_target} 2>/dev/null"
 
     try:
-        resp = await _ws_call(req.agent_id, {"type": "exec", "command": cmd, "timeout": 10}, timeout=12)
+        resp = await _ws_call(req.agent_id, {"type": "exec", "command": cmd, "timeout": 8}, timeout=10)
         raw = resp.get("output", "") or ""
-        import re
-        # 解析延迟
-        m = re.search(r'time[=<]([\d.]+)\s*ms', raw, re.IGNORECASE)
-        if not m:
-            m = re.search(r'([\d.]+)\s*ms', raw)
-        latency = round(float(m.group(1))) if m else 0
-        loss = latency == 0 or "100%" in raw or "unreachable" in raw.lower()
+        raw = raw.strip().strip("'\"")
+
+        latency = 0
+        if is_win:
+            try:
+                latency = int(raw)
+            except Exception:
+                latency = 0
+        else:
+            # curl 返回秒数如 0.234，转成毫秒
+            try:
+                latency = round(float(raw) * 1000)
+            except Exception:
+                latency = 0
+
+        # HTTP 失败时 fallback 到 ping
+        if latency == 0:
+            if is_win:
+                ping_cmd = f"ping -n 1 {target}"
+            else:
+                ping_cmd = f"ping -c 1 -W 3 {target} 2>/dev/null"
+            ping_resp = await _ws_call(req.agent_id, {"type": "exec", "command": ping_cmd, "timeout": 6}, timeout=8)
+            ping_raw = ping_resp.get("output", "") or ""
+            m = re.search(r'time[=<]([\d.]+)\s*ms', ping_raw, re.IGNORECASE)
+            if not m:
+                m = re.search(r'([\d.]+)\s*ms', ping_raw)
+            if m:
+                latency = round(float(m.group(1)))
+
+        loss = "100%" in raw or "unreachable" in raw.lower() or "0 received" in raw
+
     except Exception as e:
-        return {"latency_ms": 0, "loss": True, "error": str(e)}
+        return {"latency_ms": 0, "loss": False, "error": str(e)}
 
     # 首次调用时触发完整检测任务（后台）
-    task_id = None
     cache_key = f"{req.agent_id}:{req.target}"
     if cache_key not in _ping_task_cache:
         task_id = f"nc-{uuid.uuid4().hex[:8]}"
@@ -92,7 +150,7 @@ async def quick_ping(req: PingRequest):
         _ping_task_cache[cache_key] = task_id
         asyncio.create_task(_run_check(task))
 
-    return {"latency_ms": latency, "loss": loss, "task_id": _ping_task_cache.get(cache_key)}
+    return {"latency_ms": latency, "loss": loss, "mode": mode, "task_id": _ping_task_cache.get(cache_key)}
 
 _ping_task_cache: dict = {}
 

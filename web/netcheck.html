@@ -244,6 +244,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
           <span class="chip" :class="{on:mode==='continuous'}" @click="mode='continuous'">持续监控</span>
         </div>
       </div>
+      <div>
+        <div class="label">网络模式</div>
+        <div class="chips">
+          <span class="chip" :class="{on:netMode==='direct'}" @click="netMode='direct'" title="不走代理，测试裸连质量">🔴 裸连</span>
+          <span class="chip" :class="{on:netMode==='proxy'}" @click="netMode='proxy'" title="走系统代理，测试代理链路质量">🟢 代理</span>
+          <span class="chip" :class="{on:netMode==='both'}" @click="netMode='both'" title="同时测试两种，对比结果">⚡ 对比</span>
+        </div>
+      </div>
       <button class="run-btn" @click="startCheck" :disabled="running||!selectedAgent||!target">
         {{ running ? '检测中...' : '▶ 开始检测' }}
       </button>
@@ -255,11 +263,86 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
     <!-- ══ 线路质量 主区 ══ -->
     <div class="main" v-show="tab==='check'">
-      <!-- 空状态 -->
-      <div v-if="!started" class="empty">
-        <div class="empty-icon">📡</div>
-        <div class="empty-title">TikTok 线路质量仪表盘</div>
-        <div class="empty-sub">选择节点 → 输入目标 → 开始检测<br>实时折线图 · 抖动分析 · 丢包检测 · 路由可视化</div>
+      <!-- 空状态 / 引导 -->
+      <div v-if="!started" style="padding:32px 24px">
+
+        <!-- 步骤引导 -->
+        <div style="max-width:600px;margin:0 auto">
+          <div style="text-align:center;margin-bottom:28px">
+            <div style="font-size:36px;margin-bottom:10px">📡</div>
+            <div style="font-size:20px;font-weight:700;color:#e2e8f0;margin-bottom:6px">TikTok 线路质量检测</div>
+            <div style="font-size:13px;color:#475569">从你的真实网络环境测试到 TikTok 的连接质量</div>
+          </div>
+
+          <!-- 三步引导 -->
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px">
+            <div style="background:#0f1117;border:1px solid #1e2240;border-radius:10px;padding:16px;text-align:center">
+              <div style="font-size:28px;margin-bottom:8px">1️⃣</div>
+              <div style="font-size:13px;font-weight:600;color:#e2e8f0;margin-bottom:6px">选择检测节点</div>
+              <div style="font-size:12px;color:#475569;line-height:1.6">
+                使用我们的<span style="color:#7c6af7">全球服务器节点</span>，或安装 Agent 用你自己的网络检测
+              </div>
+            </div>
+            <div style="background:#0f1117;border:1px solid #1e2240;border-radius:10px;padding:16px;text-align:center">
+              <div style="font-size:28px;margin-bottom:8px">2️⃣</div>
+              <div style="font-size:13px;font-weight:600;color:#e2e8f0;margin-bottom:6px">选择检测模式</div>
+              <div style="font-size:12px;color:#475569;line-height:1.6">
+                <span style="color:#f87171">裸连</span>测试直连质量，<span style="color:#4ade80">代理</span>测试代理链路，<span style="color:#fbbf24">对比</span>同时测两种
+              </div>
+            </div>
+            <div style="background:#0f1117;border:1px solid #1e2240;border-radius:10px;padding:16px;text-align:center">
+              <div style="font-size:28px;margin-bottom:8px">3️⃣</div>
+              <div style="font-size:13px;font-weight:600;color:#e2e8f0;margin-bottom:6px">查看检测结果</div>
+              <div style="font-size:12px;color:#475569;line-height:1.6">
+                实时延迟、抖动、丢包率，路由路径可视化，综合评分
+              </div>
+            </div>
+          </div>
+
+          <!-- 安装 Agent 引导 -->
+          <div style="background:#0a0d14;border:1px solid #2d3148;border-radius:10px;padding:20px;margin-bottom:20px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+              <span style="font-size:20px">💻</span>
+              <div>
+                <div style="font-size:14px;font-weight:600;color:#e2e8f0">安装本地 Agent — 用你自己的网络检测</div>
+                <div style="font-size:12px;color:#475569;margin-top:2px">比服务器节点更准确，反映你真实的网络环境</div>
+              </div>
+            </div>
+            <div v-if="!myAgent">
+              <div style="font-size:12px;color:#64748b;margin-bottom:10px">选择你的系统，下载后解压双击运行，页面自动检测到连接</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button @click="downloadAgent('mac-intel')" style="padding:8px 16px;background:#1a1527;border:1px solid #7c6af7;border-radius:6px;color:#a78bfa;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px">
+                  🍎 Mac Intel <span style="font-size:10px;color:#475569">x86_64</span>
+                </button>
+                <button @click="downloadAgent('mac')" style="padding:8px 16px;background:#1a1527;border:1px solid #7c6af7;border-radius:6px;color:#a78bfa;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px">
+                  🍎 Mac ARM <span style="font-size:10px;color:#475569">M1/M2/M3</span>
+                </button>
+                <button @click="downloadAgent('windows')" style="padding:8px 16px;background:#0a1527;border:1px solid #388bfd;border-radius:6px;color:#60a5fa;font-size:13px;cursor:pointer">
+                  🪟 Windows
+                </button>
+                <button @click="downloadAgent('linux')" style="padding:8px 16px;background:#0a1f0a;border:1px solid #3fb950;border-radius:6px;color:#4ade80;font-size:13px;cursor:pointer">
+                  🐧 Linux
+                </button>
+              </div>
+              <div v-if="installToken" style="margin-top:10px;padding:8px 12px;background:#1a1d27;border-radius:6px;font-size:12px;color:#64748b;display:flex;align-items:center;gap:8px">
+                <span style="animation:pulse 1s infinite;display:inline-block;color:#388bfd">●</span>
+                等待 Agent 连接中... 下载后解压，双击运行即可
+              </div>
+            </div>
+            <div v-else style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#0a1f0a;border-radius:6px">
+              <span style="color:#4ade80;font-size:16px">✅</span>
+              <div>
+                <div style="font-size:13px;color:#4ade80;font-weight:600">Agent 已连接：{{ myAgent.name || myAgent.agent_id }}</div>
+                <div style="font-size:11px;color:#475569;margin-top:2px">在左侧节点列表中选择它开始检测</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 快速开始 -->
+          <div style="text-align:center;color:#334155;font-size:13px">
+            或者直接在左侧选择一个<span style="color:#7c6af7">服务器节点</span>，输入目标域名，点击开始检测
+          </div>
+        </div>
       </div>
 
       <template v-if="started">
@@ -298,6 +381,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
             <div class="sc-label">丢包率</div>
             <div class="sc-val" :class="lossClass(stats.lossRate)">{{ stats.lossRate.toFixed(1) }}%</div>
             <div class="sc-sub">{{ stats.loss }}/{{ stats.count }} 丢包</div>
+          </div>
+        </div>
+
+        <!-- 双模式对比卡（netMode=both 时显示）-->
+        <div v-if="netMode==='both' && (dualStats.direct.count>0 || dualStats.proxy.count>0)"
+             style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+          <div class="sc" :style="dualStats.direct.avg>0&&dualStats.direct.avg<5000?'border-color:#3fb95044':'border-color:#f8514944'">
+            <div class="sc-label">🔴 裸连（不走代理）</div>
+            <div class="sc-val" :class="dualStats.direct.avg>=5000?'bad':latencyClass(dualStats.direct.avg)">
+              {{ dualStats.direct.avg>=5000?'超时':dualStats.direct.avg>0?dualStats.direct.avg+'ms':'--' }}
+            </div>
+            <div class="sc-sub">{{ dualStats.direct.avg>=5000?'目标被封锁，需要代理':dualStats.direct.avg>0?'直连可达':'检测中...' }}</div>
+          </div>
+          <div class="sc" :style="dualStats.proxy.avg>0&&dualStats.proxy.avg<5000?'border-color:#3fb95044':'border-color:#f8514944'">
+            <div class="sc-label">🟢 代理链路</div>
+            <div class="sc-val" :class="dualStats.proxy.avg>=5000?'bad':latencyClass(dualStats.proxy.avg)">
+              {{ dualStats.proxy.avg>=5000?'代理失效':dualStats.proxy.avg>0?dualStats.proxy.avg+'ms':'--' }}
+            </div>
+            <div class="sc-sub">{{ dualStats.proxy.avg>=5000?'代理无法访问目标':dualStats.proxy.avg>0?'代理正常':'检测中...' }}</div>
           </div>
         </div>
 
@@ -578,6 +680,11 @@ createApp({
     const mode = ref('once')
     const installToken = ref(localStorage.getItem('agent_install_token') || '')
     const myAgent = ref(null)
+    const netMode = ref('direct')  // direct / proxy / both
+    const dualStats = ref({
+      direct: { avg: 0, count: 0 },
+      proxy:  { avg: 0, count: 0 },
+    })
     const running = ref(false)
     const started = ref(false)
     const currentAgent = ref('')
@@ -925,12 +1032,12 @@ createApp({
           const r = await fetch(`${API}/netcheck/ping`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...authHeader },
-            body: JSON.stringify({ agent_id: selectedAgent.value, target: target.value })
+            body: JSON.stringify({ agent_id: selectedAgent.value, target: target.value, mode: netMode.value === 'both' ? 'direct' : netMode.value })
           })
           if (r.ok) {
             const d = await r.json()
             const ms = d.latency_ms || 0
-            const isLoss = d.loss || ms === 0
+            const isLoss = d.loss === true
             stats.value.count++
             stats.value.elapsed = Math.floor((Date.now() - startTime) / 1000)
             if (isLoss) {
@@ -949,6 +1056,21 @@ createApp({
             }
             stats.value.lossRate = (stats.value.loss / stats.value.count) * 100
             updateCharts(ms, isLoss, stats.value.jitter)
+
+            // both 模式：同时发代理测试
+            if (netMode.value === 'both') {
+              dualStats.value.direct.count++
+              dualStats.value.direct.avg = ms >= 5000 ? 5000 : ms
+              // 异步发代理测试
+              fetch(`${API}/netcheck/ping`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...authHeader },
+                body: JSON.stringify({ agent_id: selectedAgent.value, target: target.value, mode: 'proxy' })
+              }).then(r => r.json()).then(pd => {
+                dualStats.value.proxy.count++
+                dualStats.value.proxy.avg = pd.latency_ms >= 5000 ? 5000 : (pd.latency_ms || 5000)
+              }).catch(() => {})
+            }
             // 更新评分圆环
             const score = Math.max(0, 100 - Math.round(stats.value.lossRate * 5) - Math.round(Math.max(0, stats.value.avg - 100) / 10) - Math.round(stats.value.jitter / 2))
             await nextTick(); drawScoreRing(score)
@@ -1104,6 +1226,7 @@ createApp({
     return {
       tab, target, selectedAgent, agents, mode, running, started, currentAgent, presets,
       installToken, myAgent, downloadAgent,
+      netMode, dualStats,
       latencyChart, jitterChart, scoreRing, radarCanvas,
       purityRing, purityData,
       hops, ipInfo, riskFlags, dnsLeak, stats,
