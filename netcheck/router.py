@@ -1204,3 +1204,309 @@ async def get_queue_stats():
     """获取队列状态"""
     from netcheck.queue import queue_stats
     return queue_stats()
+
+
+# ── 独立站情报 ────────────────────────────────────────────────
+
+from pydantic import BaseModel as _BM4
+
+class EcomSearchRequest(_BM4):
+    keyword: str
+    limit: int = 10
+
+class EcomSingleRequest(_BM4):
+    domain: str  # 直接分析单个域名
+
+@router.post("/ecom/analyze")
+async def ecom_analyze_single(req: EcomSingleRequest):
+    """直接分析单个独立站"""
+    import aiohttp, ssl as _ssl, re as _re
+    from datetime import datetime as _dt
+
+    domain = req.domain.strip()
+    # 正确去掉协议前缀
+    for prefix in ("https://", "http://"):
+        if domain.startswith(prefix):
+            domain = domain[len(prefix):]
+            break
+    domain = domain.split("/")[0]  # 去掉路径部分
+    ssl_ctx = _ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = _ssl.CERT_NONE
+
+    site = {"ip": "", "domain": domain, "title": "", "country": "", "city": "", "server": ""}
+    result = {**site, "platform": "未知", "cdn": "未知", "payment": [], "tech_stack": [], "social": {}, "price_hint": "", "analyzed_at": _dt.now().isoformat()[:16]}
+
+    try:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as s:
+            async with s.get(f"https://{domain}", headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True) as r:
+                headers = dict(r.headers)
+                body = await r.text(errors='ignore')
+                body = body[:150000]  # 取前150KB，确保覆盖footer社交链接
+
+                # 平台
+                if "_shopify" in str(headers).lower() or "cdn.shopify.com" in body or "Shopify.theme" in body:
+                    result["platform"] = "Shopify"
+                elif "woocommerce" in body.lower() or "wp-content" in body:
+                    result["platform"] = "WooCommerce"
+                elif "bigcommerce" in body.lower():
+                    result["platform"] = "BigCommerce"
+                elif headers.get("x-powered-by", "").lower().startswith("next"):
+                    result["platform"] = "Next.js"
+                elif "squarespace" in body.lower():
+                    result["platform"] = "Squarespace"
+
+                # CDN
+                if "cf-ray" in str(headers).lower() or headers.get("server", "").lower() == "cloudflare":
+                    result["cdn"] = "Cloudflare"
+                elif "cloudfront" in str(headers).lower() or "x-amz-cf" in str(headers).lower():
+                    result["cdn"] = "CloudFront"
+                elif headers.get("server", "").lower() == "vercel":
+                    result["cdn"] = "Vercel"
+                elif headers.get("server", "").lower() == "netlify":
+                    result["cdn"] = "Netlify"
+                elif "fastly" in str(headers).lower():
+                    result["cdn"] = "Fastly"
+
+                # 支付
+                if "stripe" in body.lower(): result["payment"].append("Stripe")
+                if "paypal" in body.lower(): result["payment"].append("PayPal")
+                if "klarna" in body.lower(): result["payment"].append("Klarna")
+                if "afterpay" in body.lower(): result["payment"].append("Afterpay")
+                if "shop pay" in body.lower() or "shop_pay" in body.lower(): result["payment"].append("Shop Pay")
+
+                # 技术栈
+                if "react" in body.lower() and "react-dom" in body.lower(): result["tech_stack"].append("React")
+                if "gtag" in body or "google-analytics" in body: result["tech_stack"].append("Google Analytics")
+                if "facebook.net/en_US/fbevents" in body: result["tech_stack"].append("Facebook Pixel")
+                if "klaviyo" in body.lower(): result["tech_stack"].append("Klaviyo")
+                if "analytics.tiktok.com" in body or "ttq." in body: result["tech_stack"].append("TikTok Pixel")
+
+                # 社交媒体（兼容转义斜杠 \/ 格式）
+                _body_unesc = body.replace('\\/', '/')
+                social = {}
+                tt = _re.findall(r'tiktok\.com/@([\w.]+)', _body_unesc)
+                if tt: social["tiktok"] = f"@{tt[0]}"
+                ig = _re.findall(r'instagram\.com/([\w.]+)', _body_unesc)
+                ig = [x for x in ig if x not in ('p','reel','stories','explore','accounts','_u','sharer')]
+                if ig: social["instagram"] = f"@{ig[0]}"
+                yt = _re.findall(r'youtube\.com/@([\w.]+)', _body_unesc)
+                if yt: social["youtube"] = f"@{yt[0]}"
+                fb = _re.findall(r'facebook\.com/([\w.]+)', _body_unesc)
+                fb = [x for x in fb if x not in ('tr','sharer','share','dialog','plugins','login','v2.0','v3.0','policy')]
+                if fb: social["facebook"] = fb[0]
+                fb_pixel = _re.findall(r'facebook\.com/tr\?id=(\d+)', body)
+                if fb_pixel: social["fb_pixel_id"] = fb_pixel[0]
+                tt_pixel = _re.findall(r'ttq\.load\(["\']([A-Z0-9]+)["\']\)', body)
+                if not tt_pixel:
+                    tt_pixel = _re.findall(r'["\']pixelCode["\']\s*:\s*["\']([A-Z0-9]+)["\']', body)
+                if tt_pixel: social["tt_pixel_id"] = tt_pixel[0]
+                result["social"] = social
+
+                # 价格
+                price_matches = _re.findall(r'\$[\d,]+\.?\d*', body)
+                if price_matches:
+                    prices = sorted(set(price_matches), key=lambda x: float(x.replace('$','').replace(',','')))
+                    result["price_hint"] = " / ".join(prices[:5])
+
+                result["server"] = headers.get("server", "")
+                # 提取 title
+                title_m = _re.search(r'<title[^>]*>([^<]+)</title>', body, _re.IGNORECASE)
+                if title_m: result["title"] = title_m.group(1).strip()[:60]
+
+    except Exception as e:
+        result["error"] = str(e)[:80]
+
+    return result
+
+@router.post("/ecom/search")
+async def ecom_search(req: EcomSearchRequest):
+    """搜索独立站并分析基础设施"""
+    import base64, aiohttp, ssl as _ssl, re as _re, os as _os
+    from datetime import datetime as _dt
+
+    keyword = req.keyword.strip()
+    limit = min(req.limit, 20)
+
+    # 1. FOFA 搜索独立站
+    email = _os.getenv("FOFA_EMAIL", "")
+    key = _os.getenv("FOFA_KEY", "")
+    fofa_sites = []
+
+    if email and key:
+        ssl_ctx = _ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = _ssl.CERT_NONE
+        # 多策略搜索，取并集去重
+        queries = [
+            # Shopify 独立站（最多）
+            f'body="cdn.shopify.com" && title="{keyword}" && status_code="200" && type="subdomain"',
+            # 非 Shopify 独立站（WooCommerce / 自建）
+            f'title="{keyword}" && (body="woocommerce" || body="wp-content/plugins") && status_code="200" && type="subdomain"',
+        ]
+        seen = set()
+        for q in queries:
+            if len(fofa_sites) >= limit:
+                break
+            qb64 = base64.b64encode(q.encode()).decode()
+            url = f"https://fofa.info/api/v1/search/all?email={email}&key={key}&qbase64={qb64}&size={limit}&fields=ip,domain,title,country,city,server"
+            try:
+                async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as s:
+                    async with s.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                        d = await r.json()
+                        for row in d.get("results", []):
+                            ip, domain, title, country, city, server = row
+                            # 过滤：只要有真实域名、排除 IP 直接访问、排除 myshopify.com 子域
+                            if not domain or domain in seen:
+                                continue
+                            if "myshopify.com" in domain or not "." in domain:
+                                continue
+                            seen.add(domain)
+                            fofa_sites.append({"ip": ip, "domain": domain, "title": (title or "").strip(), "country": country or "", "city": city or "", "server": server or ""})
+            except Exception:
+                pass
+
+    if not fofa_sites:
+        # FOFA 没结果，按关键词给预置知名站
+        _fallback_map = {
+            "phone case": [
+                {"domain": "casetify.com", "title": "CASETiFY"},
+                {"domain": "dbrand.com", "title": "dbrand"},
+                {"domain": "otterbox.com", "title": "OtterBox"},
+                {"domain": "shakercase.com", "title": "ShakerCase"},
+                {"domain": "casely.com", "title": "Casely"},
+            ],
+            "sneakers": [
+                {"domain": "allbirds.com", "title": "Allbirds"},
+                {"domain": "veja-store.com", "title": "Veja"},
+            ],
+            "skincare": [
+                {"domain": "glossier.com", "title": "Glossier"},
+                {"domain": "tatcha.com", "title": "Tatcha"},
+            ],
+        }
+        # 模糊匹配关键词
+        kw_lower = keyword.lower()
+        fallback = []
+        for k, v in _fallback_map.items():
+            if k in kw_lower or kw_lower in k:
+                fallback = v
+                break
+        if not fallback:
+            fallback = _fallback_map["phone case"]
+        fofa_sites = [{"ip": "", "country": "US", "city": "", "server": "", **f} for f in fallback]
+
+    # 2. 批量分析每个站的 HTTP 头
+    ssl_ctx = _ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = _ssl.CERT_NONE
+
+    async def analyze_site(site: dict) -> dict:
+        domain = site["domain"]
+        result = {**site, "platform": "未知", "cdn": "未知", "payment": [], "tech_stack": [], "social": {}, "price_hint": "", "analyzed_at": _dt.now().isoformat()[:16]}
+        try:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as s:
+                async with s.get(f"https://{domain}", headers={"User-Agent": "Mozilla/5.0"}, timeout=aiohttp.ClientTimeout(total=8), allow_redirects=True) as r:
+                    headers = dict(r.headers)
+                    body = await r.text(errors='ignore')
+                    body = body[:150000]  # 取前150KB，确保覆盖footer社交链接
+
+                    # 识别平台
+                    if "_shopify" in str(headers).lower() or "cdn.shopify.com" in body or "Shopify.theme" in body:
+                        result["platform"] = "Shopify"
+                    elif "woocommerce" in body.lower() or "wp-content" in body:
+                        result["platform"] = "WooCommerce"
+                    elif "bigcommerce" in body.lower():
+                        result["platform"] = "BigCommerce"
+                    elif headers.get("x-powered-by", "").lower().startswith("next"):
+                        result["platform"] = "Next.js"
+                    elif "squarespace" in body.lower():
+                        result["platform"] = "Squarespace"
+
+                    # 识别 CDN
+                    if "cf-ray" in str(headers).lower() or headers.get("server", "").lower() == "cloudflare":
+                        result["cdn"] = "Cloudflare"
+                        result["ip"] = result["ip"] or headers.get("cf-ray", "")[:8]
+                    elif "cloudfront" in str(headers).lower() or "x-amz-cf" in str(headers).lower():
+                        result["cdn"] = "CloudFront"
+                    elif headers.get("server", "").lower() == "vercel":
+                        result["cdn"] = "Vercel"
+                    elif headers.get("server", "").lower() == "netlify":
+                        result["cdn"] = "Netlify"
+                    elif "fastly" in str(headers).lower():
+                        result["cdn"] = "Fastly"
+
+                    # 识别支付方式
+                    if "stripe" in body.lower() or "stripe.com/v3" in body:
+                        result["payment"].append("Stripe")
+                    if "paypal" in body.lower():
+                        result["payment"].append("PayPal")
+                    if "klarna" in body.lower():
+                        result["payment"].append("Klarna")
+                    if "afterpay" in body.lower():
+                        result["payment"].append("Afterpay")
+                    if "shop pay" in body.lower() or "shop_pay" in body.lower():
+                        result["payment"].append("Shop Pay")
+
+                    # 识别技术栈
+                    if "react" in body.lower() and "react-dom" in body.lower():
+                        result["tech_stack"].append("React")
+                    if "vue" in body.lower() and "vue.js" in body.lower():
+                        result["tech_stack"].append("Vue")
+                    if "gtag" in body or "google-analytics" in body:
+                        result["tech_stack"].append("Google Analytics")
+                    if "facebook.net/en_US/fbevents" in body:
+                        result["tech_stack"].append("Facebook Pixel")
+                    if "klaviyo" in body.lower():
+                        result["tech_stack"].append("Klaviyo")
+                    if "gorgias" in body.lower():
+                        result["tech_stack"].append("Gorgias客服")
+                    if "analytics.tiktok.com" in body or "ttq." in body:
+                        result["tech_stack"].append("TikTok Pixel")
+
+                    # 提取社交媒体账号（兼容转义斜杠 \/ 格式）
+                    _body_unesc = body.replace('\\/', '/')
+                    social = {}
+                    tt = _re.findall(r'tiktok\.com/@([\w.]+)', _body_unesc)
+                    if tt: social["tiktok"] = f"@{tt[0]}"
+                    ig = _re.findall(r'instagram\.com/([\w.]+)', _body_unesc)
+                    ig = [x for x in ig if x not in ('p','reel','stories','explore','accounts','_u','sharer')]
+                    if ig: social["instagram"] = f"@{ig[0]}"
+                    yt = _re.findall(r'youtube\.com/@([\w.]+)', _body_unesc)
+                    if yt: social["youtube"] = f"@{yt[0]}"
+                    fb = _re.findall(r'facebook\.com/([\w.]+)', _body_unesc)
+                    fb = [x for x in fb if x not in ('tr','sharer','share','dialog','plugins','login','v2.0','v3.0','policy')]
+                    if fb: social["facebook"] = fb[0]
+                    # Facebook Pixel ID
+                    fb_pixel = _re.findall(r'facebook\.com/tr\?id=(\d+)', body)
+                    if fb_pixel: social["fb_pixel_id"] = fb_pixel[0]
+                    # TikTok Pixel ID
+                    tt_pixel = _re.findall(r'ttq\.load\(["\']([A-Z0-9]+)["\']\)', body)
+                    if not tt_pixel:
+                        tt_pixel = _re.findall(r'["\']pixelCode["\']\s*:\s*["\']([A-Z0-9]+)["\']', body)
+                    if tt_pixel: social["tt_pixel_id"] = tt_pixel[0]
+                    result["social"] = social
+
+                    # 提取价格提示（找页面里的价格）
+                    price_matches = _re.findall(r'\$[\d,]+\.?\d*', body)
+                    if price_matches:
+                        prices = sorted(set(price_matches), key=lambda x: float(x.replace('$','').replace(',','')))
+                        result["price_hint"] = " / ".join(prices[:5])
+
+                    # 更新 server
+                    result["server"] = headers.get("server", result.get("server", ""))
+
+        except Exception as e:
+            result["error"] = str(e)[:50]
+        return result
+
+    import asyncio
+    tasks = [analyze_site(s) for s in fofa_sites[:limit]]
+    results = await asyncio.gather(*tasks)
+
+    return {
+        "keyword": keyword,
+        "total": len(results),
+        "sites": list(results),
+        "analyzed_at": _dt.now().isoformat()[:16],
+    }

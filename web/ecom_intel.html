@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>独立站情报 · CyberStroll</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+
+.header { padding: 20px 32px; border-bottom: 1px solid #21262d; display: flex; align-items: center; gap: 16px; }
+.header h1 { font-size: 18px; font-weight: 700; color: #f0f6fc; }
+.header .sub { font-size: 12px; color: #8b949e; margin-top: 3px; }
+.back-btn { color: #8b949e; text-decoration: none; font-size: 13px; padding: 6px 12px; border: 1px solid #30363d; border-radius: 6px; }
+.back-btn:hover { color: #f0f6fc; border-color: #484f58; }
+
+.container { max-width: 1200px; margin: 0 auto; padding: 28px 32px; }
+
+/* 搜索区 */
+.search-box { background: #161b22; border: 1px solid #21262d; border-radius: 12px; padding: 28px; margin-bottom: 28px; }
+.search-box h2 { font-size: 15px; font-weight: 600; color: #f0f6fc; margin-bottom: 6px; }
+.search-box p { font-size: 13px; color: #8b949e; margin-bottom: 20px; }
+.search-row { display: flex; gap: 10px; }
+.search-input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px 16px; color: #f0f6fc; font-size: 14px; outline: none; }
+.search-input:focus { border-color: #388bfd; }
+.search-input::placeholder { color: #484f58; }
+.search-btn { background: #238636; color: #fff; border: none; border-radius: 8px; padding: 10px 24px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.search-btn:hover { background: #2ea043; }
+.search-btn:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+.limit-select { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; color: #f0f6fc; font-size: 13px; cursor: pointer; }
+
+.examples { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.example-tag { padding: 4px 10px; background: #21262d; border: 1px solid #30363d; border-radius: 20px; font-size: 12px; color: #8b949e; cursor: pointer; }
+.example-tag:hover { color: #f0f6fc; border-color: #484f58; }
+
+/* 状态 */
+.status-bar { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-size: 13px; color: #8b949e; }
+.status-bar.loading { border-color: #388bfd44; }
+.status-bar.done { border-color: #3fb95044; }
+.status-bar.error { border-color: #f8514944; color: #f85149; }
+.spinner { width: 14px; height: 14px; border: 2px solid #30363d; border-top-color: #388bfd; border-radius: 50%; animation: spin .8s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 洞察数字 */
+.insight-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+.insight-card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px; }
+.insight-card .num { font-size: 28px; font-weight: 800; color: #f0f6fc; line-height: 1; }
+.insight-card .lbl { font-size: 11px; color: #8b949e; margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+.insight-card .detail { font-size: 11px; color: #484f58; margin-top: 4px; }
+
+/* 站点卡片 */
+.sites-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
+.site-card { background: #161b22; border: 1px solid #21262d; border-radius: 10px; padding: 18px; transition: border-color .2s; }
+.site-card:hover { border-color: #388bfd44; }
+
+.site-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.site-favicon { width: 32px; height: 32px; border-radius: 6px; background: #21262d; display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; overflow: hidden; }
+.site-favicon img { width: 100%; height: 100%; object-fit: cover; }
+.site-domain { font-size: 14px; font-weight: 700; color: #79c0ff; font-family: monospace; }
+.site-domain a { color: inherit; text-decoration: none; }
+.site-domain a:hover { text-decoration: underline; }
+.site-meta { font-size: 11px; color: #8b949e; margin-top: 2px; }
+
+.site-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.tag { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.tag-shopify { background: #1a3a5a; color: #60a5fa; }
+.tag-woo { background: #2a1a4a; color: #a78bfa; }
+.tag-custom { background: #1a4731; color: #3fb950; }
+.tag-nextjs { background: #1c2128; color: #e6edf3; border: 1px solid #30363d; }
+.tag-cf { background: #3d2b00; color: #d29922; }
+.tag-cloudfront { background: #1a2a3e; color: #60a5fa; }
+.tag-vercel { background: #1c2128; color: #e6edf3; border: 1px solid #30363d; }
+.tag-netlify { background: #0a1f3a; color: #38bdf8; }
+.tag-fastly { background: #1a2a1a; color: #3fb950; }
+.tag-unknown { background: #21262d; color: #8b949e; border: 1px solid #30363d; }
+
+.site-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+.metric { background: #0d1117; border-radius: 6px; padding: 7px 10px; }
+.metric-label { font-size: 10px; color: #484f58; text-transform: uppercase; letter-spacing: 0.5px; }
+.metric-value { font-size: 12px; font-weight: 600; color: #f0f6fc; margin-top: 2px; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.payment-row { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+.pay-tag { padding: 2px 7px; background: #0d2a1a; border: 1px solid #1a4731; border-radius: 4px; font-size: 11px; color: #3fb950; }
+
+.site-error { font-size: 12px; color: #f85149; background: #1a0a0a; border-radius: 6px; padding: 8px 10px; }
+
+/* 空状态 */
+.empty-state { text-align: center; padding: 60px 20px; color: #484f58; }
+.empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+.empty-state p { font-size: 14px; }
+
+@media (max-width: 768px) {
+  .container { padding: 16px; }
+  .insight-row { grid-template-columns: repeat(2, 1fr); }
+  .search-row { flex-wrap: wrap; }
+  .search-input { min-width: 0; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <a href="/" class="back-btn">← 返回</a>
+  <div>
+    <h1>🏪 独立站情报</h1>
+    <div class="sub">输入关键词，自动发现并分析全球独立站基础设施</div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- 搜索区 -->
+  <div class="search-box">
+    <h2>搜索独立站</h2>
+    <p>输入商品类目关键词，系统自动从 FOFA 发现相关独立站，分析平台/CDN/支付/技术栈/社交媒体</p>
+    <div class="search-row">
+      <input class="search-input" id="keyword" type="text" placeholder="例如：phone case、sneakers、skincare..." />
+      <select class="limit-select" id="limit">
+        <option value="5">5个站</option>
+        <option value="10" selected>10个站</option>
+        <option value="15">15个站</option>
+        <option value="20">20个站</option>
+      </select>
+      <button class="search-btn" id="searchBtn" onclick="doSearch()">🔍 批量搜索</button>
+    </div>
+    <div class="examples">
+      <span style="font-size:12px;color:#484f58;align-self:center">示例：</span>
+      <span class="example-tag" onclick="quickSearch('phone case')">手机壳</span>
+      <span class="example-tag" onclick="quickSearch('sneakers')">运动鞋</span>
+      <span class="example-tag" onclick="quickSearch('skincare')">护肤品</span>
+      <span class="example-tag" onclick="quickSearch('jewelry')">珠宝</span>
+      <span class="example-tag" onclick="quickSearch('fitness')">健身</span>
+      <span class="example-tag" onclick="quickSearch('pet supplies')">宠物用品</span>
+    </div>
+
+    <!-- 单站分析 -->
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid #21262d">
+      <div style="font-size:12px;color:#8b949e;margin-bottom:8px">或者直接分析某个域名：</div>
+      <div class="search-row">
+        <input class="search-input" id="singleDomain" type="text" placeholder="例如：shakercase.com" />
+        <button class="search-btn" id="singleBtn" onclick="doSingle()" style="background:#1f6feb">🔬 单站分析</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 状态栏 -->
+  <div class="status-bar" id="statusBar" style="display:none"></div>
+
+  <!-- 洞察数字 -->
+  <div class="insight-row" id="insightRow" style="display:none">
+    <div class="insight-card" style="border-color:#388bfd44">
+      <div class="num" id="totalCount" style="color:#388bfd">-</div>
+      <div class="lbl">发现站点</div>
+      <div class="detail" id="keywordLabel">-</div>
+    </div>
+    <div class="insight-card" style="border-color:#d2992244">
+      <div class="num" id="shopifyCount" style="color:#d29922">-</div>
+      <div class="lbl">Shopify 站</div>
+      <div class="detail" id="shopifyPct">-</div>
+    </div>
+    <div class="insight-card" style="border-color:#3fb95044">
+      <div class="num" id="cfCount" style="color:#3fb950">-</div>
+      <div class="lbl">Cloudflare CDN</div>
+      <div class="detail" id="cfPct">-</div>
+    </div>
+    <div class="insight-card" style="border-color:#a78bfa44">
+      <div class="num" id="payCount" style="color:#a78bfa">-</div>
+      <div class="lbl">识别支付方式</div>
+      <div class="detail" id="payDetail">-</div>
+    </div>
+  </div>
+
+  <!-- 站点列表 -->
+  <div class="sites-grid" id="sitesGrid"></div>
+
+  <!-- 空状态 -->
+  <div class="empty-state" id="emptyState">
+    <div class="icon">🔍</div>
+    <p>输入关键词，发现全球独立站情报</p>
+  </div>
+
+</div>
+
+<script>
+const API = '';
+
+function quickSearch(kw) {
+  document.getElementById('keyword').value = kw;
+  doSearch();
+}
+
+async function doSingle() {
+  const domain = document.getElementById('singleDomain').value.trim();
+  if (!domain) { alert('请输入域名'); return; }
+  const btn = document.getElementById('singleBtn');
+  btn.disabled = true; btn.textContent = '分析中...';
+  showStatus('loading', `正在分析 ${domain}...`);
+  document.getElementById('insightRow').style.display = 'none';
+  document.getElementById('sitesGrid').innerHTML = '';
+  document.getElementById('emptyState').style.display = 'none';
+  try {
+    const res = await fetch(`${API}/netcheck/ecom/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const s = await res.json();
+    // 单站结果直接渲染一张卡片
+    document.getElementById('sitesGrid').innerHTML = siteCard(s);
+    showStatus('done', `✅ 分析完成：${s.domain} · ${s.analyzed_at}`);
+  } catch(e) {
+    showStatus('error', `❌ 失败：${e.message}`);
+  } finally {
+    btn.disabled = false; btn.textContent = '🔬 单站分析';
+  }
+}
+
+async function doSearch() {
+  const keyword = document.getElementById('keyword').value.trim();
+  if (!keyword) { alert('请输入关键词'); return; }
+
+  const limit = parseInt(document.getElementById('limit').value);
+  const btn = document.getElementById('searchBtn');
+  btn.disabled = true;
+  btn.textContent = '分析中...';
+
+  showStatus('loading', `正在搜索"${keyword}"相关独立站，分析基础设施...`);
+  document.getElementById('insightRow').style.display = 'none';
+  document.getElementById('sitesGrid').innerHTML = '';
+  document.getElementById('emptyState').style.display = 'none';
+
+  try {
+    const res = await fetch(`${API}/netcheck/ecom/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword, limit })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderResults(data);
+    showStatus('done', `✅ 分析完成，发现 ${data.total} 个站点 · ${data.analyzed_at}`);
+  } catch (e) {
+    showStatus('error', `❌ 请求失败：${e.message}`);
+    document.getElementById('emptyState').style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍 开始分析';
+  }
+}
+
+function showStatus(type, msg) {
+  const bar = document.getElementById('statusBar');
+  bar.style.display = 'flex';
+  bar.className = `status-bar ${type}`;
+  bar.innerHTML = type === 'loading'
+    ? `<div class="spinner"></div><span>${msg}</span>`
+    : `<span>${msg}</span>`;
+}
+
+function renderResults(data) {
+  const sites = data.sites || [];
+  if (!sites.length) {
+    document.getElementById('emptyState').style.display = 'block';
+    return;
+  }
+
+  // 统计
+  const shopify = sites.filter(s => s.platform === 'Shopify').length;
+  const cf = sites.filter(s => s.cdn === 'Cloudflare').length;
+  const withPay = sites.filter(s => s.payment && s.payment.length > 0).length;
+  const allPay = [...new Set(sites.flatMap(s => s.payment || []))];
+
+  document.getElementById('totalCount').textContent = sites.length;
+  document.getElementById('keywordLabel').textContent = `关键词：${data.keyword}`;
+  document.getElementById('shopifyCount').textContent = shopify;
+  document.getElementById('shopifyPct').textContent = `占比 ${Math.round(shopify/sites.length*100)}%`;
+  document.getElementById('cfCount').textContent = cf;
+  document.getElementById('cfPct').textContent = `占比 ${Math.round(cf/sites.length*100)}%`;
+  document.getElementById('payCount').textContent = withPay;
+  document.getElementById('payDetail').textContent = allPay.slice(0,3).join(' / ') || '未识别';
+  document.getElementById('insightRow').style.display = 'grid';
+
+  // 渲染卡片
+  const grid = document.getElementById('sitesGrid');
+  grid.innerHTML = sites.map(s => siteCard(s)).join('');
+}
+
+function platformTag(p) {
+  const map = {
+    'Shopify': 'tag-shopify', 'WooCommerce': 'tag-woo', 'Next.js': 'tag-nextjs',
+    'BigCommerce': 'tag-custom', 'Squarespace': 'tag-unknown'
+  };
+  const cls = map[p] || 'tag-unknown';
+  return p !== '未知' ? `<span class="tag ${cls}">${p}</span>` : '';
+}
+
+function cdnTag(c) {
+  const map = {
+    'Cloudflare': 'tag-cf', 'CloudFront': 'tag-cloudfront', 'Vercel': 'tag-vercel',
+    'Netlify': 'tag-netlify', 'Fastly': 'tag-fastly'
+  };
+  const cls = map[c] || 'tag-unknown';
+  return c !== '未知' ? `<span class="tag ${cls}">${c}</span>` : '';
+}
+
+function socialRow(social) {
+  if (!social || !Object.keys(social).length) return '';
+
+  const cfg = {
+    tiktok:    { label: 'TikTok',    bg: '#1a1a2e', border: '#69c9d0', color: '#69c9d0', base: 'https://www.tiktok.com/' },
+    instagram: { label: 'Instagram', bg: '#2a1a2e', border: '#e1306c', color: '#e1306c', base: 'https://instagram.com/' },
+    youtube:   { label: 'YouTube',   bg: '#2a1010', border: '#ff0000', color: '#ff4444', base: 'https://youtube.com/' },
+    facebook:  { label: 'Facebook',  bg: '#0d1f3c', border: '#1877f2', color: '#4a9eff', base: 'https://facebook.com/' },
+  };
+
+  const badges = Object.entries(social)
+    .filter(([k]) => cfg[k])
+    .map(([k, v]) => {
+      const c = cfg[k];
+      const handle = v.startsWith('@') ? v.slice(1) : v;
+      const url = c.base + handle;
+      return `<a href="${url}" target="_blank" rel="noopener"
+        style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;
+               background:${c.bg};border:1px solid ${c.border};border-radius:6px;
+               color:${c.color};font-size:12px;font-weight:600;text-decoration:none;
+               transition:opacity .15s"
+        onmouseover="this.style.opacity='.75'" onmouseout="this.style.opacity='1'">
+        ${c.label} <span style="color:#fff;opacity:.9">${v}</span>
+      </a>`;
+    });
+
+  // Pixel 标记（广告投放证明）
+  const pixels = [];
+  if (social.tt_pixel_id) pixels.push(
+    `<span style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;
+      background:#1a1a2e;border:1px dashed #69c9d0;border-radius:6px;
+      font-size:11px;color:#69c9d0" title="该站正在投放TikTok广告">
+      🎯 TT广告 <span style="opacity:.6">${social.tt_pixel_id}</span>
+    </span>`
+  );
+  if (social.fb_pixel_id) pixels.push(
+    `<span style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;
+      background:#0d1f3c;border:1px dashed #1877f2;border-radius:6px;
+      font-size:11px;color:#4a9eff" title="该站正在投放Facebook广告">
+      🎯 FB广告 <span style="opacity:.6">${social.fb_pixel_id}</span>
+    </span>`
+  );
+
+  const all = [...badges, ...pixels];
+  if (!all.length) return '';
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid #21262d">
+    ${all.join('')}
+  </div>`;
+}
+
+function siteCard(s) {
+  const favicon = `<img src="https://www.google.com/s2/favicons?domain=${s.domain}&sz=32" onerror="this.style.display='none';this.parentNode.textContent='🌐'" />`;
+  const techTags = (s.tech_stack || []).slice(0, 3).map(t => `<span class="tag tag-unknown">${t}</span>`).join('');
+  const payTags = (s.payment || []).map(p => `<span class="pay-tag">${p}</span>`).join('');
+  const ipDisplay = s.ip ? s.ip.substring(0, 15) : '—';
+  const serverDisplay = (s.server || '—').substring(0, 14);
+  const priceDisplay = s.price_hint ? s.price_hint.substring(0, 20) : '—';
+  const location = [s.city, s.country].filter(Boolean).join(', ') || '—';
+
+  return `
+  <div class="site-card">
+    <div class="site-header">
+      <div class="site-favicon">${favicon}</div>
+      <div>
+        <div class="site-domain"><a href="https://${s.domain}" target="_blank">${s.domain}</a></div>
+        <div class="site-meta">${s.title || '—'} · ${location}</div>
+      </div>
+    </div>
+    <div class="site-tags">
+      ${platformTag(s.platform)}
+      ${cdnTag(s.cdn)}
+      ${techTags}
+    </div>
+    <div class="site-metrics">
+      <div class="metric"><div class="metric-label">IP</div><div class="metric-value" title="${s.ip}">${ipDisplay}</div></div>
+      <div class="metric"><div class="metric-label">Server</div><div class="metric-value">${serverDisplay}</div></div>
+      <div class="metric"><div class="metric-label">价格区间</div><div class="metric-value">${priceDisplay}</div></div>
+    </div>
+    ${payTags ? `<div class="payment-row">${payTags}</div>` : ''}
+    ${socialRow(s.social)}
+    ${s.error ? `<div class="site-error">⚠️ ${s.error}</div>` : ''}
+  </div>`;
+}
+
+// 回车触发搜索
+document.getElementById('keyword').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch();
+});
+document.getElementById('singleDomain').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSingle();
+});
+</script>
+</body>
+</html>
