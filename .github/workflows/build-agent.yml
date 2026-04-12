@@ -192,3 +192,47 @@ jobs:
           files: |
             dist/**/*
           generate_release_notes: true
+
+  deploy-binaries:
+    needs: [build, build-android]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Deploy binaries to server
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H 47.111.28.162 >> ~/.ssh/known_hosts 2>/dev/null
+
+          # 上传各平台二进制到服务器
+          SERVER="root@47.111.28.162"
+          DEST="/opt/cyberagentops/agent_binaries"
+
+          ssh -i ~/.ssh/deploy_key $SERVER "mkdir -p $DEST"
+
+          [ -f dist/cyberagent-linux/cyberagent-linux ] && \
+            scp -i ~/.ssh/deploy_key dist/cyberagent-linux/cyberagent-linux $SERVER:$DEST/cyberagent-linux && \
+            ssh -i ~/.ssh/deploy_key $SERVER "chmod +x $DEST/cyberagent-linux" && \
+            echo "✅ linux uploaded"
+
+          [ -f dist/cyberagent-mac/cyberagent-mac ] && \
+            scp -i ~/.ssh/deploy_key dist/cyberagent-mac/cyberagent-mac $SERVER:$DEST/cyberagent-mac && \
+            ssh -i ~/.ssh/deploy_key $SERVER "chmod +x $DEST/cyberagent-mac" && \
+            echo "✅ mac arm64 uploaded"
+
+          [ -f "dist/cyberagent-windows.exe/cyberagent-windows.exe" ] && \
+            scp -i ~/.ssh/deploy_key "dist/cyberagent-windows.exe/cyberagent-windows.exe" $SERVER:$DEST/cyberagent-windows.exe && \
+            echo "✅ windows uploaded"
+
+          [ -f dist/cyberagent.apk/cyberagent.apk ] && \
+            scp -i ~/.ssh/deploy_key dist/cyberagent.apk/cyberagent.apk $SERVER:$DEST/cyberagent.apk && \
+            echo "✅ android apk uploaded"
+
+          echo "🚀 All binaries deployed to server"
