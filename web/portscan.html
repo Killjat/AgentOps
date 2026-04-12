@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>网络资产搜索 · CyberStroll</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+
+/* 搜索区 */
+.search-hero { padding: 48px 32px 32px; text-align: center; border-bottom: 1px solid #21262d; }
+.search-hero h1 { font-size: 28px; font-weight: 800; color: #f0f6fc; margin-bottom: 8px; }
+.search-hero .sub { font-size: 14px; color: #8b949e; margin-bottom: 28px; }
+.search-box { display: flex; max-width: 700px; margin: 0 auto 16px; gap: 0; }
+.search-inp {
+  flex: 1; padding: 12px 18px; background: #161b22; border: 2px solid #30363d;
+  border-right: none; border-radius: 8px 0 0 8px; color: #f0f6fc; font-size: 15px;
+  outline: none; font-family: 'SF Mono', monospace;
+}
+.search-inp:focus { border-color: #388bfd; }
+.search-btn {
+  padding: 12px 24px; background: #388bfd; border: none; border-radius: 0 8px 8px 0;
+  color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.search-btn:hover { background: #58a6ff; }
+.search-examples { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.example-tag {
+  padding: 4px 10px; background: #161b22; border: 1px solid #21262d; border-radius: 4px;
+  font-size: 12px; color: #8b949e; cursor: pointer; font-family: monospace;
+  transition: all .15s;
+}
+.example-tag:hover { border-color: #388bfd; color: #388bfd; }
+
+/* 结果区 */
+.results-area { max-width: 1200px; margin: 0 auto; padding: 24px 32px; }
+
+/* 结果头 */
+.results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.results-count { font-size: 13px; color: #8b949e; }
+.results-count span { color: #f0f6fc; font-weight: 600; }
+
+/* 结果卡片 */
+.result-card {
+  background: #161b22; border: 1px solid #21262d; border-radius: 8px;
+  padding: 16px 20px; margin-bottom: 10px; transition: border-color .15s;
+}
+.result-card:hover { border-color: #388bfd44; }
+.card-top { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.card-ip { font-size: 16px; font-weight: 700; color: #79c0ff; font-family: monospace; cursor: pointer; }
+.card-ip:hover { text-decoration: underline; }
+.card-profile { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.profile-full { background: #1a4731; color: #3fb950; }
+.profile-partial { background: #3d2b00; color: #d29922; }
+.profile-single { background: #1c2128; color: #64748b; }
+.card-meta { font-size: 12px; color: #484f58; margin-left: auto; }
+
+.port-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.port-item {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 4px; font-size: 12px; font-family: monospace;
+  cursor: pointer; transition: opacity .15s;
+}
+.port-item:hover { opacity: 0.8; }
+.port-num { font-weight: 700; }
+.port-svc { opacity: 0.7; font-size: 11px; }
+
+/* 端口颜色 */
+.p-ss { background: #0d1f3c; border: 1px solid #1a3a5a; color: #60a5fa; }
+.p-proxy { background: #0a1f0a; border: 1px solid #1a4731; color: #3fb950; }
+.p-v2ray { background: #1a1527; border: 1px solid #2d1a4a; color: #a78bfa; }
+.p-clash { background: #1f1a0a; border: 1px solid #3d2b00; color: #d29922; }
+.p-ssh { background: #1f0a0a; border: 1px solid #3d1a1a; color: #f85149; }
+.p-other { background: #161b22; border: 1px solid #21262d; color: #8b949e; }
+
+/* 空状态 */
+.empty { text-align: center; padding: 80px 20px; color: #484f58; }
+.empty .icon { font-size: 48px; margin-bottom: 16px; }
+
+/* 统计侧栏 */
+.layout { display: grid; grid-template-columns: 1fr 260px; gap: 20px; }
+.sidebar { }
+.stat-box { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+.stat-box h3 { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+.stat-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #0d1117; cursor: pointer; }
+.stat-row:last-child { border-bottom: none; }
+.stat-row:hover .stat-label { color: #388bfd; }
+.stat-label { font-size: 12px; color: #94a3b8; font-family: monospace; }
+.stat-val { font-size: 12px; color: #f0f6fc; font-weight: 600; }
+.stat-bar { height: 3px; background: #21262d; border-radius: 2px; margin-top: 3px; overflow: hidden; }
+.stat-bar-fill { height: 100%; border-radius: 2px; background: #388bfd; }
+</style>
+</head>
+<body>
+
+<!-- 搜索区 -->
+<div class="search-hero">
+  <h1>🔍 网络资产搜索</h1>
+  <div class="sub">搜索 IP、端口、服务 — 基于真实扫描数据</div>
+  <div class="search-box">
+    <input class="search-inp" id="searchInp" placeholder='port=8388  或  ip=61.61.69.0/24  或  61.61.69.157' 
+           onkeydown="if(event.key==='Enter')doSearch()">
+    <button class="search-btn" onclick="doSearch()">搜索</button>
+  </div>
+  <div class="search-examples">
+    <span class="example-tag" onclick="setQ('port=8388')">port=8388</span>
+    <span class="example-tag" onclick="setQ('port=8388,443,1080')">port=8388,443,1080</span>
+    <span class="example-tag" onclick="setQ('port=7890')">port=7890 (Clash)</span>
+    <span class="example-tag" onclick="setQ('profile=full_proxy')">profile=full_proxy</span>
+    <span class="example-tag" onclick="setQ('gateway=45.207.215.1')">gateway=45.207.215.1</span>
+    <span class="example-tag" onclick="setQ('61.61.69')">61.61.69.*</span>
+  </div>
+</div>
+
+<!-- 结果区 -->
+<div class="results-area">
+  <div class="layout">
+    <div>
+      <div class="results-header" id="resultsHeader" style="display:none">
+        <div class="results-count">找到 <span id="resultCount">0</span> 条结果</div>
+        <div style="font-size:12px;color:#484f58" id="queryType"></div>
+      </div>
+      <div id="resultsList">
+        <div class="empty">
+          <div class="icon">🔍</div>
+          <div style="font-size:14px;margin-bottom:8px">输入查询条件开始搜索</div>
+          <div style="font-size:12px">支持 IP、端口号、CIDR 网段</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 侧栏统计 -->
+    <div class="sidebar">
+      <div class="stat-box">
+        <h3>数据库概览</h3>
+        <div id="dbStats"></div>
+      </div>
+      <div class="stat-box">
+        <h3>热门端口</h3>
+        <div id="portStats"></div>
+      </div>
+      <div class="stat-box">
+        <h3>快速筛选</h3>
+        <div id="profileStats"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = ''
+const PORT_INFO = {
+  '22':    ['SSH',      'p-ssh'],
+  '80':    ['HTTP',     'p-proxy'],
+  '443':   ['HTTPS',    'p-proxy'],
+  '1080':  ['SOCKS5',   'p-proxy'],
+  '7890':  ['Clash',    'p-clash'],
+  '8080':  ['HTTP代理', 'p-proxy'],
+  '8388':  ['SS',       'p-ss'],
+  '8443':  ['HTTPS备用','p-proxy'],
+  '10086': ['V2Ray',    'p-v2ray'],
+  '10808': ['Xray',     'p-v2ray'],
+  '54321': ['自定义',   'p-other'],
+}
+const PROFILE_LABEL = {
+  full_proxy: ['完整机场', 'profile-full'],
+  partial:    ['部分开放', 'profile-partial'],
+  single:     ['单端口',   'profile-single'],
+}
+const QUERY_TYPE_LABEL = {
+  ip: 'IP 查询', port: '端口查询', cidr: 'CIDR 网段', gateway: '网关查询',
+  profile: '类型筛选', fuzzy: '模糊搜索', all: '全部数据'
+}
+
+function setQ(q) {
+  document.getElementById('searchInp').value = q
+  doSearch()
+}
+
+async function doSearch() {
+  const q = document.getElementById('searchInp').value.trim()
+  const r = await fetch(`${API}/netcheck/portscan/search?q=${encodeURIComponent(q)}&limit=200`)
+  const d = await r.json()
+
+  document.getElementById('resultsHeader').style.display = 'flex'
+  document.getElementById('resultCount').textContent = d.total
+  document.getElementById('queryType').textContent = QUERY_TYPE_LABEL[d.query_type] || ''
+
+  if (!d.results || !d.results.length) {
+    document.getElementById('resultsList').innerHTML = `<div class="empty"><div class="icon">😶</div><div>没有找到匹配结果</div></div>`
+    return
+  }
+
+  document.getElementById('resultsList').innerHTML = d.results.map(item => {
+    const [plabel, pcls] = PROFILE_LABEL[item.profile] || ['未知', 'profile-single']
+    const portTags = (item.open_ports || []).map(p => {
+      const [svc, cls] = PORT_INFO[p] || [p, 'p-other']
+      return `<div class="port-item ${cls}" onclick="setQ('port=${p}')">
+        <span class="port-num">${p}</span>
+        <span class="port-svc">${svc}</span>
+      </div>`
+    }).join('')
+
+    const flagMap = { HK:'🇭🇰', TW:'🇹🇼', US:'🇺🇸', CN:'🇨🇳', NL:'🇳🇱', AU:'🇦🇺', SG:'🇸🇬', JP:'🇯🇵', MO:'🇲🇴' }
+    const flag = flagMap[item.country] || '🌐'
+    const loc = [item.city, item.country].filter(Boolean).join(', ')
+    const org = (item.org || '').split(' ').slice(1).join(' ').slice(0, 30)
+
+    // 收敛分析信息
+    const conv = item.convergence
+    const convHtml = conv ? `
+      <div style="margin-top:8px;padding:6px 10px;background:#0d1117;border-radius:4px;border-left:3px solid ${conv.tag==='proxy_chain'?'#f85149':'#d29922'}">
+        <span style="font-size:11px;color:#8b949e">代理链路: </span>
+        <span style="font-size:11px;color:#f85149;font-family:monospace">${conv.convergence_ip}</span>
+        <span style="font-size:11px;color:#484f58"> hop${conv.convergence_hop} · ${conv.node_count}节点验证 · 置信度${(conv.confidence*100).toFixed(0)}%</span>
+        ${conv.convergence_org ? `<span style="font-size:11px;color:#64748b"> · ${conv.convergence_org}</span>` : ''}
+      </div>` : ''
+
+    // 路由延迟信息
+    const traces = item.traces || []
+    const traceHtml = traces.length ? `
+      <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
+        ${traces.map(t => `<span style="font-size:11px;padding:2px 7px;background:#161b22;border:1px solid #21262d;border-radius:3px;color:#64748b">
+          ${t.agent} <span style="color:${t.latency>200?'#f85149':t.latency>100?'#d29922':'#3fb950'}">${t.latency>0?t.latency+'ms':'—'}</span> ${t.hops}跳
+        </span>`).join('')}
+      </div>` : ''
+
+    return `<div class="result-card">
+      <div class="card-top">
+        <div class="card-ip" onclick="setQ('ip=${item.ip}')">${item.ip}</div>
+        <span class="card-profile ${pcls}">${plabel}</span>
+        ${item.asn ? `<span style="font-size:11px;color:#60a5fa;font-family:monospace" onclick="setQ('${item.asn}')" style="cursor:pointer">${item.asn}</span>` : ''}
+        ${loc ? `<span style="font-size:12px;color:#8b949e">${flag} ${loc}</span>` : ''}
+        ${org ? `<span style="font-size:11px;color:#484f58">${org}</span>` : ''}
+        ${item.ip_tag ? `<span style="font-size:10px;color:#64748b">${item.ip_tag}</span>` : ''}
+        <div class="card-meta">${item.port_count}端口 · 探测${item.seen_count||0}次 · ${item.scanned_at||''}</div>
+      </div>
+      <div class="port-list">${portTags}</div>
+      ${convHtml}
+      ${traceHtml}
+    </div>`
+  }).join('')
+}
+
+async function loadStats() {
+  const r = await fetch(`${API}/netcheck/portscan/search?q=&limit=500`)
+  const d = await r.json()
+  const all = d.results || []
+
+  // 数据库概览
+  const total = d.total
+  const full = all.filter(x => x.profile === 'full_proxy').length
+  document.getElementById('dbStats').innerHTML = `
+    <div class="stat-row" onclick="setQ('')"><span class="stat-label">总IP数</span><span class="stat-val">${total}</span></div>
+    <div class="stat-row" onclick="setQ('profile=full_proxy')"><span class="stat-label">完整机场</span><span class="stat-val">${full}</span></div>
+    <div class="stat-row" onclick="setQ('gateway=45.207.215.1')"><span class="stat-label">cognetcloud网关</span><span class="stat-val">287</span></div>
+  `
+
+  // 端口统计
+  const portCount = {}
+  all.forEach(item => (item.open_ports||[]).forEach(p => { portCount[p] = (portCount[p]||0)+1 }))
+  const maxP = Math.max(...Object.values(portCount))
+  const topPorts = Object.entries(portCount).sort((a,b) => b[1]-a[1]).slice(0,8)
+  document.getElementById('portStats').innerHTML = topPorts.map(([p, cnt]) => {
+    const [svc] = PORT_INFO[p] || [p]
+    return `<div class="stat-row" onclick="setQ('port=${p}')">
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between">
+          <span class="stat-label">${p} <span style="color:#484f58">${svc}</span></span>
+          <span class="stat-val">${cnt}</span>
+        </div>
+        <div class="stat-bar"><div class="stat-bar-fill" style="width:${cnt/maxP*100}%"></div></div>
+      </div>
+    </div>`
+  }).join('')
+
+  // 类型筛选
+  const profiles = {full_proxy:'完整机场', partial:'部分开放', single:'单端口'}
+  document.getElementById('profileStats').innerHTML = Object.entries(profiles).map(([k,v]) => {
+    const cnt = all.filter(x => x.profile === k).length
+    return `<div class="stat-row" onclick="setQ('profile=${k}')">
+      <span class="stat-label">${v}</span><span class="stat-val">${cnt}</span>
+    </div>`
+  }).join('')
+}
+
+loadStats()
+</script>
+</body>
+</html>

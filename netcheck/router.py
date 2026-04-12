@@ -325,17 +325,34 @@ async def get_scan(task_id: str):
 async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
     """后台执行：多节点 traceroute 目标 IP，分析路由画像"""
     from core.state import agents as _agents
+    import re as _re
+
+    # 如果输入的是域名，先解析成 IP
+    resolved_ip = target_ip
+    if not _re.match(r'^\d+\.\d+\.\d+\.\d+$', target_ip) and ':' not in target_ip:
+        try:
+            import socket as _sock
+            resolved_ip = _sock.gethostbyname(target_ip)
+            # 更新 task 里的 target，但保留原始域名显示
+            task = _scan_tasks.get(task_id, {})
+            task["original_target"] = target_ip
+            task["resolved_ip"] = resolved_ip
+        except Exception:
+            pass  # 解析失败就用原始值
     from routers.agents import _ws_call
     from netcheck.checker import enrich_hops, parse_traceroute, is_private_ip
 
     task = _scan_tasks[task_id]
 
-    # 1. 查询目标 IP 信息
-    ip_profile = await _get_ip_info(target_ip)
+    # 1. 查询目标 IP 信息（用解析后的 IP）
+    ip_profile = await _get_ip_info(resolved_ip)
+    if target_ip != resolved_ip:
+        ip_profile["domain"] = target_ip  # 保留原始域名
+        ip_profile["ip"] = resolved_ip
     task["ip_profile"] = ip_profile
 
-    # 2. 多节点并发 traceroute
-    is_ipv6 = ":" in target_ip  # IPv6 地址包含冒号
+    # 2. 多节点并发 traceroute（用解析后的 IP）
+    is_ipv6 = ":" in resolved_ip
 
     # 判断目标是否为境内 IP（中国大陆）
     target_is_cn = ip_profile.get("country", "") in ("CN",) and \
@@ -399,17 +416,17 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
         if is_ipv6:
             # IPv6：traceroute6 或 ping6，取延迟为主
             if is_win:
-                cmd = f"ping -6 -n 3 {target_ip}"
+                cmd = f"ping -6 -n 3 {resolved_ip}"
             elif is_android:
-                cmd = f"ping6 -c 3 {target_ip} 2>/dev/null || ping -c 3 {target_ip}"
+                cmd = f"ping6 -c 3 {resolved_ip} 2>/dev/null || ping -c 3 {resolved_ip}"
             else:
-                cmd = f"traceroute6 -n -m 15 -w 2 {target_ip} 2>/dev/null || ping6 -c 3 {target_ip} 2>/dev/null || ping -c 3 {target_ip}"
+                cmd = f"traceroute6 -n -m 15 -w 2 {resolved_ip} 2>/dev/null || ping6 -c 3 {resolved_ip} 2>/dev/null || ping -c 3 {resolved_ip}"
         elif is_win:
-            cmd = f"tracert -d -h 20 {target_ip}"
+            cmd = f"tracert -d -h 20 {resolved_ip}"
         elif is_android:
-            cmd = f"ping -c 3 {target_ip}"
+            cmd = f"ping -c 3 {resolved_ip}"
         else:
-            cmd = f"traceroute -n -m 20 -w 2 {target_ip} 2>/dev/null || tracepath -n {target_ip} 2>/dev/null"
+            cmd = f"traceroute -n -m 20 -w 2 {resolved_ip} 2>/dev/null || tracepath -n {resolved_ip} 2>/dev/null"
 
         try:
             resp = await _ws_call(agent_id, {"type": "exec", "command": cmd, "timeout": 60}, timeout=75)
@@ -480,6 +497,15 @@ async def _run_scan(task_id: str, target_ip: str, agent_ids: List[str]):
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning(f"save traceroute failed: {e}")
+
+    # 5. 把用户检测的 IP 加入 scan_queue（低优先级，已扫过的跳过）
+    try:
+        scan_ip = resolved_ip if resolved_ip != target_ip else target_ip
+        if scan_ip and '.' in scan_ip:  # 只处理 IPv4
+            from netcheck.queue import enqueue
+            enqueue([scan_ip], source="probe_user", priority=9)  # 9=最低优先级
+    except Exception:
+        pass
 
 
 def _analyze_ip_profile(ip_profile: dict, results: list) -> dict:
@@ -985,3 +1011,196 @@ async def get_target_convergence(ip: str):
     """查询单个 IP 的收敛分析结果"""
     from netcheck.convergence import analyze_target
     return analyze_target(ip)
+
+
+# ── 端口扫描结果 ──────────────────────────────────────────────
+
+@router.get("/portscan/search")
+async def search_portscan(q: str = "", limit: int = 100):
+    """
+    搜索端口扫描数据，支持：
+    - ip=1.2.3.4 或直接输入 IP
+    - port=8388 或直接输入端口号
+    - port=8388,443 多端口
+    - gateway=45.207.215.1
+    - profile=full_proxy
+    """
+    from netcheck.trace_db import get_conn
+    import json as _json, re as _re
+
+    q = q.strip()
+    if not q:
+        # 无查询返回统计
+        with get_conn() as db:
+            c = db.cursor()
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='port_scan_results'")
+            if not c.fetchone():
+                return {"results": [], "total": 0, "query_type": "empty"}
+            rows = c.execute("SELECT ip,open_ports,port_count,profile,gateway_ip,scanned_by,scanned_at FROM port_scan_results ORDER BY port_count DESC LIMIT ?", (limit,)).fetchall()
+            total = c.execute("SELECT COUNT(*) FROM port_scan_results").fetchone()[0]
+        return {"results": _fmt_rows(rows), "total": total, "query_type": "all"}
+
+    with get_conn() as db:
+        c = db.cursor()
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='port_scan_results'")
+        if not c.fetchone():
+            return {"results": [], "total": 0, "query_type": "no_data"}
+
+        # 解析查询
+        query_type = "unknown"
+        rows = []
+
+        # ip= 或纯 IP
+        ip_match = _re.match(r'^(?:ip=)?(\d+\.\d+\.\d+\.\d+(?:/\d+)?)$', q)
+        if ip_match:
+            ip_val = ip_match.group(1)
+            if '/' in ip_val:
+                # CIDR 查询
+                import ipaddress
+                try:
+                    net = ipaddress.ip_network(ip_val, strict=False)
+                    rows = c.execute("SELECT ip,open_ports,port_count,profile,gateway_ip,scanned_by,scanned_at FROM port_scan_results").fetchall()
+                    rows = [r for r in rows if ipaddress.ip_address(r[0]) in net][:limit]
+                    query_type = "cidr"
+                except Exception:
+                    rows = []
+            else:
+                rows = c.execute("SELECT ip,open_ports,port_count,profile,gateway_ip,scanned_by,scanned_at FROM port_scan_results WHERE ip LIKE ?", (f"%{ip_val}%",)).fetchall()[:limit]
+                query_type = "ip"
+
+        # protocol= 协议名搜索
+        elif q.startswith('protocol=') or q.lower() in ('shadowsocks','ss','v2ray','xray','clash','socks5','vmess','trojan'):
+            proto = q.replace('protocol=', '').lower().strip()
+            PROTO_PORTS = {
+                'shadowsocks': ['8388'], 'ss': ['8388'],
+                'v2ray': ['10086', '10808'], 'vmess': ['10086', '10808'],
+                'xray': ['10808', '10086'],
+                'clash': ['7890'],
+                'socks5': ['1080'],
+                'trojan': ['443'],
+                'ssh': ['22'],
+            }
+            ports = PROTO_PORTS.get(proto, [])
+            if not ports:
+                rows = []
+                query_type = "protocol"
+            else:
+                all_rows = c.execute("SELECT ip,open_ports,port_count,profile,gateway_ip,scanned_by,scanned_at FROM port_scan_results").fetchall()
+                rows = [r for r in all_rows if any(p in set(_json.loads(r[1]) if r[1] else []) for p in ports)]
+                rows = sorted(rows, key=lambda x: -x[2])[:limit]
+                query_type = "protocol"
+
+        # port= 或纯数字
+        elif _re.match(r'^(?:port=)?[\d,]+$', q):
+            ports_str = q.replace('port=', '')
+            ports = [p.strip() for p in ports_str.split(',') if p.strip()]
+            # 查包含所有指定端口的 IP
+            all_rows = c.execute("SELECT ip,open_ports,port_count,profile,gateway_ip,scanned_by,scanned_at FROM port_scan_results").fetchall()
+            rows = []
+            for r in all_rows:
+                open_p = set(_json.loads(r[1]) if r[1] else [])
+                if all(p in open_p for p in ports):
+                    rows.append(r)
+            rows = sorted(rows, key=lambda x: -x[2])[:limit]
+            query_type = "port"
+
+        # gateway=
+        elif q.startswith('gateway='):
+            gw = q.replace('gateway=', '').strip()
+            rows = c.execute("SELECT ip,open_ports,port_count,profile,gateway_ip,scanned_by,scanned_at FROM port_scan_results WHERE gateway_ip=? ORDER BY port_count DESC LIMIT ?", (gw, limit)).fetchall()
+            query_type = "gateway"
+
+        # profile=
+        elif q.startswith('profile='):
+            pf = q.replace('profile=', '').strip()
+            rows = c.execute("SELECT ip,open_ports,port_count,profile,gateway_ip,scanned_by,scanned_at FROM port_scan_results WHERE profile=? ORDER BY port_count DESC LIMIT ?", (pf, limit)).fetchall()
+            query_type = "profile"
+
+        else:
+            # 模糊搜索 IP
+            rows = c.execute("SELECT ip,open_ports,port_count,profile,gateway_ip,scanned_by,scanned_at FROM port_scan_results WHERE ip LIKE ? ORDER BY port_count DESC LIMIT ?", (f"%{q}%", limit)).fetchall()
+            query_type = "fuzzy"
+
+    return {"results": _fmt_rows(rows), "total": len(rows), "query_type": query_type, "query": q}
+
+
+def _fmt_rows(rows):
+    import json as _json
+    from netcheck.trace_db import get_conn
+    ips = [r[0] for r in rows]
+    if not ips:
+        return []
+
+    with get_conn() as db:
+        ph = ','.join('?' * len(ips))
+
+        # ip_profiles: 地理、ASN、类型
+        geo = {}
+        for g in db.execute(f"SELECT ip,country,city,org,asn,tag,seen_count FROM ip_profiles WHERE ip IN ({ph})", ips).fetchall():
+            geo[g[0]] = {"country": g[1] or "", "city": g[2] or "", "org": g[3] or "", "asn": g[4] or "", "tag": g[5] or "", "seen_count": g[6] or 0}
+
+        # convergence_results: 收敛分析
+        conv = {}
+        for g in db.execute(f"SELECT target,convergence_ip,convergence_org,convergence_hop,node_count,confidence,tag FROM convergence_results WHERE target IN ({ph})", ips).fetchall():
+            conv[g[0]] = {"convergence_ip": g[1], "convergence_org": g[2] or "", "convergence_hop": g[3], "node_count": g[4], "confidence": g[5], "tag": g[6]}
+
+        # traceroute_tasks: 最近一次各节点延迟
+        traces = {}
+        for g in db.execute(f"SELECT target,agent_name,total_hops,last_latency_ms FROM traceroute_tasks WHERE target IN ({ph}) ORDER BY created_at DESC", ips).fetchall():
+            if g[0] not in traces:
+                traces[g[0]] = []
+            if len(traces[g[0]]) < 3:
+                traces[g[0]].append({"agent": g[1] or "", "hops": g[2] or 0, "latency": g[3] or 0})
+
+    return [{
+        "ip": r[0],
+        "open_ports": _json.loads(r[1]) if r[1] else [],
+        "port_count": r[2],
+        "profile": r[3],
+        "gateway_ip": r[4],
+        "scanned_by": r[5],
+        "scanned_at": (r[6] or "")[:16],
+        # 地理信息
+        "country": geo.get(r[0], {}).get("country", ""),
+        "city": geo.get(r[0], {}).get("city", ""),
+        "org": geo.get(r[0], {}).get("org", ""),
+        "asn": geo.get(r[0], {}).get("asn", ""),
+        "ip_tag": geo.get(r[0], {}).get("tag", ""),
+        "seen_count": geo.get(r[0], {}).get("seen_count", 0),
+        # 收敛分析
+        "convergence": conv.get(r[0]),
+        # 路由数据
+        "traces": traces.get(r[0], []),
+    } for r in rows]
+
+
+@router.get("/portscan/results")
+async def get_portscan_results(gateway: str = "", profile: str = "", limit: int = 500):
+    """查询端口扫描结果"""
+    return await search_portscan(q=f"gateway={gateway}" if gateway else (f"profile={profile}" if profile else ""), limit=limit)
+
+
+# ── 手动加入扫描队列 ──────────────────────────────────────────
+
+from pydantic import BaseModel as _BM3
+
+class QueueAddRequest(_BM3):
+    ips: list
+    priority: int = 5
+    source: str = "manual"
+
+@router.post("/queue/add")
+async def add_to_queue(req: QueueAddRequest):
+    """手动把 IP 列表加入扫描队列"""
+    from netcheck.queue import enqueue, queue_stats
+    # 过滤有效 IP/域名
+    valid = [ip.strip() for ip in req.ips if ip.strip() and len(ip.strip()) > 3]
+    added = enqueue(valid, source=req.source, priority=req.priority)
+    stats = queue_stats()
+    return {"added": added, "total_submitted": len(valid), "queue": stats}
+
+@router.get("/queue/stats")
+async def get_queue_stats():
+    """获取队列状态"""
+    from netcheck.queue import queue_stats
+    return queue_stats()

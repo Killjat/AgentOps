@@ -111,6 +111,10 @@ class AnalysisScheduler:
                     # 所有节点并发 traceroute 同一个 IP
                     await _run_scan(task_id, ip, agent_ids)
                     mark_done(ip, success=True)
+
+                    # traceroute 完成后，用海外节点自动做端口扫描
+                    asyncio.create_task(_port_scan_ip(ip, agent_ids))
+
                 except Exception as e:
                     mark_done(ip, success=False)
                     logger.warning(f"[Queue] 任务失败 {ip}: {e}")
@@ -379,3 +383,65 @@ _scheduler = AnalysisScheduler()
 async def start_scheduler():
     """在 FastAPI 启动时调用"""
     asyncio.create_task(_scheduler.start())
+
+
+async def _port_scan_ip(ip: str, agent_ids: list):
+    """traceroute 完成后自动对 IP 做端口扫描，结果存入 port_scan_results"""
+    from core.state import agents as _agents
+    from routers.agents import _ws_call
+    import json as _json
+    from netcheck.trace_db import get_conn
+
+    # 只用海外节点扫（美国/香港），避免国内节点被风控
+    overseas = []
+    for aid in agent_ids:
+        a = _agents.get(aid)
+        if not a:
+            continue
+        name = (a.name or "").lower()
+        os_t = str(getattr(a.os_type, 'value', a.os_type)).lower()
+        if "linux" in os_t and any(k in name for k in ["美国", "香港", "us", "hk"]):
+            overseas.append(aid)
+
+    if not overseas:
+        return  # 没有海外节点，跳过
+
+    # 检查是否已扫描过
+    with get_conn() as db:
+        existing = db.execute("SELECT ip FROM port_scan_results WHERE ip=?", (ip,)).fetchone()
+        if existing:
+            return  # 已有数据，跳过
+
+    ports = "22,80,443,1080,8080,8388,8443,10086,10808,7890,54321"
+    agent_id = overseas[0]
+    cmd = f"nmap -p {ports} --open -T4 --host-timeout 15s {ip} 2>/dev/null"
+
+    try:
+        resp = await _ws_call(agent_id, {"type": "exec", "command": cmd, "timeout": 30}, timeout=35)
+        raw = resp.get("output", "") or ""
+
+        # 解析 nmap 输出
+        import re
+        open_ports = []
+        for line in raw.splitlines():
+            m = re.match(r'(\d+)/tcp\s+open', line)
+            if m:
+                open_ports.append(m.group(1))
+
+        if not open_ports and "Host is up" not in raw:
+            return  # 主机不可达
+
+        port_count = len(open_ports)
+        profile = "full_proxy" if port_count >= 7 else "partial" if port_count >= 2 else "single" if port_count == 1 else "unknown"
+
+        with get_conn() as db:
+            db.execute("""
+                INSERT OR REPLACE INTO port_scan_results
+                (ip, open_ports, port_count, profile, gateway_ip, scanned_by, scanned_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (ip, _json.dumps(sorted(open_ports, key=int)), port_count, profile,
+                  "", agent_id, datetime.now().isoformat()))
+        logger.info(f"[PortScan] {ip}: {open_ports}")
+
+    except Exception as e:
+        logger.warning(f"[PortScan] {ip} 扫描失败: {e}")

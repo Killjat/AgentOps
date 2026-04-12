@@ -179,6 +179,14 @@ if WEB_DIR.exists():
             "Pragma": "no-cache"
         })
 
+    @app.get("/portscan", include_in_schema=False)
+    async def serve_portscan():
+        content = (WEB_DIR / "portscan.html").read_text()
+        return HTMLResponse(content=content, headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache"
+        })
+
     # ── 一键安装脚本 ──────────────────────────────────────────
     SERVER_URL_PUBLIC = os.getenv("SERVER_URL", "https://47.111.28.162:8443")
     AGENT_BASE_URL = "https://github.com/Killjat/agentops/releases/latest/download"

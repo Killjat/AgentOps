@@ -126,6 +126,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </head>
 <body>
 <div class="page">
+  <!-- 目标 IP 提示横幅（有 URL 参数时显示）-->
+  <div id="targetBanner" style="display:none;background:#1a1527;border:1px solid #2d1a4a;border-radius:10px;padding:12px 18px;margin-bottom:20px;display:flex;align-items:center;gap:10px">
+    <span style="font-size:18px">🎯</span>
+    <div>
+      <div style="font-size:13px;font-weight:600;color:#a78bfa">正在侦察目标</div>
+      <div style="font-size:14px;color:#e2e8f0;font-family:monospace" id="targetBannerIp"></div>
+    </div>
+    <div style="margin-left:auto;font-size:11px;color:#64748b">第一步检测你的出口IP，第二步侦察目标</div>
+  </div>
   <div class="header">
     <h1>🔬 IP 纯净度检测</h1>
     <p>自动检测您的网络环境，判断是否适合 TikTok 跨境直播</p>
@@ -441,7 +450,11 @@ function updateVerdict() {
 
   // 自动触发路由侦察
   if (myIp) {
-    setTimeout(() => startRecon(myIp), 500)
+    // 如果 URL 有 ?ip= 参数，跳过本机自动侦察，等 URL 参数处理
+    const _urlParams = new URLSearchParams(window.location.search)
+    if (!_urlParams.get('ip')) {
+      setTimeout(() => startRecon(myIp), 500)
+    }
   }
 }
 
@@ -858,6 +871,30 @@ function hopEmoji(tag) {
   await checkHttp()
   await Promise.all([checkWebRTC(), checkDns(), checkSplit()])
   updateVerdict()
+
+  // 支持 URL 参数 ?ip=xxx 自动填入并触发目标侦察
+  const urlParams = new URLSearchParams(window.location.search)
+  const targetIp = urlParams.get('ip')
+  if (targetIp) {
+    // 显示目标横幅
+    const banner = document.getElementById('targetBanner')
+    const bannerIp = document.getElementById('targetBannerIp')
+    if (banner && bannerIp) {
+      banner.style.display = 'flex'
+      bannerIp.textContent = targetIp
+    }
+    const reconInput = document.getElementById('reconIpInput')
+    if (reconInput) reconInput.value = targetIp
+    // 等基础检测完成后触发（本机自动侦察已被跳过）
+    setTimeout(() => {
+      startRecon(targetIp)
+      // 滚动到侦察区域
+      setTimeout(() => {
+        const reconStep = document.getElementById('reconStep')
+        if (reconStep) reconStep.scrollIntoView({behavior: 'smooth', block: 'start'})
+      }, 500)
+    }, 2000)
+  }
 })()
 </script>
 

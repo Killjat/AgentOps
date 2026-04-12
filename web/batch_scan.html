@@ -170,6 +170,11 @@ tiktok.com
     </div>
 
     <button class="btn-submit" id="btnSubmit" onclick="startScan()">开始探测</button>
+    <button onclick="addToQueue()" id="btnQueue"
+      style="width:100%;padding:9px;background:#1a3a5a;border:1px solid #1a3a5a;border-radius:6px;color:#60a5fa;font-size:13px;font-weight:600;cursor:pointer;margin-top:6px">
+      📥 加入后台队列
+    </button>
+    <div id="queueStatus" style="font-size:11px;color:#484f58;margin-top:6px;text-align:center"></div>
   </div>
 
   <!-- 右侧 -->
@@ -224,6 +229,31 @@ async function importFromFofa() {
   } catch(e) {
     alert('FOFA 查询失败: ' + e.message)
     btn.textContent = '导入'
+    btn.disabled = false
+  }
+}
+
+async function addToQueue() {
+  const targets = parseTargets()
+  if (!targets.length) { alert('请输入至少一个目标'); return }
+  const btn = document.getElementById('btnQueue')
+  btn.textContent = '加入中...'
+  btn.disabled = true
+  try {
+    const h = await authHeaders()
+    const r = await fetch('/netcheck/queue/add', {
+      method: 'POST', headers: h,
+      body: JSON.stringify({ ips: targets, priority: 5, source: 'manual' })
+    })
+    const d = await r.json()
+    const status = document.getElementById('queueStatus')
+    status.textContent = `✅ 已加入 ${d.added} 个新IP，队列待处理: ${d.queue?.pending || 0}`
+    status.style.color = '#3fb950'
+    btn.textContent = '📥 加入后台队列'
+    btn.disabled = false
+  } catch(e) {
+    alert('加入失败: ' + e.message)
+    btn.textContent = '📥 加入后台队列'
     btn.disabled = false
   }
 }
