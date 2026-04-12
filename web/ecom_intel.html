@@ -118,8 +118,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <select class="limit-select" id="limit">
         <option value="5">5个站</option>
         <option value="10" selected>10个站</option>
-        <option value="15">15个站</option>
         <option value="20">20个站</option>
+        <option value="50">50个站</option>
       </select>
       <button class="search-btn" id="searchBtn" onclick="doSearch()">🔍 批量搜索</button>
     </div>
@@ -131,6 +131,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <span class="example-tag" onclick="quickSearch('jewelry')">珠宝</span>
       <span class="example-tag" onclick="quickSearch('fitness')">健身</span>
       <span class="example-tag" onclick="quickSearch('pet supplies')">宠物用品</span>
+    </div>
+
+    <!-- 过滤条件 -->
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid #21262d">
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:#8b949e;user-select:none">
+        <input type="radio" name="filter" value="all" checked onchange="filterChanged()" style="accent-color:#388bfd">
+        <span>全部站点</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:#69c9d0;user-select:none">
+        <input type="radio" name="filter" value="tiktok" onchange="filterChanged()" style="accent-color:#69c9d0">
+        <span>🎵 有 TikTok 账号</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:#69c9d0;user-select:none">
+        <input type="radio" name="filter" value="tt_ads" onchange="filterChanged()" style="accent-color:#69c9d0">
+        <span>🎯 在投 TikTok 广告</span>
+      </label>
     </div>
 
     <!-- 单站分析 -->
@@ -216,6 +232,18 @@ async function doSingle() {
   }
 }
 
+function filterChanged() {
+  // 切换过滤条件时，对已有结果做客户端过滤，不重新请求接口
+  if (_lastResults) renderResults(_lastResults);
+}
+
+function getFilter() {
+  const v = document.querySelector('input[name="filter"]:checked')?.value || 'all';
+  return v;
+}
+
+let _lastResults = null;  // 缓存上次搜索结果
+
 async function doSearch() {
   const keyword = document.getElementById('keyword').value.trim();
   if (!keyword) { alert('请输入关键词'); return; }
@@ -238,8 +266,11 @@ async function doSearch() {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    _lastResults = data;
     renderResults(data);
-    showStatus('done', `✅ 分析完成，发现 ${data.total} 个站点 · ${data.analyzed_at}`);
+    const f = getFilter();
+    const filterLabel = f === 'tt_ads' ? '（仅 TikTok 广告投放）' : f === 'tiktok' ? '（仅有 TikTok 账号）' : '';
+    showStatus('done', `✅ 分析完成，发现 ${data.total} 个站点${filterLabel} · ${data.analyzed_at}`);
   } catch (e) {
     showStatus('error', `❌ 请求失败：${e.message}`);
     document.getElementById('emptyState').style.display = 'block';
@@ -259,19 +290,28 @@ function showStatus(type, msg) {
 }
 
 function renderResults(data) {
-  const sites = data.sites || [];
+  let sites = data.sites || [];
   if (!sites.length) {
     document.getElementById('emptyState').style.display = 'block';
     return;
   }
 
-  // 统计
+  // 客户端过滤
+  const f = getFilter();
+  let filtered = sites;
+  if (f === 'tiktok') filtered = sites.filter(s => s.social?.tiktok);
+  if (f === 'tt_ads') filtered = sites.filter(s => s.social?.tt_pixel_id);
+
+  const filterLabel = f === 'tt_ads' ? ' · 仅 TikTok 广告' : f === 'tiktok' ? ' · 仅有 TikTok 账号' : '';
+  showStatus('done', `✅ 分析完成，共 ${sites.length} 个站点，显示 ${filtered.length} 个${filterLabel} · ${data.analyzed_at}`);
+
+  // 统计（基于全量结果）
   const shopify = sites.filter(s => s.platform === 'Shopify').length;
   const cf = sites.filter(s => s.cdn === 'Cloudflare').length;
   const withPay = sites.filter(s => s.payment && s.payment.length > 0).length;
   const allPay = [...new Set(sites.flatMap(s => s.payment || []))];
 
-  document.getElementById('totalCount').textContent = sites.length;
+  document.getElementById('totalCount').textContent = filtered.length;
   document.getElementById('keywordLabel').textContent = `关键词：${data.keyword}`;
   document.getElementById('shopifyCount').textContent = shopify;
   document.getElementById('shopifyPct').textContent = `占比 ${Math.round(shopify/sites.length*100)}%`;
@@ -283,7 +323,7 @@ function renderResults(data) {
 
   // 渲染卡片
   const grid = document.getElementById('sitesGrid');
-  grid.innerHTML = sites.map(s => siteCard(s)).join('');
+  grid.innerHTML = filtered.length ? filtered.map(s => siteCard(s)).join('') : '<div style="color:#484f58;padding:40px;text-align:center">当前过滤条件下无匹配站点</div>';
 }
 
 function platformTag(p) {
@@ -356,12 +396,21 @@ function socialRow(social) {
 
 function siteCard(s) {
   const favicon = `<img src="https://www.google.com/s2/favicons?domain=${s.domain}&sz=32" onerror="this.style.display='none';this.parentNode.textContent='🌐'" />`;
-  const techTags = (s.tech_stack || []).slice(0, 3).map(t => `<span class="tag tag-unknown">${t}</span>`).join('');
+  const techTags = (s.tech_stack || []).map(t => `<span class="tag tag-unknown">${t}</span>`).join('');
+  const appTags = (s.shopify_apps || []).map(a => `<span class="tag" style="background:#1a2a1a;color:#3fb950;border:1px solid #1a4731">📦 ${a}</span>`).join('');
   const payTags = (s.payment || []).map(p => `<span class="pay-tag">${p}</span>`).join('');
   const ipDisplay = s.ip ? s.ip.substring(0, 15) : '—';
   const serverDisplay = (s.server || '—').substring(0, 14);
   const priceDisplay = s.price_hint ? s.price_hint.substring(0, 20) : '—';
   const location = [s.city, s.country].filter(Boolean).join(', ') || '—';
+
+  // 流量和规模信息
+  const traffic = s.traffic || {};
+  const visits = traffic.monthly_visits || '';
+  const rank = traffic.global_rank ? `#${traffic.global_rank.toLocaleString()}` : '';
+  const products = s.product_count > 0 ? `${s.product_count}+ SKU` : '—';
+  const regDate = s.registered_at ? s.registered_at.substring(0, 7) : '—';
+  const domainId = s.domain.replace(/\./g, '_');
 
   return `
   <div class="site-card">
@@ -375,10 +424,30 @@ function siteCard(s) {
     <div class="site-tags">
       ${platformTag(s.platform)}
       ${cdnTag(s.cdn)}
-      ${techTags}
     </div>
+    ${(techTags || appTags) ? `
+    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">
+      <span style="font-size:10px;color:#484f58;align-self:center;text-transform:uppercase;letter-spacing:.5px">技术栈</span>
+      ${techTags}
+      ${appTags}
+    </div>` : ''}
     <div class="site-metrics">
-      <div class="metric"><div class="metric-label">IP</div><div class="metric-value" title="${s.ip}">${ipDisplay}</div></div>
+      <div class="metric" id="sw_${domainId}">
+        <div class="metric-label">月访问量</div>
+        <div class="metric-value">
+          ${visits
+            ? `<span style="color:#3fb950">${visits}</span>`
+            : `<a href="https://www.similarweb.com/website/${s.domain}/" target="_blank"
+                style="color:#388bfd;font-size:11px;text-decoration:none;display:inline-flex;align-items:center;gap:3px"
+                title="在 SimilarWeb 查看流量数据">
+                📊 查看
+               </a>`
+          }
+        </div>
+      </div>
+      <div class="metric"><div class="metric-label">全球排名</div><div class="metric-value" id="rank_${domainId}">${rank||'—'}</div></div>
+      <div class="metric"><div class="metric-label">商品数</div><div class="metric-value">${products}</div></div>
+      <div class="metric"><div class="metric-label">建站时间</div><div class="metric-value">${regDate}</div></div>
       <div class="metric"><div class="metric-label">Server</div><div class="metric-value">${serverDisplay}</div></div>
       <div class="metric"><div class="metric-label">价格区间</div><div class="metric-value">${priceDisplay}</div></div>
     </div>

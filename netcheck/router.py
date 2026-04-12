@@ -1213,6 +1213,8 @@ from pydantic import BaseModel as _BM4
 class EcomSearchRequest(_BM4):
     keyword: str
     limit: int = 10
+    require_tiktok: bool = False   # 只返回有 TikTok 账号的站
+    require_tt_ads: bool = False   # 只返回在投 TikTok 广告的站（有 Pixel）
 
 class EcomSingleRequest(_BM4):
     domain: str  # 直接分析单个域名
@@ -1314,10 +1316,128 @@ async def ecom_analyze_single(req: EcomSingleRequest):
                 title_m = _re.search(r'<title[^>]*>([^<]+)</title>', body, _re.IGNORECASE)
                 if title_m: result["title"] = title_m.group(1).strip()[:60]
 
+                # Shopify Apps 识别
+                _app_sigs = {
+                    "ReCharge": ["rechargeapps.com", "rechargepayments.com"],
+                    "Loox": ["loox.io", "loox-reviews"],
+                    "Yotpo": ["yotpo.com", "yotpoWidget"],
+                    "Okendo": ["okendo.io"],
+                    "Stamped": ["stamped.io"],
+                    "Judge.me": ["judge.me"],
+                    "Privy": ["privy.com", "widget.privy"],
+                    "Postscript": ["postscript.io"],
+                    "Attentive": ["attn.tv", "attentivemobile"],
+                    "Hotjar": ["hotjar.com"],
+                    "Lucky Orange": ["luckyorange.com"],
+                }
+                result["shopify_apps"] = [app for app, sigs in _app_sigs.items() if any(sig in body for sig in sigs)]
+
     except Exception as e:
         result["error"] = str(e)[:80]
 
+    # 并发跑商品数 + 建站时间
+    import asyncio as _asyncio
+    async def _prod_count(domain):
+        try:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as s:
+                async with s.get(f"https://{domain}/sitemap.xml", headers={"User-Agent": "Mozilla/5.0"}, timeout=aiohttp.ClientTimeout(total=4)) as r:
+                    if r.status == 200:
+                        text = await r.text(errors='ignore')
+                        n = len(_re.findall(r'sitemap_products_\d+\.xml', text))
+                        if n > 0: return n * 250
+        except Exception:
+            pass
+        return 0
+
+    async def _reg_date(domain):
+        try:
+            tld = domain.split('.')[-1]
+            root = '.'.join(domain.split('.')[-2:])
+            servers = {'com':'https://rdap.verisign.com/com/v1','net':'https://rdap.verisign.com/net/v1'}
+            base = servers.get(tld, 'https://rdap.org')
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as s:
+                async with s.get(f"{base}/domain/{root}", headers={"User-Agent": "Mozilla/5.0"}, timeout=aiohttp.ClientTimeout(total=4)) as r:
+                    if r.status == 200:
+                        d = await r.json(content_type=None)
+                        for ev in d.get("events", []):
+                            if "registration" in ev.get("eventAction", ""):
+                                return ev.get("eventDate", "")[:10]
+        except Exception:
+            pass
+        return ""
+
+    pc, rd = await _asyncio.gather(_prod_count(domain), _reg_date(domain))
+    result["product_count"] = pc
+    result["registered_at"] = rd
+    result["traffic"] = {}
+
     return result
+
+
+@router.get("/ecom/traffic")
+async def ecom_traffic(domain: str):
+    """按需获取 SimilarWeb 流量数据（用户点击时才调用）"""
+    import aiohttp, ssl as _ssl, re as _re
+
+    ssl_ctx = _ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = _ssl.CERT_NONE
+
+    try:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as s:
+            async with s.get(
+                f"https://www.similarweb.com/website/{domain}/",
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept": "text/html,application/xhtml+xml",
+                },
+                timeout=aiohttp.ClientTimeout(total=12)
+            ) as r:
+                text = await r.text(errors='ignore')
+
+                # 提取月访问量
+                visits = ""
+                m = _re.search(r'"totalVisits"\s*:\s*([\d.]+)', text)
+                if m:
+                    v = float(m.group(1))
+                    if v >= 1_000_000: visits = f"{v/1_000_000:.1f}M"
+                    elif v >= 1_000: visits = f"{v/1_000:.0f}K"
+                    else: visits = str(int(v))
+                if not visits:
+                    m = _re.search(r'([\d,.]+)\s*(?:Total Visits|Monthly Visits)', text)
+                    if m: visits = m.group(1).replace(',','')
+
+                # 全球排名
+                rank = 0
+                m = _re.search(r'"globalRank"\s*:\s*\{"rank"\s*:\s*(\d+)', text)
+                if m: rank = int(m.group(1))
+
+                # 跳出率
+                bounce = ""
+                m = _re.search(r'"bounceRate"\s*:\s*([\d.]+)', text)
+                if m: bounce = f"{float(m.group(1))*100:.0f}%"
+
+                # 平均访问时长
+                duration = ""
+                m = _re.search(r'"avgVisitDuration"\s*:\s*([\d.]+)', text)
+                if m:
+                    sec = int(float(m.group(1)))
+                    duration = f"{sec//60}m{sec%60}s"
+
+                if visits or rank:
+                    return {
+                        "domain": domain,
+                        "monthly_visits": visits,
+                        "global_rank": rank,
+                        "bounce_rate": bounce,
+                        "avg_duration": duration,
+                        "source": "similarweb",
+                    }
+                # SimilarWeb 返回了但没数据（JS渲染）
+                return {"domain": domain, "monthly_visits": "", "global_rank": 0, "note": "需要JS渲染，数据不可用"}
+    except Exception as e:
+        return {"domain": domain, "error": str(e)[:60]}
 
 @router.post("/ecom/search")
 async def ecom_search(req: EcomSearchRequest):
@@ -1326,7 +1446,8 @@ async def ecom_search(req: EcomSearchRequest):
     from datetime import datetime as _dt
 
     keyword = req.keyword.strip()
-    limit = min(req.limit, 20)
+    limit = min(req.limit, 50)
+    fofa_fetch = min(limit * 5, 200)  # FOFA 多拉5倍去重，最多200条
 
     # 1. FOFA 搜索独立站
     email = _os.getenv("FOFA_EMAIL", "")
@@ -1337,11 +1458,9 @@ async def ecom_search(req: EcomSearchRequest):
         ssl_ctx = _ssl.create_default_context()
         ssl_ctx.check_hostname = False
         ssl_ctx.verify_mode = _ssl.CERT_NONE
-        # 多策略搜索，取并集去重
+        # 统一查询，不在 FOFA 层过滤（FOFA 快照和实时抓取内容可能不一致）
         queries = [
-            # Shopify 独立站（最多）
             f'body="cdn.shopify.com" && title="{keyword}" && status_code="200" && type="subdomain"',
-            # 非 Shopify 独立站（WooCommerce / 自建）
             f'title="{keyword}" && (body="woocommerce" || body="wp-content/plugins") && status_code="200" && type="subdomain"',
         ]
         seen = set()
@@ -1349,7 +1468,7 @@ async def ecom_search(req: EcomSearchRequest):
             if len(fofa_sites) >= limit:
                 break
             qb64 = base64.b64encode(q.encode()).decode()
-            url = f"https://fofa.info/api/v1/search/all?email={email}&key={key}&qbase64={qb64}&size={limit}&fields=ip,domain,title,country,city,server"
+            url = f"https://fofa.info/api/v1/search/all?email={email}&key={key}&qbase64={qb64}&size={fofa_fetch}&fields=ip,domain,title,country,city,server"
             try:
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as s:
                     async with s.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=aiohttp.ClientTimeout(total=15)) as r:
@@ -1403,13 +1522,15 @@ async def ecom_search(req: EcomSearchRequest):
 
     async def analyze_site(site: dict) -> dict:
         domain = site["domain"]
-        result = {**site, "platform": "未知", "cdn": "未知", "payment": [], "tech_stack": [], "social": {}, "price_hint": "", "analyzed_at": _dt.now().isoformat()[:16]}
+        result = {**site, "platform": "未知", "cdn": "未知", "payment": [], "tech_stack": [], "social": {}, "price_hint": "", "product_count": 0, "registered_at": "", "traffic": {}, "shopify_apps": [], "analyzed_at": _dt.now().isoformat()[:16]}
+        _body_cache = ""
         try:
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as s:
                 async with s.get(f"https://{domain}", headers={"User-Agent": "Mozilla/5.0"}, timeout=aiohttp.ClientTimeout(total=8), allow_redirects=True) as r:
                     headers = dict(r.headers)
                     body = await r.text(errors='ignore')
                     body = body[:150000]  # 取前150KB，确保覆盖footer社交链接
+                    _body_cache = body
 
                     # 识别平台
                     if "_shopify" in str(headers).lower() or "cdn.shopify.com" in body or "Shopify.theme" in body:
@@ -1498,15 +1619,120 @@ async def ecom_search(req: EcomSearchRequest):
 
         except Exception as e:
             result["error"] = str(e)[:50]
+
+        # ── 并发跑额外分析（不阻塞主流程）──────────────────
+        async def _get_product_count(domain):
+            """用 Shopify products.json 估算商品数（公开接口，0.3s）"""
+            try:
+                async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as s:
+                    # 先试 products.json（Shopify 通用）
+                    async with s.get(f"https://{domain}/products.json?limit=1",
+                        headers={"User-Agent": "Mozilla/5.0"},
+                        timeout=aiohttp.ClientTimeout(total=5)) as r:
+                        if r.status == 200:
+                            # 从 sitemap 索引里数子 sitemap 数量估算规模
+                            # products.json 只返回当页，用 sitemap 数子链接数
+                            pass
+                    # 抓 sitemap.xml 解析子 sitemap 数量
+                    async with s.get(f"https://{domain}/sitemap.xml",
+                        headers={"User-Agent": "Mozilla/5.0"},
+                        timeout=aiohttp.ClientTimeout(total=5)) as r:
+                        if r.status == 200:
+                            text = await r.text(errors='ignore')
+                            # 数 sitemap_products_N.xml 的数量，每个约250个商品
+                            prod_sitemaps = len(_re.findall(r'sitemap_products_\d+\.xml', text))
+                            if prod_sitemaps > 0:
+                                return prod_sitemaps * 250  # 估算
+                            # 直接数 <loc> 里含 /products/ 的
+                            prod_urls = len(_re.findall(r'/products/', text))
+                            if prod_urls > 0:
+                                return prod_urls
+            except Exception:
+                pass
+            # fallback: products.json count
+            try:
+                async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as s:
+                    async with s.get(f"https://{domain}/collections/all/products.json?limit=250",
+                        headers={"User-Agent": "Mozilla/5.0"},
+                        timeout=aiohttp.ClientTimeout(total=5)) as r:
+                        if r.status == 200:
+                            d = await r.json(content_type=None)
+                            return len(d.get("products", []))
+            except Exception:
+                pass
+            return 0
+
+        async def _get_reg_date(domain):
+            """用 verisign RDAP 查建站时间（0.2s，准确）"""
+            try:
+                root = '.'.join(domain.split('.')[-2:])
+                tld = domain.split('.')[-1]
+                rdap_servers = {
+                    'com': 'https://rdap.verisign.com/com/v1',
+                    'net': 'https://rdap.verisign.com/net/v1',
+                    'org': 'https://rdap.publicinterestregistry.org/rdap',
+                    'io':  'https://rdap.nic.io',
+                    'co':  'https://rdap.nic.co',
+                }
+                base = rdap_servers.get(tld, 'https://rdap.org')
+                async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as s:
+                    async with s.get(f"{base}/domain/{root}",
+                        headers={"User-Agent": "Mozilla/5.0"},
+                        timeout=aiohttp.ClientTimeout(total=4)) as r:
+                        if r.status == 200:
+                            d = await r.json(content_type=None)
+                            for ev in d.get("events", []):
+                                if "registration" in ev.get("eventAction", ""):
+                                    return ev.get("eventDate", "")[:10]
+            except Exception:
+                pass
+            return ""
+
+        # 并发跑两个额外分析（去掉 SimilarWeb，太慢且需要JS渲染）
+        prod_count, reg_date = await asyncio.gather(
+            _get_product_count(domain),
+            _get_reg_date(domain),
+        )
+
+        result["product_count"] = prod_count
+        result["registered_at"] = reg_date
+        result["traffic"] = {}  # SimilarWeb 需要付费API，暂不支持
+
+        # Shopify App 识别（从已抓的 body 里提取）
+        shopify_apps = []
+        _app_sigs = {
+            "ReCharge": ["rechargeapps.com", "rechargepayments.com"],
+            "Loox": ["loox.io", "loox-reviews"],
+            "Yotpo": ["yotpo.com", "yotpoWidget"],
+            "Okendo": ["okendo.io"],
+            "Stamped": ["stamped.io"],
+            "Judge.me": ["judge.me"],
+            "Privy": ["privy.com", "widget.privy"],
+            "SMSBump": ["smsbump.com"],
+            "Postscript": ["postscript.io"],
+            "Attentive": ["attn.tv", "attentivemobile"],
+            "LimeSpot": ["limespot.com"],
+            "Bold": ["boldapps.net"],
+            "Upsell": ["zipify.com", "carthook.com"],
+            "Hotjar": ["hotjar.com"],
+            "Lucky Orange": ["luckyorange.com"],
+        }
+        body_lower = result.get("_body_cache", "")
+        for app, sigs in _app_sigs.items():
+            if any(sig in body for sig in sigs):
+                shopify_apps.append(app)
+        result["shopify_apps"] = shopify_apps
+
         return result
 
     import asyncio
-    tasks = [analyze_site(s) for s in fofa_sites[:limit]]
+    tasks = [analyze_site(s) for s in fofa_sites[:limit]]  # 去重后只取 limit 条分析
     results = await asyncio.gather(*tasks)
 
     return {
         "keyword": keyword,
         "total": len(results),
+        "total_scanned": len(results),
         "sites": list(results),
         "analyzed_at": _dt.now().isoformat()[:16],
     }
