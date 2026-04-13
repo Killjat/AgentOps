@@ -42,9 +42,15 @@ CyberStroll 是一个**网络情报平台**，有两条核心能力线：
 - **支付方式**：Stripe / PayPal / Klarna / Afterpay / Shop Pay
 - **社交媒体账号**：自动提取 TikTok / Instagram / YouTube / Facebook 账号，一键跳转
 - **广告投放检测**：识别 TikTok Pixel / Facebook Pixel，判断是否在投广告及 Pixel ID
+- **Shopify App 识别**：Loox / Yotpo / ReCharge / Klaviyo / Hotjar 等运营成熟度指标
+- **商品数量**：解析 sitemap 估算 SKU 规模
+- **建站时间**：RDAP 查询域名注册日期
 - **价格区间**：直接抓取页面展示价格
+- **热门品类侧边栏**：11 个 TikTok 热门品类一键切换，数据每日自动预热缓存
+- **智能缓存**：搜索结果自动入库，下次直接读缓存 + FOFA 增量更新去重
+- **📋 复刻报告**：一键生成竞品复刻方案，包含建站配置、TOP商品、营销策略、参考链接，支持下载 Markdown
 
-**典型用例**：搜索 "phone case" → 发现 shakercase.com → 看到他们有 TikTok 账号 `@shakercase_com` 但没有 TikTok Pixel（有内容但没投广告）→ 这是你的切入机会。
+**典型用例**：搜索 "phone case" → 发现 shakercase.com → 看到 TikTok `@shakercase_com` + FB广告投放 + 250 SKU + 建站仅9个月 → 点击"复刻报告"下载完整方案。
 
 ### 🛡️ IP 纯净度检测 (`/probe`)
 

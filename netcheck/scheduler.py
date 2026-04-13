@@ -43,10 +43,59 @@ class AnalysisScheduler:
             self._queue_consumer_loop(),
             self._analysis_loop(),
             self._change_detect_loop(),
+            self._ecom_warmup_loop(),
         )
 
     def stop(self):
         self.running = False
+
+    # ── 独立站情报预热 ────────────────────────────────────────
+
+    async def _ecom_warmup_loop(self):
+        """服务启动后自动预热热门品类，之后每24小时刷新一次"""
+        await asyncio.sleep(30)  # 等服务完全启动
+        while self.running:
+            try:
+                await self._run_ecom_warmup()
+            except Exception as e:
+                logger.warning(f"[EcomWarmup] 预热失败: {e}")
+            await asyncio.sleep(86400)  # 每24小时刷新
+
+    async def _run_ecom_warmup(self):
+        from netcheck.router import ecom_search, EcomSearchRequest
+        from netcheck.trace_db import get_conn
+
+        HOT_CATEGORIES = [
+            "phone case", "skincare", "sneakers", "fitness",
+            "pet supplies", "jewelry", "fashion", "home decor",
+            "gaming accessories", "supplements", "hair care",
+        ]
+
+        for kw in HOT_CATEGORIES:
+            if not self.running:
+                break
+            try:
+                # 检查是否已有足够缓存（超过10条就跳过）
+                with get_conn() as db:
+                    cnt = db.execute(
+                        "SELECT COUNT(*) FROM ecom_sites WHERE category LIKE ?",
+                        (f"%{kw}%",)
+                    ).fetchone()[0]
+
+                if cnt >= 10:
+                    logger.info(f"[EcomWarmup] {kw}: 已有 {cnt} 条缓存，跳过")
+                    await asyncio.sleep(2)
+                    continue
+
+                logger.info(f"[EcomWarmup] 预热品类: {kw}")
+                req = EcomSearchRequest(keyword=kw, limit=20,
+                                        require_tiktok=False, require_tt_ads=False)
+                result = await ecom_search(req)
+                logger.info(f"[EcomWarmup] {kw}: 缓存 {result.get('total', 0)} 条")
+                await asyncio.sleep(5)  # 每个品类间隔5秒
+            except Exception as e:
+                logger.warning(f"[EcomWarmup] {kw} 失败: {e}")
+                await asyncio.sleep(10)
 
     # ── FOFA 定时爬取 ─────────────────────────────────────────
 

@@ -14,39 +14,52 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .back-btn { color: #8b949e; text-decoration: none; font-size: 13px; padding: 6px 12px; border: 1px solid #30363d; border-radius: 6px; }
 .back-btn:hover { color: #f0f6fc; border-color: #484f58; }
 
-.container { max-width: 1200px; margin: 0 auto; padding: 28px 32px; }
+/* 主布局：左侧品类 + 右侧内容 */
+.layout { display: flex; gap: 0; min-height: calc(100vh - 65px); }
+
+/* 左侧品类栏 */
+.sidebar { width: 220px; flex-shrink: 0; border-right: 1px solid #21262d; padding: 20px 0; background: #0d1117; position: sticky; top: 0; height: calc(100vh - 65px); overflow-y: auto; }
+.sidebar-title { font-size: 10px; color: #484f58; text-transform: uppercase; letter-spacing: 1px; padding: 0 16px 10px; }
+.cat-item { display: flex; align-items: center; gap: 8px; padding: 8px 16px; cursor: pointer; border-left: 2px solid transparent; transition: all .15s; }
+.cat-item:hover { background: #161b22; color: #f0f6fc; }
+.cat-item.active { background: #161b22; border-left-color: #388bfd; color: #f0f6fc; }
+.cat-item .cat-icon { font-size: 16px; flex-shrink: 0; }
+.cat-item .cat-name { font-size: 13px; color: #8b949e; }
+.cat-item.active .cat-name { color: #f0f6fc; }
+.cat-item .cat-hot { font-size: 10px; color: #f85149; margin-left: auto; }
+.cat-divider { height: 1px; background: #21262d; margin: 8px 16px; }
+.cache-badge { font-size: 10px; background: #1a4731; color: #3fb950; padding: 1px 5px; border-radius: 3px; margin-left: auto; }
+
+/* 右侧内容区 */
+.main { flex: 1; padding: 24px 28px; overflow-x: hidden; min-width: 0; }
 
 /* 搜索区 */
-.search-box { background: #161b22; border: 1px solid #21262d; border-radius: 12px; padding: 28px; margin-bottom: 28px; }
-.search-box h2 { font-size: 15px; font-weight: 600; color: #f0f6fc; margin-bottom: 6px; }
-.search-box p { font-size: 13px; color: #8b949e; margin-bottom: 20px; }
-.search-row { display: flex; gap: 10px; }
-.search-input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px 16px; color: #f0f6fc; font-size: 14px; outline: none; }
+.search-box { background: #161b22; border: 1px solid #21262d; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+.search-box h2 { font-size: 14px; font-weight: 600; color: #f0f6fc; margin-bottom: 4px; }
+.search-box p { font-size: 12px; color: #8b949e; margin-bottom: 14px; }
+.search-row { display: flex; gap: 8px; }
+.search-input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 9px 14px; color: #f0f6fc; font-size: 13px; outline: none; }
 .search-input:focus { border-color: #388bfd; }
 .search-input::placeholder { color: #484f58; }
-.search-btn { background: #238636; color: #fff; border: none; border-radius: 8px; padding: 10px 24px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.search-btn { background: #238636; color: #fff; border: none; border-radius: 8px; padding: 9px 20px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .search-btn:hover { background: #2ea043; }
 .search-btn:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
-.limit-select { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; color: #f0f6fc; font-size: 13px; cursor: pointer; }
-
-.examples { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.example-tag { padding: 4px 10px; background: #21262d; border: 1px solid #30363d; border-radius: 20px; font-size: 12px; color: #8b949e; cursor: pointer; }
-.example-tag:hover { color: #f0f6fc; border-color: #484f58; }
+.limit-select { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 9px 10px; color: #f0f6fc; font-size: 12px; cursor: pointer; }
 
 /* 状态 */
-.status-bar { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-size: 13px; color: #8b949e; }
+.status-bar { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; font-size: 12px; color: #8b949e; }
 .status-bar.loading { border-color: #388bfd44; }
 .status-bar.done { border-color: #3fb95044; }
 .status-bar.error { border-color: #f8514944; color: #f85149; }
-.spinner { width: 14px; height: 14px; border: 2px solid #30363d; border-top-color: #388bfd; border-radius: 50%; animation: spin .8s linear infinite; flex-shrink: 0; }
+.spinner { width: 13px; height: 13px; border: 2px solid #30363d; border-top-color: #388bfd; border-radius: 50%; animation: spin .8s linear infinite; flex-shrink: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* 洞察数字 */
-.insight-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
-.insight-card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px; }
-.insight-card .num { font-size: 28px; font-weight: 800; color: #f0f6fc; line-height: 1; }
-.insight-card .lbl { font-size: 11px; color: #8b949e; margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-.insight-card .detail { font-size: 11px; color: #484f58; margin-top: 4px; }
+.insight-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+.insight-card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 14px; }
+.insight-card .num { font-size: 24px; font-weight: 800; color: #f0f6fc; line-height: 1; }
+.insight-card .lbl { font-size: 10px; color: #8b949e; margin-top: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+.insight-card .detail { font-size: 10px; color: #484f58; margin-top: 3px; }
 
 /* 站点卡片 */
 .sites-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
@@ -90,11 +103,31 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .empty-state p { font-size: 14px; }
 
 @media (max-width: 768px) {
-  .container { padding: 16px; }
   .insight-row { grid-template-columns: repeat(2, 1fr); }
   .search-row { flex-wrap: wrap; }
   .search-input { min-width: 0; }
+  .sidebar { width: 180px; }
 }
+
+/* 弹窗 */
+.modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px; }
+.modal { background:#161b22;border:1px solid #30363d;border-radius:12px;width:100%;max-width:680px;max-height:88vh;overflow-y:auto; }
+.modal-header { padding:16px 20px;border-bottom:1px solid #21262d;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#161b22;z-index:1; }
+.modal-header h3 { font-size:14px;font-weight:700;color:#f0f6fc; }
+.modal-close { background:none;border:none;color:#8b949e;font-size:22px;cursor:pointer;line-height:1;padding:0 4px; }
+.modal-body { padding:20px; }
+.report-section { margin-bottom:20px; }
+.report-section h4 { font-size:10px;color:#484f58;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #21262d; }
+.report-row { display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;font-size:13px; }
+.report-label { color:#8b949e;flex-shrink:0;width:110px; }
+.report-value { color:#f0f6fc;text-align:right;flex:1; }
+.report-link { color:#388bfd;text-decoration:none;font-size:12px;display:inline-block;margin-left:8px; }
+.report-link:hover { text-decoration:underline; }
+.maturity-bar { height:5px;background:#21262d;border-radius:3px;margin-top:8px;overflow:hidden; }
+.maturity-fill { height:100%;border-radius:3px;background:linear-gradient(90deg,#388bfd,#3fb950);transition:width .5s; }
+.product-item { background:#0d1117;border-radius:6px;padding:9px 12px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center; }
+.product-title { font-size:12px;color:#e6edf3;flex:1;margin-right:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.product-price { font-size:12px;color:#3fb950;font-weight:600;white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -107,7 +140,41 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   </div>
 </div>
 
-<div class="container">
+<!-- 复刻报告弹窗 -->
+<div class="modal-overlay" id="cloneModal" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">📋 复刻报告</h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="downloadBtn" onclick="downloadReport()"
+          style="background:#238636;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;display:none">
+          ⬇️ 下载报告
+        </button>
+        <button class="modal-close" onclick="closeModal()">×</button>
+      </div>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div style="text-align:center;padding:40px;color:#484f58">
+        <div class="spinner" style="margin:0 auto 12px"></div>
+        <div>正在生成报告...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="layout">
+
+<!-- 左侧品类栏 -->
+<div class="sidebar">
+  <div class="sidebar-title">🔥 TikTok 热门品类</div>
+  <div id="catList"></div>
+  <div style="padding:12px 16px;border-top:1px solid #21262d;margin-top:8px">
+    <div style="font-size:10px;color:#484f58;text-align:center">数据每日自动更新</div>
+  </div>
+</div>
+
+<!-- 右侧主内容 -->
+<div class="main">
 
   <!-- 搜索区 -->
   <div class="search-box">
@@ -123,16 +190,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       </select>
       <button class="search-btn" id="searchBtn" onclick="doSearch()">🔍 批量搜索</button>
     </div>
-    <div class="examples">
-      <span style="font-size:12px;color:#484f58;align-self:center">示例：</span>
-      <span class="example-tag" onclick="quickSearch('phone case')">手机壳</span>
-      <span class="example-tag" onclick="quickSearch('sneakers')">运动鞋</span>
-      <span class="example-tag" onclick="quickSearch('skincare')">护肤品</span>
-      <span class="example-tag" onclick="quickSearch('jewelry')">珠宝</span>
-      <span class="example-tag" onclick="quickSearch('fitness')">健身</span>
-      <span class="example-tag" onclick="quickSearch('pet supplies')">宠物用品</span>
-    </div>
-
     <!-- 过滤条件 -->
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid #21262d">
       <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:#8b949e;user-select:none">
@@ -303,7 +360,8 @@ function renderResults(data) {
   if (f === 'tt_ads') filtered = sites.filter(s => s.social?.tt_pixel_id);
 
   const filterLabel = f === 'tt_ads' ? ' · 仅 TikTok 广告' : f === 'tiktok' ? ' · 仅有 TikTok 账号' : '';
-  showStatus('done', `✅ 分析完成，共 ${sites.length} 个站点，显示 ${filtered.length} 个${filterLabel} · ${data.analyzed_at}`);
+  const cacheInfo = data.from_cache > 0 ? ` (缓存${data.from_cache}+新增${data.from_fofa||0})` : '';
+  showStatus('done', `✅ 共 ${sites.length} 个站点${cacheInfo}，显示 ${filtered.length} 个${filterLabel} · ${data.analyzed_at}`);
 
   // 统计（基于全量结果）
   const shopify = sites.filter(s => s.platform === 'Shopify').length;
@@ -453,6 +511,12 @@ function siteCard(s) {
     </div>
     ${payTags ? `<div class="payment-row">${payTags}</div>` : ''}
     ${socialRow(s.social)}
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid #21262d">
+      <button onclick="showCloneReport('${s.domain}')"
+        style="background:#1f6feb;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;width:100%">
+        📋 生成复刻报告
+      </button>
+    </div>
     ${s.error ? `<div class="site-error">⚠️ ${s.error}</div>` : ''}
   </div>`;
 }
@@ -464,6 +528,294 @@ document.getElementById('keyword').addEventListener('keydown', e => {
 document.getElementById('singleDomain').addEventListener('keydown', e => {
   if (e.key === 'Enter') doSingle();
 });
+
+// ── 左侧品类栏 ──────────────────────────────────────────────
+const HOT_CATEGORIES = [
+  { icon: '📱', name: 'Phone Case', kw: 'phone case', hot: true },
+  { icon: '💄', name: 'Skincare', kw: 'skincare', hot: true },
+  { icon: '👟', name: 'Sneakers', kw: 'sneakers', hot: true },
+  { icon: '💪', name: 'Fitness', kw: 'fitness', hot: true },
+  { icon: '🐾', name: 'Pet Supplies', kw: 'pet supplies', hot: true },
+  { icon: '💍', name: 'Jewelry', kw: 'jewelry', hot: true },
+  { icon: '👗', name: 'Fashion', kw: 'fashion', hot: false },
+  { icon: '🏠', name: 'Home Decor', kw: 'home decor', hot: false },
+  { icon: '🎮', name: 'Gaming', kw: 'gaming accessories', hot: false },
+  { icon: '🌿', name: 'Supplements', kw: 'supplements', hot: false },
+  { icon: '👜', name: 'Bags', kw: 'bags', hot: false },
+  { icon: '🕯️', name: 'Candles', kw: 'candles', hot: false },
+  { icon: '🧴', name: 'Hair Care', kw: 'hair care', hot: false },
+  { icon: '🔌', name: 'Tech Gadgets', kw: 'tech gadgets', hot: false },
+  { icon: '🧸', name: 'Toys', kw: 'toys', hot: false },
+];
+
+let _cacheStats = {};  // 各品类缓存数量
+
+async function loadCacheStats() {
+  try {
+    const r = await fetch(`${API}/netcheck/ecom/db/stats`);
+    const d = await r.json();
+    _cacheStats = {};
+    (d.by_category || []).forEach(c => { _cacheStats[c.category] = c.count; });
+    renderSidebar();
+  } catch(e) {}
+}
+
+function renderSidebar() {
+  const list = document.getElementById('catList');
+  let html = '';
+  const hotCats = HOT_CATEGORIES.filter(c => c.hot);
+  const otherCats = HOT_CATEGORIES.filter(c => !c.hot);
+
+  hotCats.forEach(c => {
+    const cached = _cacheStats[c.kw] || 0;
+    html += `<div class="cat-item" onclick="selectCategory('${c.kw}', this)">
+      <span class="cat-icon">${c.icon}</span>
+      <span class="cat-name">${c.name}</span>
+      ${c.hot ? '<span class="cat-hot">🔥</span>' : ''}
+      ${cached > 0 ? `<span class="cache-badge">${cached}</span>` : ''}
+    </div>`;
+  });
+
+  html += '<div class="cat-divider"></div>';
+  otherCats.forEach(c => {
+    const cached = _cacheStats[c.kw] || 0;
+    html += `<div class="cat-item" onclick="selectCategory('${c.kw}', this)">
+      <span class="cat-icon">${c.icon}</span>
+      <span class="cat-name">${c.name}</span>
+      ${cached > 0 ? `<span class="cache-badge">${cached}</span>` : ''}
+    </div>`;
+  });
+
+  list.innerHTML = html;
+}
+
+function selectCategory(kw, el) {
+  // 高亮选中
+  document.querySelectorAll('.cat-item').forEach(e => e.classList.remove('active'));
+  el.classList.add('active');
+  // 填入搜索框并触发搜索
+  document.getElementById('keyword').value = kw;
+  // 先查缓存，有数据直接展示，没有再搜索
+  loadFromCache(kw);
+}
+
+async function loadFromCache(kw) {
+  showStatus('loading', `正在加载"${kw}"缓存数据...`);
+  document.getElementById('insightRow').style.display = 'none';
+  document.getElementById('sitesGrid').innerHTML = '';
+  document.getElementById('emptyState').style.display = 'none';
+  try {
+    const r = await fetch(`${API}/netcheck/ecom/db?category=${encodeURIComponent(kw)}&limit=20`);
+    const d = await r.json();
+    if (d.total > 0) {
+      _lastResults = { keyword: kw, sites: d.sites, total: d.total, analyzed_at: '缓存数据' };
+      renderResults(_lastResults);
+      showStatus('done', `✅ 从缓存加载 ${d.total} 个站点 · 点击"批量搜索"刷新数据`);
+    } else {
+      // 没有缓存，直接搜索
+      doSearch();
+    }
+  } catch(e) {
+    doSearch();
+  }
+}
+
+let _currentReport = null;  // 缓存当前报告数据
+
+function downloadReport() {
+  if (!_currentReport) return;
+  const d = _currentReport;
+  const tech = d.tech_setup || {};
+  const products = d.products || {};
+  const mkt = d.marketing || {};
+  const links = d.links || {};
+
+  const md = `# 独立站复刻报告：${d.domain}
+> 生成时间：${d.generated_at} · 数据来源：CyberStroll
+
+---
+
+## 🏗️ 建站方案
+
+| 项目 | 内容 |
+|------|------|
+| 建站平台 | ${tech.platform || '—'} |
+| CDN | ${tech.cdn || '—'} |
+| 支付方式 | ${(tech.payment || []).join(' / ') || '—'} |
+| 已安装 App | ${(tech.apps || []).join(', ') || '无'} |
+| **推荐方案** | **${tech.recommended_stack || '—'}** |
+
+---
+
+## 📦 商品数据
+
+| 项目 | 内容 |
+|------|------|
+| 商品总数 | ${products.total_count || '—'} SKU |
+| 价格区间 | ${products.price_range || '—'} |
+| 商品分类 | ${(products.collections || []).join(', ') || '—'} |
+
+### TOP 商品
+${(products.top_products || []).map(p =>
+  `- **${p.title}** — $${p.min_price > 0 ? p.min_price.toFixed(0) : '—'}`
+).join('\n') || '暂无数据'}
+
+---
+
+## 📣 营销策略
+
+**运营成熟度：${mkt.maturity_level || '—'} (${mkt.maturity_score || 0}/100)**
+
+### 流量来源
+${(mkt.traffic_sources || []).map(s => `- ${s}`).join('\n') || '未知'}
+
+### 运营亮点
+${(mkt.maturity_items || []).map(s => `- ✓ ${s}`).join('\n') || '暂无'}
+
+---
+
+## 🔗 参考链接
+
+${Object.entries(links).map(([k, v]) => {
+  const labels = { store:'官网', products_api:'商品API', fb_ad_library:'FB广告库', tiktok:'TikTok账号', instagram:'Instagram账号' };
+  return `- [${labels[k]||k}](${v})`;
+}).join('\n')}
+
+---
+*报告由 [CyberStroll](https://cyberstroll.top) 生成，数据仅供参考*
+`;
+
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `clone-report-${d.domain}-${d.generated_at.replace(/[: ]/g,'-')}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── 复刻报告 ────────────────────────────────────────────────
+async function showCloneReport(domain) {
+  document.getElementById('cloneModal').style.display = 'flex';
+  document.getElementById('modalTitle').textContent = `📋 复刻报告 · ${domain}`;
+  document.getElementById('modalBody').innerHTML = `
+    <div style="text-align:center;padding:40px;color:#484f58">
+      <div class="spinner" style="margin:0 auto 12px;width:20px;height:20px"></div>
+      <div>正在抓取商品数据...</div>
+    </div>`;
+  try {
+    const r = await fetch(`${API}/netcheck/ecom/clone-report?domain=${domain}`);
+    const d = await r.json();
+    _currentReport = d;
+    document.getElementById('downloadBtn').style.display = 'block';
+    renderCloneReport(d);
+  } catch(e) {
+    document.getElementById('modalBody').innerHTML = `<div style="color:#f85149;padding:20px">生成失败：${e.message}</div>`;
+  }
+}
+
+function closeModal() {
+  document.getElementById('cloneModal').style.display = 'none';
+  document.getElementById('downloadBtn').style.display = 'none';
+  _currentReport = null;
+}
+
+function renderCloneReport(d) {
+  const tech = d.tech_setup || {};
+  const products = d.products || {};
+  const mkt = d.marketing || {};
+  const links = d.links || {};
+  const social = mkt.social || {};
+
+  const appsHtml = (tech.apps || []).map(a =>
+    `<span style="background:#1a2a1a;color:#3fb950;border:1px solid #1a4731;border-radius:4px;padding:2px 7px;font-size:11px;margin:2px">${a}</span>`
+  ).join('') || '<span style="color:#484f58">无</span>';
+
+  const sourcesHtml = (mkt.traffic_sources || []).map(s =>
+    `<div style="padding:4px 0;font-size:12px;color:#e6edf3">• ${s}</div>`
+  ).join('');
+
+  const topProducts = (products.top_products || []).map(p =>
+    `<div class="product-item">
+      <div class="product-title">${p.title}</div>
+      <div class="product-price">${p.min_price > 0 ? '$'+p.min_price.toFixed(0) : '—'}</div>
+    </div>`
+  ).join('');
+
+  const collectionsHtml = (products.collections || []).slice(0, 6).join(' · ') || '—';
+
+  const linksHtml = Object.entries(links).map(([k, v]) => {
+    const labels = { store:'🌐 官网', products_api:'📦 商品API', fb_ad_library:'📢 FB广告库', tiktok:'🎵 TikTok', instagram:'📸 Instagram' };
+    return `<a href="${v}" target="_blank" class="report-link">${labels[k]||k}</a>`;
+  }).join('');
+
+  document.getElementById('modalBody').innerHTML = `
+    <div class="report-section">
+      <h4>🏗️ 建站方案</h4>
+      <div class="report-row"><span class="report-label">平台</span><span class="report-value">${tech.platform||'—'}</span></div>
+      <div class="report-row"><span class="report-label">CDN</span><span class="report-value">${tech.cdn||'—'}</span></div>
+      <div class="report-row"><span class="report-label">支付</span><span class="report-value">${(tech.payment||[]).join(' / ')||'—'}</span></div>
+      <div class="report-row"><span class="report-label">已安装 App</span><span class="report-value">${appsHtml}</span></div>
+      <div style="margin-top:10px;background:#0d1117;border-radius:6px;padding:10px 14px;font-size:12px;color:#3fb950">
+        💡 推荐方案：${tech.recommended_stack||'—'}
+      </div>
+    </div>
+
+    <div class="report-section">
+      <h4>📦 商品数据</h4>
+      <div class="report-row"><span class="report-label">商品总数</span><span class="report-value">${products.total_count||'—'} SKU</span></div>
+      <div class="report-row"><span class="report-label">价格区间</span><span class="report-value" style="color:#3fb950">${products.price_range||'—'}</span></div>
+      <div class="report-row"><span class="report-label">商品分类</span><span class="report-value" style="font-size:11px">${collectionsHtml}</span></div>
+      ${topProducts ? `<div style="margin-top:10px"><div style="font-size:11px;color:#484f58;margin-bottom:6px">TOP 商品</div>${topProducts}</div>` : ''}
+    </div>
+
+    <div class="report-section">
+      <h4>📣 营销策略</h4>
+      <div class="report-row">
+        <span class="report-label">运营成熟度</span>
+        <span class="report-value">${mkt.maturity_level||'—'} (${mkt.maturity_score||0}/100)</span>
+      </div>
+      <div class="maturity-bar"><div class="maturity-fill" style="width:${mkt.maturity_score||0}%"></div></div>
+      <div style="margin-top:10px">${sourcesHtml}</div>
+      ${(mkt.maturity_items||[]).length ? `
+      <div style="margin-top:8px;font-size:11px;color:#484f58">
+        ${mkt.maturity_items.map(i=>`✓ ${i}`).join(' &nbsp;·&nbsp; ')}
+      </div>` : ''}
+    </div>
+
+    <div class="report-section">
+      <h4>🔗 参考链接</h4>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">${linksHtml}</div>
+    </div>
+
+    <div style="text-align:center;margin-top:4px">
+      <div style="font-size:10px;color:#484f58">生成于 ${d.generated_at} · 数据仅供参考</div>
+    </div>
+  `;
+}
+
+// 初始化
+loadCacheStats();
+renderSidebar();
+
+// 预热所有热门品类
+async function warmupAll() {
+  const btn = document.getElementById('warmupBtn');
+  if (btn) { btn.textContent = '预热中...'; btn.disabled = true; }
+  showStatus('loading', '正在后台预热所有热门品类，这需要几分钟...');
+  try {
+    const r = await fetch(`${API}/netcheck/ecom/warmup`, { method: 'POST' });
+    const d = await r.json();
+    const done = d.results.filter(r => r.status === 'done').length;
+    const skip = d.results.filter(r => r.status === 'skipped').length;
+    showStatus('done', `✅ 预热完成：${done} 个品类已抓取，${skip} 个已有缓存`);
+    loadCacheStats();  // 刷新缓存数量
+  } catch(e) {
+    showStatus('error', `❌ 预热失败：${e.message}`);
+  } finally {
+    if (btn) { btn.textContent = '🔄 预热数据'; btn.disabled = false; }
+  }
+}
 </script>
 </body>
 </html>

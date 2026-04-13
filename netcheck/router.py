@@ -1371,7 +1371,56 @@ async def ecom_analyze_single(req: EcomSingleRequest):
     result["registered_at"] = rd
     result["traffic"] = {}
 
+    # 自动缓存
+    try:
+        from netcheck.trace_db import save_ecom_site
+        if result.get("platform") != "未知":
+            save_ecom_site(result, category="")
+    except Exception:
+        pass
+
     return result
+
+
+@router.get("/ecom/db")
+async def ecom_db_query(category: str = "", has_tiktok: bool = False,
+                        platform: str = "", limit: int = 100):
+    """查询缓存的独立站情报数据库"""
+    from netcheck.trace_db import get_ecom_sites
+    sites = get_ecom_sites(category=category, limit=limit,
+                           has_tiktok=has_tiktok, platform=platform)
+    return {
+        "total": len(sites),
+        "category": category,
+        "sites": sites,
+    }
+
+
+@router.get("/ecom/db/stats")
+async def ecom_db_stats():
+    """独立站数据库统计"""
+    from netcheck.trace_db import get_conn
+    with get_conn() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM ecom_sites").fetchone()[0]
+        by_cat = conn.execute(
+            "SELECT category, COUNT(*) as cnt FROM ecom_sites WHERE category != '' GROUP BY category ORDER BY cnt DESC LIMIT 20"
+        ).fetchall()
+        by_platform = conn.execute(
+            "SELECT platform, COUNT(*) as cnt FROM ecom_sites GROUP BY platform ORDER BY cnt DESC"
+        ).fetchall()
+        with_tiktok = conn.execute(
+            "SELECT COUNT(*) FROM ecom_sites WHERE social LIKE '%\"tiktok\"%'"
+        ).fetchone()[0]
+        with_fb_ads = conn.execute(
+            "SELECT COUNT(*) FROM ecom_sites WHERE social LIKE '%fb_pixel_id%'"
+        ).fetchone()[0]
+    return {
+        "total": total,
+        "with_tiktok": with_tiktok,
+        "with_fb_ads": with_fb_ads,
+        "by_category": [{"category": r[0], "count": r[1]} for r in by_cat],
+        "by_platform": [{"platform": r[0], "count": r[1]} for r in by_platform],
+    }
 
 
 @router.get("/ecom/traffic")
@@ -1726,13 +1775,237 @@ async def ecom_search(req: EcomSearchRequest):
         return result
 
     import asyncio
-    tasks = [analyze_site(s) for s in fofa_sites[:limit]]  # 去重后只取 limit 条分析
-    results = await asyncio.gather(*tasks)
+
+    # ── 先查缓存，已有的域名不重复分析 ──────────────────────
+    from netcheck.trace_db import get_ecom_sites, save_ecom_site, get_ecom_site
+    cached = get_ecom_sites(category=keyword, limit=limit)
+    cached_domains = {s["domain"] for s in cached}
+
+    # FOFA 结果去掉已缓存的域名，只分析新的
+    new_sites = [s for s in fofa_sites[:limit * 2] if s["domain"] not in cached_domains]
+    need_count = max(0, limit - len(cached))  # 还需要几条新的
+
+    tasks = [analyze_site(s) for s in new_sites[:need_count]]
+    new_results = await asyncio.gather(*tasks) if tasks else []
+
+    # 自动缓存新分析的站
+    for r in new_results:
+        if r.get("domain") and r.get("platform") != "未知":
+            save_ecom_site(r, category=keyword)
+
+    # 合并：缓存 + 新分析，去重
+    merged = {s["domain"]: s for s in cached}
+    for r in new_results:
+        merged[r["domain"]] = r
+    results = list(merged.values())[:limit]
 
     return {
         "keyword": keyword,
         "total": len(results),
-        "total_scanned": len(results),
-        "sites": list(results),
+        "from_cache": len(cached),
+        "from_fofa": len(new_results),
+        "sites": results,
         "analyzed_at": _dt.now().isoformat()[:16],
+    }
+
+
+# ── 热门品类预热 ──────────────────────────────────────────────
+
+# TikTok 热门品类列表（与前端保持一致）
+_HOT_CATEGORIES = [
+    "phone case", "skincare", "sneakers", "fitness",
+    "pet supplies", "jewelry", "fashion", "home decor",
+    "gaming accessories", "supplements", "hair care",
+]
+
+@router.post("/ecom/warmup")
+async def ecom_warmup(background_tasks=None):
+    """后台预热：抓取所有热门品类的独立站数据并缓存"""
+    import asyncio as _asyncio
+    from netcheck.trace_db import get_ecom_sites
+
+    async def warmup_one(kw: str):
+        from netcheck.trace_db import get_ecom_sites
+        existing = get_ecom_sites(category=kw, limit=1)
+        if existing:
+            return {"keyword": kw, "status": "skipped", "cached": len(get_ecom_sites(category=kw, limit=100))}
+        # 模拟搜索请求
+        req = EcomSearchRequest(keyword=kw, limit=20, require_tiktok=False, require_tt_ads=False)
+        try:
+            result = await ecom_search(req)
+            return {"keyword": kw, "status": "done", "total": result.get("total", 0)}
+        except Exception as e:
+            return {"keyword": kw, "status": "error", "error": str(e)[:50]}
+
+    # 串行执行，避免并发太多请求
+    results = []
+    for kw in _HOT_CATEGORIES:
+        r = await warmup_one(kw)
+        results.append(r)
+        await _asyncio.sleep(2)  # 每个品类间隔2秒，避免被封
+
+    return {"results": results, "total_categories": len(_HOT_CATEGORIES)}
+
+
+@router.get("/ecom/warmup/status")
+async def ecom_warmup_status():
+    """查看各品类缓存状态"""
+    from netcheck.trace_db import get_ecom_sites, get_conn
+    status = []
+    for kw in _HOT_CATEGORIES:
+        with get_conn() as conn:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM ecom_sites WHERE category LIKE ?", (f"%{kw}%",)
+            ).fetchone()[0]
+            with_tt = conn.execute(
+                "SELECT COUNT(*) FROM ecom_sites WHERE category LIKE ? AND social LIKE '%\"tiktok\"%'",
+                (f"%{kw}%",)
+            ).fetchone()[0]
+        status.append({"keyword": kw, "total": total, "with_tiktok": with_tt})
+    return {"categories": status}
+
+
+# ── 独立站复刻报告 ────────────────────────────────────────────
+
+@router.get("/ecom/clone-report")
+async def ecom_clone_report(domain: str):
+    """生成独立站复刻报告：建站方案 + 商品数据 + 营销策略"""
+    import aiohttp, ssl as _ssl, re as _re
+    from datetime import datetime as _dt
+    from netcheck.trace_db import get_ecom_site
+
+    # 先查缓存
+    cached = get_ecom_site(domain)
+
+    ssl_ctx = _ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = _ssl.CERT_NONE
+
+    # 并发抓：商品列表 + 分类列表
+    async def _get_products(domain):
+        try:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as s:
+                async with s.get(f"https://{domain}/products.json?limit=20",
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    timeout=aiohttp.ClientTimeout(total=8)) as r:
+                    if r.status == 200:
+                        d = await r.json(content_type=None)
+                        products = d.get("products", [])
+                        result = []
+                        for p in products[:10]:
+                            variants = p.get("variants", [])
+                            prices = [float(v.get("price", 0)) for v in variants if v.get("price")]
+                            result.append({
+                                "title": p.get("title", ""),
+                                "type": p.get("product_type", ""),
+                                "tags": p.get("tags", "")[:80],
+                                "min_price": min(prices) if prices else 0,
+                                "max_price": max(prices) if prices else 0,
+                                "variants": len(variants),
+                                "image": (p.get("images") or [{}])[0].get("src", "")[:100],
+                            })
+                        return result
+        except Exception:
+            pass
+        return []
+
+    async def _get_collections(domain):
+        try:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as s:
+                async with s.get(f"https://{domain}/collections.json?limit=20",
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    timeout=aiohttp.ClientTimeout(total=6)) as r:
+                    if r.status == 200:
+                        d = await r.json(content_type=None)
+                        return [c.get("title", "") for c in d.get("collections", [])[:10]]
+        except Exception:
+            pass
+        return []
+
+    import asyncio as _asyncio
+    products, collections = await _asyncio.gather(
+        _get_products(domain), _get_collections(domain)
+    )
+
+    # 价格分析
+    prices = [p["min_price"] for p in products if p["min_price"] > 0]
+    price_range = ""
+    if prices:
+        price_range = f"${min(prices):.0f} - ${max(prices):.0f}"
+        avg_price = sum(prices) / len(prices)
+        main_price = f"${avg_price:.0f}"
+    else:
+        main_price = cached.get("price_hint", "未知")
+
+    # 从缓存或已有数据组装报告
+    platform = cached.get("platform", "未知")
+    cdn = cached.get("cdn", "未知")
+    apps = cached.get("shopify_apps", [])
+    social = cached.get("social", {})
+    payment = cached.get("payment", [])
+    tech = cached.get("tech_stack", [])
+    product_count = cached.get("product_count", len(products))
+    reg_date = cached.get("registered_at", "")
+
+    # 推断流量来源
+    traffic_sources = []
+    if social.get("tiktok"): traffic_sources.append(f"TikTok内容 ({social['tiktok']})")
+    if social.get("tt_pixel_id"): traffic_sources.append("TikTok广告投放")
+    if social.get("fb_pixel_id"): traffic_sources.append(f"Facebook广告 (Pixel: {social['fb_pixel_id']})")
+    if "Google Analytics" in tech: traffic_sources.append("Google SEO/广告")
+    if social.get("instagram"): traffic_sources.append(f"Instagram ({social['instagram']})")
+    if not traffic_sources: traffic_sources.append("流量来源未知")
+
+    # 推断运营成熟度
+    maturity_score = 0
+    maturity_items = []
+    if apps: maturity_score += len(apps) * 10; maturity_items.append(f"已安装 {len(apps)} 个 Shopify App")
+    if "Klaviyo" in tech: maturity_score += 20; maturity_items.append("邮件营销（Klaviyo）")
+    if social.get("tiktok"): maturity_score += 15; maturity_items.append("TikTok 社媒运营")
+    if social.get("fb_pixel_id"): maturity_score += 20; maturity_items.append("Facebook 广告投放")
+    if product_count > 100: maturity_score += 15; maturity_items.append(f"商品丰富（{product_count}+ SKU）")
+    if reg_date and reg_date < "2023": maturity_score += 20; maturity_items.append("老店（3年以上）")
+    maturity_level = "成熟" if maturity_score >= 60 else "中等" if maturity_score >= 30 else "初级"
+
+    # 外部链接
+    links = {
+        "store": f"https://{domain}",
+        "products_api": f"https://{domain}/products.json",
+        "fb_ad_library": f"https://www.facebook.com/ads/library/?q={domain.split('.')[0]}&search_type=keyword_unordered",
+    }
+    if social.get("tiktok"):
+        handle = social["tiktok"].lstrip("@")
+        links["tiktok"] = f"https://www.tiktok.com/@{handle}"
+    if social.get("instagram"):
+        handle = social["instagram"].lstrip("@")
+        links["instagram"] = f"https://www.instagram.com/{handle}"
+
+    return {
+        "domain": domain,
+        "generated_at": _dt.now().isoformat()[:16],
+        # 建站方案
+        "tech_setup": {
+            "platform": platform,
+            "cdn": cdn,
+            "apps": apps,
+            "payment": payment,
+            "recommended_stack": f"{platform} + {' + '.join(apps[:3]) if apps else '基础配置'}",
+        },
+        # 商品数据
+        "products": {
+            "total_count": product_count,
+            "price_range": price_range or main_price,
+            "collections": collections,
+            "top_products": products[:5],
+        },
+        # 营销策略
+        "marketing": {
+            "traffic_sources": traffic_sources,
+            "social": social,
+            "maturity_level": maturity_level,
+            "maturity_score": min(maturity_score, 100),
+            "maturity_items": maturity_items,
+        },
+        # 外部链接
+        "links": links,
     }

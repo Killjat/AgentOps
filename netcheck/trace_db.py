@@ -31,9 +31,9 @@ def init_trace_tables():
         CREATE TABLE IF NOT EXISTS traceroute_tasks (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             task_id     TEXT NOT NULL,
-            target      TEXT NOT NULL,          -- 目标 IP 或域名
-            target_type TEXT DEFAULT 'ip',      -- ip / domain
-            source      TEXT DEFAULT 'probe',   -- probe / recon / batch
+            target      TEXT NOT NULL,
+            target_type TEXT DEFAULT 'ip',
+            source      TEXT DEFAULT 'probe',
             agent_id    TEXT,
             agent_name  TEXT,
             os_type     TEXT,
@@ -54,10 +54,10 @@ def init_trace_tables():
             city        TEXT DEFAULT '',
             org         TEXT DEFAULT '',
             asn         TEXT DEFAULT '',
-            tag         TEXT DEFAULT '',        -- 机房/住宅/骨干/内网/超时
+            tag         TEXT DEFAULT '',
             latency_ms  REAL DEFAULT 0,
-            is_last_hop INTEGER DEFAULT 0,      -- 1=最后一跳
-            is_private  INTEGER DEFAULT 0,      -- 1=内网IP
+            is_last_hop INTEGER DEFAULT 0,
+            is_private  INTEGER DEFAULT 0,
             created_at  TEXT NOT NULL
         );
 
@@ -75,12 +75,133 @@ def init_trace_tables():
             seen_count  INTEGER DEFAULT 1
         );
 
+        CREATE TABLE IF NOT EXISTS ecom_sites (
+            domain          TEXT PRIMARY KEY,
+            category        TEXT DEFAULT '',      -- 品类关键词，如 phone case
+            title           TEXT DEFAULT '',
+            ip              TEXT DEFAULT '',
+            country         TEXT DEFAULT '',
+            city            TEXT DEFAULT '',
+            platform        TEXT DEFAULT '',      -- Shopify/WooCommerce/...
+            cdn             TEXT DEFAULT '',
+            server          TEXT DEFAULT '',
+            payment         TEXT DEFAULT '[]',    -- JSON array
+            tech_stack      TEXT DEFAULT '[]',    -- JSON array
+            shopify_apps    TEXT DEFAULT '[]',    -- JSON array
+            social          TEXT DEFAULT '{}',    -- JSON object
+            price_hint      TEXT DEFAULT '',
+            product_count   INTEGER DEFAULT 0,
+            registered_at   TEXT DEFAULT '',
+            traffic         TEXT DEFAULT '{}',    -- JSON object (SimilarWeb等)
+            raw_data        TEXT DEFAULT '{}',    -- 完整原始数据备用
+            analyzed_at     TEXT NOT NULL,
+            updated_at      TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ecom_category ON ecom_sites(category);
+        CREATE INDEX IF NOT EXISTS idx_ecom_platform ON ecom_sites(platform);
+        CREATE INDEX IF NOT EXISTS idx_ecom_tiktok ON ecom_sites(social);
         CREATE INDEX IF NOT EXISTS idx_tasks_target ON traceroute_tasks(target);
         CREATE INDEX IF NOT EXISTS idx_tasks_created ON traceroute_tasks(created_at);
         CREATE INDEX IF NOT EXISTS idx_hops_task ON traceroute_hops(task_id);
         CREATE INDEX IF NOT EXISTS idx_hops_ip ON traceroute_hops(ip);
         CREATE INDEX IF NOT EXISTS idx_hops_last ON traceroute_hops(is_last_hop);
         """)
+
+
+def save_ecom_site(site: dict, category: str = ""):
+    """保存/更新独立站情报到数据库"""
+    now = datetime.now().isoformat()
+    domain = site.get("domain", "")
+    if not domain:
+        return
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO ecom_sites
+            (domain, category, title, ip, country, city, platform, cdn, server,
+             payment, tech_stack, shopify_apps, social, price_hint,
+             product_count, registered_at, traffic, raw_data, analyzed_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(domain) DO UPDATE SET
+                category    = CASE WHEN excluded.category != '' THEN excluded.category ELSE category END,
+                title       = CASE WHEN excluded.title != '' THEN excluded.title ELSE title END,
+                platform    = CASE WHEN excluded.platform != '未知' THEN excluded.platform ELSE platform END,
+                cdn         = CASE WHEN excluded.cdn != '未知' THEN excluded.cdn ELSE cdn END,
+                payment     = excluded.payment,
+                tech_stack  = excluded.tech_stack,
+                shopify_apps= excluded.shopify_apps,
+                social      = excluded.social,
+                price_hint  = CASE WHEN excluded.price_hint != '' THEN excluded.price_hint ELSE price_hint END,
+                product_count = CASE WHEN excluded.product_count > 0 THEN excluded.product_count ELSE product_count END,
+                registered_at = CASE WHEN excluded.registered_at != '' THEN excluded.registered_at ELSE registered_at END,
+                raw_data    = excluded.raw_data,
+                updated_at  = excluded.updated_at
+        """, (
+            domain, category,
+            site.get("title", ""), site.get("ip", ""),
+            site.get("country", ""), site.get("city", ""),
+            site.get("platform", ""), site.get("cdn", ""), site.get("server", ""),
+            json.dumps(site.get("payment", []), ensure_ascii=False),
+            json.dumps(site.get("tech_stack", []), ensure_ascii=False),
+            json.dumps(site.get("shopify_apps", []), ensure_ascii=False),
+            json.dumps(site.get("social", {}), ensure_ascii=False),
+            site.get("price_hint", ""),
+            site.get("product_count", 0),
+            site.get("registered_at", ""),
+            json.dumps(site.get("traffic", {}), ensure_ascii=False),
+            json.dumps(site, ensure_ascii=False, default=str),
+            site.get("analyzed_at", now), now
+        ))
+
+
+def get_ecom_sites(category: str = "", limit: int = 100,
+                   has_tiktok: bool = False, platform: str = "") -> list:
+    """查询缓存的独立站情报"""
+    with get_conn() as conn:
+        conditions = []
+        params = []
+        if category:
+            conditions.append("category LIKE ?")
+            params.append(f"%{category}%")
+        if platform:
+            conditions.append("platform = ?")
+            params.append(platform)
+        if has_tiktok:
+            conditions.append("social LIKE '%\"tiktok\"%'")
+
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        rows = conn.execute(
+            f"SELECT * FROM ecom_sites {where} ORDER BY updated_at DESC LIMIT ?",
+            params + [limit]
+        ).fetchall()
+
+        result = []
+        for r in rows:
+            d = dict(r)
+            for f in ("payment", "tech_stack", "shopify_apps", "traffic"):
+                try: d[f] = json.loads(d[f])
+                except: d[f] = []
+            try: d["social"] = json.loads(d["social"])
+            except: d["social"] = {}
+            result.append(d)
+        return result
+
+
+def get_ecom_site(domain: str) -> dict:
+    """查询单个域名的缓存数据"""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM ecom_sites WHERE domain = ?", (domain,)
+        ).fetchone()
+        if not row:
+            return {}
+        d = dict(row)
+        for f in ("payment", "tech_stack", "shopify_apps", "traffic"):
+            try: d[f] = json.loads(d[f])
+            except: d[f] = []
+        try: d["social"] = json.loads(d["social"])
+        except: d["social"] = {}
+        return d
 
 
 def save_traceroute(task_id: str, target: str, target_type: str,
